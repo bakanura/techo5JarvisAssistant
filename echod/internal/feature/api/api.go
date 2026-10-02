@@ -314,6 +314,9 @@ func loadPSK(path string) (*esphome.PSK, error) {
 	if err != nil {
 		return nil, fmt.Errorf("api: key at %s: %w", path, err)
 	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		return nil, fmt.Errorf("api: securing key at %s: %w", path, err)
+	}
 	k, err := esphome.ParsePSK(strings.TrimSpace(string(b)))
 	if err != nil {
 		return nil, fmt.Errorf("api: key at %s: %w", path, err)

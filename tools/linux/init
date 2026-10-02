@@ -60,7 +60,10 @@ export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # --- Userdata: persistent log, daemon state, Wi-Fi credentials.
 if mount -t ext4 -o noatime $DATA_DEV /data 2>/dev/null; then
-	mkdir -p /data/techo5-linux
+	umask 077
+	ulimit -c 0 2>/dev/null || true
+	mkdir -p -m 700 /data/techo5-linux
+	chmod 700 /data/techo5-linux 2>/dev/null
 	LOGDIR=/data/techo5-linux
 	crumb "userdata mounted"
 else
@@ -229,6 +232,7 @@ network_up() {
 	if [ -n "$DAEMON" ]; then
 		killall fbprobe 2>/dev/null
 		mkdir -p /data/misc/techo5/models
+		touch $LOGDIR/techo5.log; chmod 600 $LOGDIR/techo5.log 2>/dev/null
 		(setsid $DAEMON run >> $LOGDIR/techo5.log 2>&1 &)
 		sleep 3
 		if pidof techo5 >/dev/null; then

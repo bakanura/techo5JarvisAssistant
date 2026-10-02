@@ -31,6 +31,9 @@ func (p *Phone) Contacts() []Contact {
 	if err != nil {
 		return nil
 	}
+	if os.Chmod(contactsPath, 0o600) != nil {
+		return nil
+	}
 	var out []Contact
 	if json.Unmarshal(b, &out) != nil {
 		return nil

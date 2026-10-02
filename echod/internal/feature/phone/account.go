@@ -38,6 +38,9 @@ func loadAccount() (Account, error) {
 	if err != nil {
 		return a, err
 	}
+	if err := os.Chmod(accountPath, 0o600); err != nil {
+		return a, err
+	}
 	err = json.Unmarshal(b, &a)
 	return a, err
 }

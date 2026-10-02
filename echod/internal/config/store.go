@@ -96,6 +96,14 @@ func Load(path string) (*Store, error) {
 	if err := json.Unmarshal(b, &st.c); err != nil {
 		return st, fmt.Errorf("config: %s: %w", path, err)
 	}
+	// state.json contains more than cosmetic settings: house HMAC material, Direct Brain bearer
+	// keys and private calendar URLs live here. Older TECHO5 builds wrote it 0644, so loading a valid
+	// file also repairs its mode before the daemon carries on.
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(path, 0o600); err != nil {
+			return st, fmt.Errorf("config: securing %s: %w", path, err)
+		}
+	}
 	_ = json.Unmarshal(b, &st.was)
 	// MusicStrip became a non-zero Jarvis Crown default after upstream devices had already shipped
 	// with an omitted/zero value meaning "keep Now Playing full-screen". A file that existed before
@@ -167,12 +175,12 @@ func (st *Store) write() error {
 	b = append(b, '\n')
 
 	dir := filepath.Dir(st.path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 
 	tmp := st.path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}

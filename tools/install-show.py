@@ -675,13 +675,13 @@ def main():
     for line in o.split('\n'):
         if line.startswith('slot a'):
             note(line)
-    prov = ("mkdir -p /data/misc/techo5 && printf '%%s\\n' %s > /data/misc/techo5/name && "
+    prov = ("mkdir -p -m 700 /data/misc/techo5 && chmod 700 /data/misc/techo5 && printf '%%s\\n' %s > /data/misc/techo5/name && "
             "(umask 077; printf '%%s\\n' %s > /data/misc/techo5/psk)" % (quote(a.name), quote(psk)))
     if a.jarvis_show_prestaged:
         prov += " && printf 'jarvis-%s-v1\\n' > /data/misc/techo5/profile" % a.jarvis_show_board
     if pub:
         prov += (" && mkdir -p -m 700 /data/misc/techo5/ssh && (umask 077; printf '%%s\\n' %s > /data/misc/techo5/ssh/authorized_keys)"
-                 " && { [ -e /data/misc/techo5/state.json ] || printf '{\"security\":{\"ssh\":true}}\\n' > /data/misc/techo5/state.json; }"
+                 " && { [ -e /data/misc/techo5/state.json ] || (umask 077; printf '{\"security\":{\"ssh\":true}}\\n' > /data/misc/techo5/state.json); }"
                  % quote(pub))
     if wifi:
         prov += (" && mkdir -p /data/techo5-linux && (umask 077; printf '%s' %s %s > /data/techo5-linux/wpa_supplicant.conf)"

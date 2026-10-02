@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	neturl "net/url"
 	"os"
@@ -45,6 +46,10 @@ func Get() *Client {
 	once.Do(func() {
 		shared = &Client{http: &http.Client{Timeout: 15 * time.Second}}
 		if b, err := os.ReadFile(Path); err == nil {
+			if err := os.Chmod(Path, 0o600); err != nil {
+				slog.Error("hass: refusing saved access whose permissions cannot be secured", "err", err)
+				return
+			}
 			_ = json.Unmarshal(b, &shared.acc)
 			// Kept before the cleaning below existed, an address can carry a character nobody can see.
 			shared.acc.URL, shared.acc.Token = cleanURL(shared.acc.URL), clean(shared.acc.Token)
@@ -73,10 +78,13 @@ func (c *Client) Set(url, token string) error {
 	c.acc = access{URL: url, Token: token}
 	c.mu.Unlock()
 	b, _ := json.Marshal(c.acc)
-	if err := os.MkdirAll(filepath.Dir(Path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(Path), 0o700); err != nil {
 		return err
 	}
-	return os.WriteFile(Path, b, 0o600)
+	if err := os.WriteFile(Path, b, 0o600); err != nil {
+		return err
+	}
+	return os.Chmod(Path, 0o600)
 }
 
 // clean takes out what a copy and paste carries along without anyone seeing it: spaces and line ends,

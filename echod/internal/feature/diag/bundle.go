@@ -37,6 +37,12 @@ func Bundle() string {
 	c := config.Get()
 	r.Known("device", c.Device.Name)
 	r.Known("serial", serial())
+	r.Known("house-secret", c.Home.HouseWord)
+	r.Known("brain-key", c.Brain.Key)
+	r.Known("camera-password", c.Home.Reolink.Pass)
+	for _, cal := range c.Calendar.Links {
+		r.Known("calendar-url", cal.URL)
+	}
 	for _, ssid := range wifi.Saved() {
 		r.Known("wifi", ssid)
 	}

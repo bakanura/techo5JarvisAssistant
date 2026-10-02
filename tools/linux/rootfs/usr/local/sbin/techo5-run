@@ -9,6 +9,14 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 LOG=/data/techo5-linux/techo5.log
 
+# Logs can contain household names, media URLs and network diagnostics. Keep the persistent runtime
+# directory and every file created by this launcher root-only even on units upgraded from older
+# images that used the system umask.
+umask 077
+ulimit -c 0 2>/dev/null || true
+mkdir -p -m 700 /data/techo5-linux
+chmod 700 /data/techo5-linux 2>/dev/null || true
+
 # Maintenance: while /run/techo5/hold exists the daemon is not started, so the
 # audio devices are free for audioprobe and the like. `rm` it to resume.
 while [ -e /run/techo5/hold ]; do sleep 5; done
@@ -26,5 +34,7 @@ mkdir -p /data/misc/techo5/models
 if [ -f $LOG ] && [ "$(stat -c %s $LOG 2>/dev/null || echo 0)" -gt 5000000 ]; then
 	mv -f $LOG $LOG.1
 fi
+touch $LOG
+chmod 600 $LOG $LOG.1 2>/dev/null || true
 echo "techo5-run: starting $(/usr/local/bin/techo5 --version 2>/dev/null | head -1) at $(date)" >> $LOG
 exec /usr/local/bin/techo5 run >> $LOG 2>&1

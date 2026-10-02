@@ -180,6 +180,9 @@ func Join(ctx context.Context, ssid, passphrase string) error {
 		return errors.New("wifi: a passphrase cannot hold a line ending")
 	}
 	old, _ := os.ReadFile(Conf)
+	if len(old) > 0 {
+		_ = os.Chmod(Conf, 0o600)
+	}
 	// The new one goes first, since it is the one just asked for, and any older entry for the same
 	// name goes, so a corrected passphrase replaces the one that was wrong. The rest are kept: a
 	// device set up on one network still joins the network it is taken to.
@@ -190,6 +193,9 @@ func Join(ctx context.Context, ssid, passphrase string) error {
 		}
 	}
 	if err := os.WriteFile(Conf, []byte(conf(kept)), 0o600); err != nil {
+		return err
+	}
+	if err := os.Chmod(Conf, 0o600); err != nil {
 		return err
 	}
 	if len(old) > 0 {

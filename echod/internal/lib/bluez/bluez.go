@@ -568,7 +568,7 @@ func (g agent) RequestConfirmation(path dbus.ObjectPath, passkey uint32) *dbus.E
 	if err := g.open(path, "confirmation"); err != nil {
 		return err
 	}
-	slog.Info("bluetooth pairing confirmed", "device", string(path), "passkey", fmt.Sprintf("%06d", passkey))
+	slog.Info("bluetooth pairing confirmed", "device", string(path))
 	return nil
 }
 

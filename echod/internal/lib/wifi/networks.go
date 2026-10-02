@@ -19,6 +19,9 @@ func Saved() []string {
 	if err != nil {
 		return nil
 	}
+	if os.Chmod(Conf, 0o600) != nil {
+		return nil
+	}
 	var out []string
 	for _, block := range blocks(string(b)) {
 		if ssid := ssidOf(block); ssid != "" {
@@ -33,6 +36,9 @@ func Saved() []string {
 func Forget(ctx context.Context, ssid string) error {
 	b, err := os.ReadFile(Conf)
 	if err != nil {
+		return err
+	}
+	if err := os.Chmod(Conf, 0o600); err != nil {
 		return err
 	}
 	var kept []string
