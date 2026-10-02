@@ -12,10 +12,10 @@ type Preset struct {
 	Ground, Accent, Text, Dim, Rules uint32
 }
 
-// Presets are the themes offered, in the order the screen lists them. Jarvis Show leads with the
-// four JODS visual-system palettes so the native framebuffer and the browser Setup surface share
-// the same design language. The older TECHO5 palettes remain available for people upgrading with
-// an existing preference.
+// Presets are the themes offered, in the order the screen lists them. Jarvis Show intentionally
+// exposes only the four JODS visual-system palettes so the native framebuffer and the browser Setup
+// surface share one coherent design language. A saved legacy preset name falls back to the first
+// preset (White Jade); user-defined Custom colors remain supported separately by the screen config.
 var Presets = []Preset{
 	// JODS canonical palettes. These five native-display roles are the solid equivalents of the
 	// richer JODS shell tokens (canvas, accent, primary text, muted text, soft borders).
@@ -23,20 +23,6 @@ var Presets = []Preset{
 	{"Leaf Jade", 0xedf6f1, 0x3d9a61, 0x1f3127, 0x698474, 0xd2e1d8},
 	{"Sakura Jade", 0xf8edf3, 0xd66f99, 0x302128, 0x8b7480, 0xe5d9df},
 	{"Ember Jade", 0xf7ece7, 0xea9468, 0x34180f, 0x8d5a48, 0xead9d2},
-
-	{"Walnut", 0x1c1511, 0xe9a23b, 0xe8dcc8, 0x8a7d6c, 0x3a2c22},
-	{"Slate", 0x141920, 0x5cb8ff, 0xe4eaf0, 0x7c8896, 0x27303b},
-	{"Midnight", 0x080a10, 0x2ed9b8, 0xdde6e8, 0x6c7a80, 0x181e2a},
-	{"Forest", 0x101a14, 0xd8b44a, 0xe6ecdc, 0x7d8c78, 0x223428},
-	{"Plum", 0x1a101c, 0xf07ca8, 0xf0e4ec, 0x8c7488, 0x36243c},
-	{"Ocean", 0x0a1622, 0x36c6e0, 0xdcecf4, 0x6e8896, 0x163040},
-	{"Ember", 0x180c0a, 0xf05a3c, 0xf2e2da, 0x8e7068, 0x3a1c16},
-	{"Mint", 0x0e1a18, 0x6ee7b7, 0xe2f2ec, 0x709088, 0x1c342e},
-	{"Lavender", 0x14121e, 0xb69cff, 0xeae6f4, 0x8078a0, 0x2a2640},
-	{"Graphite", 0x161616, 0xffffff, 0xe0e0e0, 0x8a8a8a, 0x303030},
-	{"Cherry", 0x1c0a10, 0xff3b6b, 0xf4e0e6, 0x907080, 0x3c1824},
-	{"Paper", 0xf2eadc, 0xb85c1e, 0x2a221c, 0x7a6e62, 0xd8ccb8},
-	{"Linen", 0xf6f1e8, 0x2c6e9e, 0x1e2630, 0x6f7a86, 0xd9d1c4},
 }
 
 // Round is the Spot's palette, which is not chosen: the round screen has one look.

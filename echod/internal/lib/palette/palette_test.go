@@ -24,14 +24,27 @@ func TestLightThemesAreKnownToBeLight(t *testing.T) {
 		want := p.Name == "White Jade" ||
 			p.Name == "Leaf Jade" ||
 			p.Name == "Sakura Jade" ||
-			p.Name == "Ember Jade" ||
-			p.Name == "Paper" ||
-			p.Name == "Linen"
+			p.Name == "Ember Jade"
 		if p.Light() != want {
 			t.Errorf("%s: Light() = %v", p.Name, p.Light())
 		}
 	}
 	if Named("nope").Name != Presets[0].Name {
 		t.Error("an unknown name is not the default")
+	}
+}
+
+func TestOnlyJODSPresetsAreExposed(t *testing.T) {
+	want := []string{"White Jade", "Leaf Jade", "Sakura Jade", "Ember Jade"}
+	if len(Presets) != len(want) {
+		t.Fatalf("got %d presets, want %d JODS presets: %+v", len(Presets), len(want), Presets)
+	}
+	for i, name := range want {
+		if Presets[i].Name != name {
+			t.Fatalf("preset %d = %q, want %q", i, Presets[i].Name, name)
+		}
+	}
+	if Named("Walnut").Name != "White Jade" {
+		t.Fatalf("legacy preset should migrate to White Jade, got %q", Named("Walnut").Name)
 	}
 }

@@ -402,8 +402,8 @@ Rule: complete and validate one job before starting the next. Do not build a rel
 
 - [x] **J47 — JODS visual-system port / White Jade default**
   - Replace the upstream-looking fresh-device theme with the JODS design language used by the user's other appliance/admin surfaces.
-  - Fresh Jarvis Show installs default to **White Jade**; existing saved theme choices remain respected across upgrades.
-  - Native Crown/Checkers UI exposes the canonical JODS palette family: White Jade, Leaf Jade, Sakura Jade and Ember Jade while retaining legacy TECHO5 themes as optional compatibility choices.
+  - Fresh Jarvis Show installs default to **White Jade**.
+  - Native Crown/Checkers UI exposes only the canonical JODS palette family: White Jade, Leaf Jade, Sakura Jade and Ember Jade. Legacy TECHO5 presets were removed; an old saved preset name migrates fail-soft to White Jade. User-defined Custom colors remain supported.
   - Browser Setup uses the same JODS visual language: light layered canvas, soft translucent cards, large radii, restrained shadows, pill actions, soft accent states and JODS typography/spacing conventions.
   - Keep Jarvis branding; reuse the JODS design system, not JODS product naming/logos. The daemon-rendered boot splash and empty-name fallbacks now identify as **Jarvis Show** instead of exposing the upstream TECHO5 wordmark.
   - The configured palette is applied before the first-run welcome/splash path can render, preventing the compiled-in legacy TECHO5 colors from leaking onto a fresh device before the normal idle frame.

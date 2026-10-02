@@ -19,8 +19,7 @@ class JodsThemeContractTests(unittest.TestCase):
 
     def test_fresh_jarvis_defaults_to_white_jade(self):
         self.assertIn('const DefaultTheme = "White Jade"', self.screen)
-        first = self.palette.index('{"White Jade", 0xeeeff2, 0x86909d, 0x20242a, 0x7c8794, 0xd8dade}')
-        self.assertLess(first, self.palette.index('{"Walnut"'))
+        self.assertIn('{"White Jade", 0xeeeff2, 0x86909d, 0x20242a, 0x7c8794, 0xd8dade}', self.palette)
 
     def test_canonical_jods_palette_family_is_available(self):
         for row in (
@@ -30,6 +29,14 @@ class JodsThemeContractTests(unittest.TestCase):
             '{"Ember Jade", 0xf7ece7, 0xea9468, 0x34180f, 0x8d5a48, 0xead9d2}',
         ):
             self.assertIn(row, self.palette)
+
+    def test_legacy_techo5_presets_are_not_exposed(self):
+        for name in (
+            "Walnut", "Slate", "Midnight", "Forest", "Plum", "Ocean", "Ember",
+            "Mint", "Lavender", "Graphite", "Cherry", "Paper", "Linen",
+        ):
+            self.assertNotIn('{"' + name + '",', self.palette)
+        self.assertIn('Named("Walnut").Name != "White Jade"', (ROOT / "echod/internal/lib/palette/palette_test.go").read_text(encoding="utf-8"))
 
     def test_setup_surface_uses_jods_shape_and_layering(self):
         self.assertIn("<title>Jarvis Show setup</title>", self.setup)
