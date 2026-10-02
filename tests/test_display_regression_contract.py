@@ -124,6 +124,7 @@ const topbar=document.createElement('header'); topbar.className='top-app-bar'; t
 // Production refreshes every second forever. The test executes that callback once so headless
 // Chromium can exit after validating the exact production script/CSS.
 window.setInterval=(fn)=>{fn(); return 1;};
+try {
 """ + script + """
 const result={
  shell:!!mr.getElementById('jarvis-show-shell'), huiStyle:!!hr.getElementById('techo5-kiosk'), topStyle:!!tr.getElementById('techo5-kiosk'),
@@ -133,6 +134,9 @@ const result={
  header:getComputedStyle(header).display, topbar:getComputedStyle(topbar).display
 };
 document.body.textContent='RESULT:'+JSON.stringify(result);
+} catch (error) {
+ document.body.textContent='JARVIS-JS-ERROR:'+(error && error.stack ? error.stack : String(error));
+}
 </script>""",
                     encoding="utf-8",
                 )
@@ -142,7 +146,13 @@ document.body.textContent='RESULT:'+JSON.stringify(result);
                     text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30,
                 )
                 self.assertEqual(proc.returncode, 0, proc.stderr[-1000:])
-                match = re.search(r"RESULT:(\{.*?\})", html.unescape(proc.stdout))
+                dumped = html.unescape(proc.stdout)
+                runtime_error = re.search(r"JARVIS-JS-ERROR:(.*?)</body>", dumped, re.S)
+                self.assertIsNone(
+                    runtime_error,
+                    runtime_error.group(1).strip() if runtime_error else "",
+                )
+                match = re.search(r"RESULT:(\{.*?\})", dumped)
                 self.assertIsNotNone(match, proc.stdout[-2000:])
                 result = json.loads(match.group(1))
                 self.assertTrue(result["shell"])
