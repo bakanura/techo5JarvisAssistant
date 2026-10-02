@@ -50,7 +50,7 @@ func newDirect(post func(event)) *direct { return &direct{post: post} }
 
 func (d *direct) Name() string { return "direct" }
 
-func (d *direct) Ready() bool { return config.Get().Brain.Direct() }
+func (d *direct) Ready() bool { return config.Get().Brain.DirectReady() }
 
 func (d *direct) Start(string) error {
 	d.mu.Lock()

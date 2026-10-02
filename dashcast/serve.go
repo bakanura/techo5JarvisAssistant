@@ -57,6 +57,9 @@ type hello struct {
 
 	// Kiosk is the page without Home Assistant's top bar (browser.go, kioskScript).
 	Kiosk bool `json:"kiosk,omitempty"`
+
+	// Cold asks Dashcast to discard a parked matching tab and create a brand-new browser page.
+	Cold bool `json:"cold,omitempty"`
 }
 
 type touchMsg struct {
@@ -131,6 +134,15 @@ func serve(ctx context.Context, b *browser, g *guard, cfg config, raw net.Conn) 
 	_ = c.SetReadDeadline(time.Time{})
 	out := &sender{c: c}
 
+	if cfg.crown {
+		// Jarvis Crown is an appliance, not a generic browser client. The server owns the viewport,
+		// path and browser chrome contract so stale/misconfigured device state cannot reintroduce the
+		// old header/black-bar problems.
+		h.W, h.H = 1280, 800
+		h.Path = "/jarvis-display"
+		h.Kiosk = true
+	}
+
 	if h.W <= 0 || h.H <= 0 || h.W > 4096 || h.H > 4096 {
 		return
 	}
@@ -165,7 +177,10 @@ func serve(ctx context.Context, b *browser, g *guard, cfg config, raw net.Conn) 
 
 	// The tab: this screen's parked one if it left a moment ago (warm.go), or a new one. It outlives
 	// the session, so it is opened against the server's context, not this connection's.
-	key := fmt.Sprintf("%s|%dx%d|%s|%t", h.Name, h.W, h.H, h.Path, h.Kiosk)
+	key := fmt.Sprintf("%s|%dx%d|%s|%t|g=%s", h.Name, h.W, h.H, h.Path, h.Kiosk, cfg.generation)
+	if h.Cold {
+		warm.discard(key)
+	}
 	w := warm.take(key)
 	reused := w != nil
 	if !reused {

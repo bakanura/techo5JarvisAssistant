@@ -458,6 +458,12 @@ func (r *renderer) draw(s scene) {
 	}
 	if s.showDash {
 		r.dashboardPage(s)
+		// Jarvis Crown's normal idle surface is a streamed dashboard. Music Assistant should still be
+		// usable without replacing it forever: after the initial full Now Playing page, the native
+		// strip is drawn over the dashboard exactly as it is over the clock.
+		if s.strip && s.phase == "idle" && s.sunrise == 0 {
+			r.musicStrip(s)
+		}
 		if s.showVolume {
 			r.volumeBar(s)
 		}

@@ -12,6 +12,7 @@
 package remind
 
 import (
+	"context"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -21,12 +22,14 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/component"
 	"github.com/HuskerMinion/techo5/echod/internal/config"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/announce"
+	"github.com/HuskerMinion/techo5/echod/internal/feature/media"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/ring"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/speaker"
 	"github.com/HuskerMinion/techo5/echod/internal/layout"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/hass"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/hook"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/safe"
+	"github.com/HuskerMinion/techo5/echod/internal/lib/wyoming"
 )
 
 // tone is what a reminder arrives with: three notes rising, apart from the alarm's and an
@@ -86,7 +89,7 @@ var (
 
 func Get() *Feature {
 	once.Do(func() {
-		shared = &Feature{keep: keeps, chime: playTone, say: sayThroughHA, send: announce.Get().SendTo}
+		shared = &Feature{keep: keeps, chime: playTone, say: sayPreferred, send: announce.Get().SendTo}
 		a := announce.Get()
 		a.Reminded.Listen(func(m announce.Message) {
 			shared.show(Reminder{ID: m.ID, Label: m.Text, From: m.From, At: time.Now()}, dest{})
@@ -214,7 +217,37 @@ func newID() string {
 
 // Say asks Home Assistant to say words on this device, for anything else that goes off with a label:
 // an alarm saying what it is for.
-func Say(words string) { sayThroughHA(words) }
+func Say(words string) { sayPreferred(words) }
+
+func sayPreferred(label string) {
+	if hass.Get().Ready() {
+		sayThroughHA(label)
+		return
+	}
+	b := config.Get().Brain
+	if !b.DirectReady() {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	voice, f, err := wyoming.Synthesize(ctx, b.TTS, label, b.Voice)
+	if err != nil {
+		slog.Warn("reminder direct speech failed", "err", err)
+		return
+	}
+	voice = media.ToVoiceRate(voice, f.Rate)
+	claim := speaker.Sound().ClaimSpeech("reminder", func(ctx context.Context, p *speaker.Player) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		p.PlayVoice(voice)
+		return nil
+	})
+	<-claim.Done()
+	if err := claim.Err(); err != nil {
+		slog.Warn("playing direct reminder speech failed", "err", err)
+	}
+}
 
 // sayThroughHA asks Home Assistant to say the label on this device. Its own chime is skipped, since
 // the reminder has just played one. preannounce goes as a template: Home Assistant 2026.9 refuses the

@@ -89,6 +89,28 @@ func (p *warmPool) take(key string) *warmTab {
 	return w
 }
 
+// discard closes any parked tab matching key. It is used by Jarvis Crown's one-shot cold reload.
+func (p *warmPool) discard(key string) {
+	p.mu.Lock()
+	var closed []*warmTab
+	keep := p.parked[:0]
+	for _, w := range p.parked {
+		if w.key == key {
+			closed = append(closed, w)
+			continue
+		}
+		keep = append(keep, w)
+	}
+	p.parked = keep
+	p.mu.Unlock()
+	for _, w := range closed {
+		if w.expiry != nil {
+			w.expiry.Stop()
+		}
+		w.close()
+	}
+}
+
 // park stops a tab's stream, freezes it, and keeps it for warmFor.
 func (p *warmPool) park(w *warmTab) {
 	w.watch(nil)

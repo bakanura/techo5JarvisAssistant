@@ -6,6 +6,7 @@ import (
 
 	esphome "github.com/ygelfand/go-esphome-device"
 
+	"github.com/HuskerMinion/techo5/echod/internal/config"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/media"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/phone"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/speaker"
@@ -16,6 +17,15 @@ import (
 // read loop: fetching and playing must not block it.
 func (t *conversation) announce(a esphome.Announce) {
 	slog.Info("announce", "text", a.Text, "start_conversation", a.StartConversation)
+	if config.Get().Home.DoNotDisturb {
+		// DND is a privacy boundary as well as a volume preference: a proactive HA announcement may
+		// not make noise and, crucially, StartConversation may not open the microphones afterwards.
+		slog.Info("announce suppressed by do not disturb")
+		if err := t.vs.AnnounceFinished(true); err != nil {
+			slog.Error("reporting the suppressed announcement failed", "err", err)
+		}
+		return
+	}
 
 	// One claim covers both urls, so silencing an announcement stops the whole thing rather than
 	// letting the second one start once the first has been drained.

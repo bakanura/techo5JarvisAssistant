@@ -28,11 +28,16 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
 
 	cfg := config{
-		ha:     strings.TrimRight(os.Getenv("HA_URL"), "/"),
-		token:  strings.TrimSpace(os.Getenv("HA_TOKEN")),
-		key:    strings.TrimSpace(os.Getenv("DASHCAST_KEY")),
-		listen: os.Getenv("LISTEN"),
-		chrome: os.Getenv("CHROME"),
+		ha:         strings.TrimRight(os.Getenv("HA_URL"), "/"),
+		token:      strings.TrimSpace(os.Getenv("HA_TOKEN")),
+		key:        strings.TrimSpace(os.Getenv("DASHCAST_KEY")),
+		listen:     os.Getenv("LISTEN"),
+		chrome:     os.Getenv("CHROME"),
+		crown:      envTrue("JARVIS_CROWN_MODE"),
+		generation: strings.TrimSpace(os.Getenv("JARVIS_CROWN_UI_GENERATION")),
+	}
+	if cfg.crown && cfg.generation == "" {
+		cfg.generation = "1"
 	}
 	if cfg.listen == "" {
 		cfg.listen = ":9555"
@@ -89,4 +94,14 @@ const minKey = 16
 
 type config struct {
 	ha, token, key, listen, chrome string
+	crown                          bool
+	generation                     string
+}
+
+func envTrue(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
 }

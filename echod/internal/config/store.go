@@ -97,6 +97,15 @@ func Load(path string) (*Store, error) {
 		return st, fmt.Errorf("config: %s: %w", path, err)
 	}
 	_ = json.Unmarshal(b, &st.was)
+	// MusicStrip became a non-zero Jarvis Crown default after upstream devices had already shipped
+	// with an omitted/zero value meaning "keep Now Playing full-screen". A file that existed before
+	// that setting must keep the old behavior; only a genuinely fresh device gets the new 30-second
+	// product default. An explicit music_strip in an existing file remains authoritative.
+	if screen, ok := st.was["screen"].(map[string]any); !ok {
+		st.c.Screen.MusicStrip = 0
+	} else if _, mentioned := screen["music_strip"]; !mentioned {
+		st.c.Screen.MusicStrip = 0
+	}
 	st.c.moveSounds()
 
 	st.readable = true

@@ -5,11 +5,8 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/hex"
 	"errors"
-	"log/slog"
-	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -132,17 +129,15 @@ func fresh(nonce string, now time.Time) bool {
 	return true
 }
 
-// verify checks that r, with this body, was signed with the house word. legacy is an older device
-// that still sends the word itself: taken while a house updates, and said in the log.
+// verify checks that r, with this body, was signed with the house word. Jarvis Crown deliberately
+// refuses the old plaintext-house-word header: the same secret protects intercom, so it must never
+// be sent across the network merely for compatibility with an older announcer.
 func verify(r *http.Request, word string, body []byte, now time.Time) (legacy bool, err error) {
 	if word == "" {
 		return false, errNotThisHouse
 	}
 	auth := r.Header.Get(authHeader)
 	if auth == "" {
-		if old := r.Header.Get(header); old != "" && subtle.ConstantTimeCompare([]byte(old), []byte(word)) == 1 {
-			return true, nil
-		}
 		return false, errNotThisHouse
 	}
 	parts := strings.Fields(auth)
@@ -168,24 +163,4 @@ func verify(r *http.Request, word string, body []byte, now time.Time) (legacy bo
 		return false, errors.New("announce: heard this one already")
 	}
 	return false, nil
-}
-
-// legacySeen keeps the older-device notice to once an hour per device.
-var legacySeen struct {
-	sync.Mutex
-	at map[string]time.Time
-}
-
-func noteLegacy(r *http.Request) {
-	from, _, _ := net.SplitHostPort(r.RemoteAddr)
-	legacySeen.Lock()
-	defer legacySeen.Unlock()
-	if legacySeen.at == nil {
-		legacySeen.at = map[string]time.Time{}
-	}
-	if time.Since(legacySeen.at[from]) < time.Hour {
-		return
-	}
-	legacySeen.at[from] = time.Now()
-	slog.Warn("announcement from a device that still sends the house word itself: update it", "from", from)
 }

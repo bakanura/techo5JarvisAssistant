@@ -759,6 +759,13 @@ func (d *Display) gesture(g touch.Gesture) {
 	dashUp := d.dashShowing
 	d.mu.Unlock()
 	if dashUp {
+		// The streamed dashboard owns the panel, except for the native music strip visibly laid over
+		// its foot. Consume gestures in the strip before forwarding anything to the browser; outside
+		// it, the dashboard remains completely in control.
+		if d.musicStripGesture(g) {
+			d.wake()
+			return
+		}
 		d.dashGesture(g)
 		d.wake()
 		return
@@ -920,31 +927,7 @@ func (d *Display) gesture(g touch.Gesture) {
 			d.openDrawer(drawerCall)
 			return
 		}
-		d.mu.Lock()
-		strip := d.showingStrip
-		d.mu.Unlock()
-		if idle && strip && d.r != nil && image.Pt(g.X, g.Y).In(d.r.stripRect()) {
-			// The strip: its buttons do what they say, the X ends the music, and the song brings the
-			// full page back for a while. Anywhere else on the strip is nothing, so a thumb that
-			// misses a button does not start a turn under it.
-			back, play, next, closeX := d.r.stripButtons()
-			at := image.Pt(g.X, g.Y)
-			switch {
-			case at.In(closeX):
-				go d.endMusic()
-			case at.In(back):
-				media.Get().Transport(media.TransportPrevious)
-			case at.In(play):
-				media.Get().Transport(media.TransportToggle)
-			case at.In(next):
-				media.Get().Transport(media.TransportNext)
-			case at.In(d.r.stripSong()):
-				d.mu.Lock()
-				d.stripFullUntil = time.Now().Add(stripFull)
-				d.away, d.awayTrack, d.awayStation, d.awayPlaying = false, "", "", false
-				d.mu.Unlock()
-				d.wake()
-			}
+		if idle && d.musicStripGesture(g) {
 			return
 		}
 		if idle && showing {
@@ -1016,6 +999,45 @@ func (d *Display) gesture(g touch.Gesture) {
 		d.mu.Unlock()
 		d.wake()
 	}
+}
+
+// musicStripGesture consumes a finger that lands inside the native music strip, when the last frame
+// actually drew one. This is shared by the clock and streamed-dashboard paths so the browser can
+// never steal the strip's buttons, while pages that do not draw the strip keep their original touch
+// priority. Non-tap gestures inside the strip are consumed but do not trigger an action.
+func (d *Display) musicStripGesture(g touch.Gesture) bool {
+	d.mu.Lock()
+	strip := d.showingStrip
+	d.mu.Unlock()
+	if !strip || d.r == nil {
+		return false
+	}
+	at := image.Pt(g.X, g.Y)
+	if !at.In(d.r.stripRect()) {
+		return false
+	}
+	if g.Kind != touch.Tap {
+		return true
+	}
+
+	back, play, next, closeX := d.r.stripButtons()
+	switch {
+	case at.In(closeX):
+		go d.endMusic()
+	case at.In(back):
+		media.Get().Transport(media.TransportPrevious)
+	case at.In(play):
+		media.Get().Transport(media.TransportToggle)
+	case at.In(next):
+		media.Get().Transport(media.TransportNext)
+	case at.In(d.r.stripSong()):
+		d.mu.Lock()
+		d.stripFullUntil = time.Now().Add(stripFull)
+		d.away, d.awayTrack, d.awayStation, d.awayPlaying = false, "", "", false
+		d.mu.Unlock()
+		d.wake()
+	}
+	return true
 }
 
 // favorite saves what is playing to favorites, and marks the star once it is saved.

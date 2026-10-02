@@ -96,6 +96,12 @@ const kioskScript = `
   const look = () => {
     const main = document.querySelector("home-assistant")?.shadowRoot?.querySelector("home-assistant-main")?.shadowRoot;
     if (!main) return;
+    if (!main.getElementById("jarvis-crown-shell")) {
+      const shell = document.createElement("style");
+      shell.id = "jarvis-crown-shell";
+      shell.textContent = ":host{--header-height:0px!important;--safe-area-inset-top:0px!important} ha-sidebar{display:none!important} #view,.view{padding-left:0!important;margin-left:0!important;padding-top:0!important}";
+      main.appendChild(shell);
+    }
     for (const panel of main.querySelectorAll("*")) {
       if (!panel.tagName.toLowerCase().startsWith("ha-panel-") || !panel.shadowRoot) continue;
       for (const el of panel.shadowRoot.querySelectorAll("hui-root, ha-top-app-bar-fixed")) dress(el);

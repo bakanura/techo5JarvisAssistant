@@ -22,8 +22,8 @@ type Account struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 
-	// Plain turns TLS and SRTP off, for a provider or network that cannot do them. Off by default: a
-	// call is someone's voice in their home.
+	// Plain is retained only so an old account file still decodes. Jarvis Crown never honors it:
+	// telephone signalling is TLS-only and media is SRTP-only.
 	Plain bool `json:"plain,omitempty"`
 }
 
@@ -57,6 +57,7 @@ func saveAccount(a Account) error {
 	if !a.valid() {
 		return errors.New("phone: a server, a username and a password are all needed")
 	}
+	a.Plain = false
 	b, err := json.Marshal(a)
 	if err != nil {
 		return err

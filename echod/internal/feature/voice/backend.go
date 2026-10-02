@@ -37,11 +37,23 @@ func (h ha) End() error                { return h.vs.EndAudio() }
 func (h ha) Stop() error               { return h.vs.StopTurn() }
 func (h ha) Name() string              { return "home assistant" }
 
-// backendFor is which one a new turn runs against: the direct pipeline when it is chosen and set up,
-// Home Assistant otherwise.
+// backendFor chooses a backend once, at the start of a turn. Automatic mode prefers a live Home
+// Assistant subscription and falls back to the local Direct Brain only between turns; c.be then pins
+// that choice for the lifetime of the open conversation.
 func (c *conversation) backendFor() backend {
-	if config.Get().Brain.Direct() {
+	b := config.Get().Brain
+	switch b.Mode {
+	case config.BrainDirect:
 		return c.direct
+	case config.BrainAutomatic:
+		if c.ha.Ready() {
+			return c.ha
+		}
+		if b.DirectReady() {
+			return c.direct
+		}
+		return c.ha
+	default:
+		return c.ha
 	}
-	return c.ha
 }

@@ -42,6 +42,7 @@ type View struct {
 type stream struct {
 	f    *Feature
 	w, h int
+	cold bool
 
 	mu      sync.Mutex
 	conn    net.Conn
@@ -77,7 +78,7 @@ func (f *Feature) Stream(w, h int) View {
 		if s != nil {
 			safe.Go("dashboard stream close", s.close)
 		}
-		s = &stream{f: f, w: w, h: h}
+		s = &stream{f: f, w: w, h: h, cold: f.cold}
 		f.stream = s
 		safe.Go("dashboard stream", s.run)
 	}
@@ -192,8 +193,21 @@ func (s *stream) once() error {
 	if cfg.Dashboard.Kiosk {
 		hello["kiosk"] = true // a dashcast from before it knew kiosk ignores it and shows the header
 	}
+	if s.cold {
+		hello["cold"] = true
+	}
 	if err := enc.Encode(hello); err != nil {
 		return err
+	}
+	// Cold is one-shot, but only after the authenticated hello actually left the device. A failed
+	// connection before this point keeps the request armed for the retry/new stream.
+	if s.cold {
+		s.cold = false
+		s.f.mu.Lock()
+		if s.f.stream == s {
+			s.f.cold = false
+		}
+		s.f.mu.Unlock()
 	}
 	s.mu.Lock()
 	if s.stopped {

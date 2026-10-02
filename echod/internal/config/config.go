@@ -57,6 +57,7 @@ func Defaults() Config {
 		Screen:     defaultScreen(),
 		Home:       defaultHome(),
 		Security:   defaultSecurity(),
+		Dashboard:  defaultDashboard(),
 
 		// Only the stop word. The slots are absent until something chooses one, and Slot fills in the
 		// defaults for whichever have not been.

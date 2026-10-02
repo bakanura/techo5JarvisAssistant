@@ -48,8 +48,9 @@ func brainSection(w http.ResponseWriter, token string) {
 	hidden(w, token, "brain", "sound")
 	fmt.Fprintf(w, `<label for="mode">Answered by</label>
 	 <select id="mode" name="mode">
-	  <option value=""%s>Home Assistant (its Assist pipeline)</option>
-	  <option value="direct"%s>Speech and a chat model, directly</option>
+	  <option value="automatic"%s>Automatic (Home Assistant, then Direct fallback)</option>
+	  <option value=""%s>Home Assistant only</option>
+	  <option value="direct"%s>Direct only</option>
 	 </select>
 	 <p class="note">Directly, the device needs no Home Assistant: what is said goes to a speech-to-text
 	  server, the words to a chat model that can set timers and alarms, play the radio and call other
@@ -77,7 +78,7 @@ func brainSection(w http.ResponseWriter, token string) {
 	 <label for="prompt">Anything the assistant should know</label>
 	 <textarea id="prompt" name="prompt" rows="3" maxlength="2000">%s</textarea>
 	 <p><button type="submit">Save</button></p></form></fieldset>`,
-		selected(b.Mode == config.BrainHomeAssistant), selected(b.Mode == config.BrainDirect),
+		selected(b.Mode == config.BrainAutomatic), selected(b.Mode == config.BrainHomeAssistant), selected(b.Mode == config.BrainDirect),
 		html.EscapeString(b.STT), html.EscapeString(b.TTS), html.EscapeString(b.Voice), html.EscapeString(b.Language),
 		html.EscapeString(b.LLM), html.EscapeString(b.Model), keyHint(b.Key != ""), html.EscapeString(b.Search),
 		html.EscapeString(b.Prompt))
@@ -105,7 +106,7 @@ func saveBrain(r *http.Request) string {
 		Search:   strings.TrimRight(v("search"), "/"),
 		Prompt:   strings.TrimSpace(r.PostFormValue("prompt")),
 	}
-	if b.Mode != config.BrainHomeAssistant && b.Mode != config.BrainDirect {
+	if b.Mode != config.BrainHomeAssistant && b.Mode != config.BrainAutomatic && b.Mode != config.BrainDirect {
 		return "that is not a way of answering this device knows"
 	}
 	for _, hp := range []struct{ what, v string }{{"speech to text", b.STT}, {"text to speech", b.TTS}} {
@@ -128,8 +129,8 @@ func saveBrain(r *http.Request) string {
 			return "the search server should be an address like http://192.168.1.20:8888"
 		}
 	}
-	if b.Mode == config.BrainDirect && (b.STT == "" || b.TTS == "" || b.LLM == "") {
-		return "answering directly needs all three: speech to text, text to speech and the chat model"
+	if (b.Mode == config.BrainDirect || b.Mode == config.BrainAutomatic) && !b.DirectReady() {
+		return "Direct or Automatic fallback needs all three: speech to text, text to speech and the chat model"
 	}
 	if strings.ContainsAny(b.Voice+b.Language+b.Model, "\r\n") {
 		return "the voice, language and model are one line each"

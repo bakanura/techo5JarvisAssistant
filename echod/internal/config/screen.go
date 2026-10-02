@@ -96,8 +96,19 @@ type Palette struct {
 // DefaultScreenBrightness is comfortable on a desk in a lit room; the panel's own top is glaring.
 const DefaultScreenBrightness = 60
 
+// DefaultMusicStripSeconds is how long a fresh Jarvis Crown keeps the native full-screen now
+// playing page up before returning to the idle dashboard with the compact music strip over it.
+// Existing installations that predate this setting keep the old full-page behavior (store.go).
+const DefaultMusicStripSeconds = 30
+
 func defaultScreen() Screen {
-	return Screen{On: true, Brightness: DefaultScreenBrightness, Auto: true, Theme: DefaultTheme}
+	return Screen{
+		On:         true,
+		Brightness: DefaultScreenBrightness,
+		Auto:       true,
+		Theme:      DefaultTheme,
+		MusicStrip: DefaultMusicStripSeconds,
+	}
 }
 
 type ScreenWriter struct{ st *Store }

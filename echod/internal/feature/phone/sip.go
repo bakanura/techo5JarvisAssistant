@@ -28,7 +28,7 @@ type line struct {
 	acct Account
 	ua   *sipgo.UserAgent
 	dg   *diago.Diago
-	tran string // "tls" or "udp"
+	tran string // always "tls" on Jarvis Crown
 	port int
 }
 
@@ -55,9 +55,6 @@ func open(ctx context.Context, acct Account, incoming func(*diago.DialogServerSe
 	}
 
 	l := &line{acct: acct, tran: "tls", port: 5061}
-	if acct.Plain {
-		l.tran, l.port = "udp", 5060
-	}
 
 	opts := []sipgo.UserAgentOption{
 		// The From user is what the provider matches the account on, so it is the SIP username.
@@ -73,18 +70,16 @@ func open(ctx context.Context, acct Account, incoming func(*diago.DialogServerSe
 	l.ua = ua
 
 	tr := diago.Transport{Transport: l.tran, BindHost: host}
-	if !acct.Plain {
-		// Calls arrive over the connection the registration keeps open, so nothing ever connects to
-		// this listener; diago still starts one, and a TLS listener cannot start without a
-		// certificate. A throwaway one, never shown to anyone.
-		cert, err := throwawayCert()
-		if err != nil {
-			ua.Close()
-			return nil, err
-		}
-		tr.TLSConf = &tls.Config{Certificates: []tls.Certificate{cert}}
-		tr.MediaSRTP = 1 // SDES, which is what a provider offers alongside SIP over TLS
+	// Calls arrive over the connection the registration keeps open, so nothing ever connects to
+	// this listener; diago still starts one, and a TLS listener cannot start without a certificate.
+	// A throwaway one is sufficient because it is never presented to a remote caller.
+	cert, err := throwawayCert()
+	if err != nil {
+		ua.Close()
+		return nil, err
 	}
+	tr.TLSConf = &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}
+	tr.MediaSRTP = 1 // SDES, which is what the supported provider path offers alongside SIP over TLS
 
 	quiet := slog.New(slog.NewTextHandler(slogWriter{}, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	l.dg = diago.NewDiago(ua, diago.WithTransport(tr), diago.WithLogger(quiet))
@@ -100,9 +95,7 @@ func (l *line) close() { l.ua.Close() }
 func (l *line) uri(user string) (sip.Uri, error) {
 	var u sip.Uri
 	s := fmt.Sprintf("sip:%s@%s:%d", user, l.acct.Server, l.port)
-	if l.tran != "udp" {
-		s += ";transport=" + l.tran
-	}
+	s += ";transport=" + l.tran
 	err := sip.ParseUri(s, &u)
 	return u, err
 }

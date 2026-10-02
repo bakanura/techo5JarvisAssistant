@@ -33,6 +33,9 @@ var minuteWords = map[string]bool{"minute": true, "minutes": true, "min": true, 
 // with at most one length ("ten minutes", "5 minutes", "half an hour"), so "snooze my phone" or "set
 // a timer for ten minutes" are not taken for it. The length is not held to the device's limits here.
 func SnoozeAsked(text string) (minutes int, ok bool) {
+	if minutes, ok := germanSnoozeAsked(text); ok {
+		return minutes, true
+	}
 	words := strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
 	})
@@ -73,6 +76,60 @@ func SnoozeAsked(text string) (minutes int, ok bool) {
 		minutes = number
 	}
 	return minutes, true
+}
+
+var germanSnoozeWords = map[string]bool{
+	"schlummern": true, "schlummere": true, "noch": true, "für": true, "bitte": true, "den": true,
+	"die": true, "das": true, "alarm": true, "timer": true, "weitere": true, "mehr": true, "minuten": true,
+	"minute": true, "eine": true, "einen": true, "halbe": true, "halb": true, "stunde": true,
+}
+
+var germanMinutes = map[string]int{
+	"eine": 1, "einen": 1, "eins": 1, "zwei": 2, "drei": 3, "vier": 4, "fünf": 5,
+	"sechs": 6, "sieben": 7, "acht": 8, "neun": 9, "zehn": 10, "fünfzehn": 15,
+	"zwanzig": 20, "dreißig": 30,
+}
+
+func germanSnoozeAsked(text string) (int, bool) {
+	words := strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	asked := false
+	for _, w := range words {
+		if w == "schlummern" || w == "schlummere" {
+			asked = true
+		}
+		if !germanSnoozeWords[w] {
+			if _, err := strconv.Atoi(w); err != nil {
+				if _, ok := germanMinutes[w]; !ok {
+					return 0, false
+				}
+			}
+		}
+	}
+	if !asked {
+		return 0, false
+	}
+	for i := 0; i+1 < len(words); i++ {
+		if (words[i] == "halbe" || words[i] == "halb") && words[i+1] == "stunde" {
+			return 30, true
+		}
+	}
+	for i, w := range words {
+		n := 0
+		if v, err := strconv.Atoi(w); err == nil {
+			n = v
+		} else {
+			n = germanMinutes[w]
+		}
+		if n <= 0 {
+			continue
+		}
+		if i+1 < len(words) && (words[i+1] == "minute" || words[i+1] == "minuten") {
+			return n, true
+		}
+	}
+	return 0, true // plain "Schlummern" uses the alarm's configured snooze length
 }
 
 // isNumber is whether w starts a number: digits or a number word.

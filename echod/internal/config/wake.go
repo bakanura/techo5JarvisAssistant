@@ -26,8 +26,9 @@ const (
 	// StopOff is a threshold no score can reach, which is how the word is turned off.
 	StopOff = 1.0
 
-	// Above the 0.5 the model is calibrated for, below where spoken attempts land.
-	DefaultStopThreshold = 0.7
+	// Jarvis Crown: the value proven on Crown gives a responsive local interruption without
+	// making ordinary room speech stop playback.
+	DefaultStopThreshold = 0.55
 )
 
 func defaultStop() Stop {
@@ -92,8 +93,11 @@ const (
 	DefaultMaxListen = 15
 	DefaultMaxThink  = 90
 
-	// Zero is no follow-up unless Home Assistant asks for one.
-	DefaultFollowUp = 0
+	// Jarvis Crown behaves like a conversational appliance: after a reply it listens silently for
+	// six seconds, for at most two automatic follow-up turns. Home Assistant may still explicitly
+	// request another turn regardless of that automatic limit.
+	DefaultFollowUp  = 6
+	DefaultFollowUps = 2
 
 	// Home Assistant paces itself to stay 384 ms ahead, so holding that much consumes the whole lead:
 	// measured, 384 gave 8 seams in a 13 second reply and 650 gave one.
@@ -103,19 +107,21 @@ const (
 // DefaultWakeWord is a slot nobody has set: switched off, and everything else ready for when it is.
 func DefaultWakeWord() WakeWord {
 	return WakeWord{
-		Threshold: DefaultThreshold,
-		Tone:      DefaultTone,
-		Effect:    DefaultEffect,
-		Delivery:  DefaultDelivery,
-		FollowUp:  DefaultFollowUp,
-		Buffer:    DefaultBuffer,
-		MaxListen: DefaultMaxListen,
-		MaxThink:  DefaultMaxThink,
+		Threshold:    DefaultThreshold,
+		Tone:         DefaultTone,
+		Effect:       DefaultEffect,
+		Delivery:     DefaultDelivery,
+		FollowUp:     DefaultFollowUp,
+		FollowUps:    DefaultFollowUps,
+		FollowUpTone: ToneNone,
+		Buffer:       DefaultBuffer,
+		MaxListen:    DefaultMaxListen,
+		MaxThink:     DefaultMaxThink,
 	}
 }
 
 // DefaultWakeID is the word a new device answers to; the model ships in the image.
-const DefaultWakeID = "alexa"
+const DefaultWakeID = "hey_jarvis"
 
 // defaultWords is the one slot a new device comes with.
 func defaultWords() []WakeWord {

@@ -29,7 +29,7 @@ func init() {
 
 // Slots is how many wake words Home Assistant offers at once, and so how many assistants there are to
 // configure. Its own UI stops at two.
-const Slots = 2
+const Slots = 1
 
 // Requested is a slot woken by hand rather than by hearing anything. What that means is the
 // conversation's to decide, so this only says which slot.

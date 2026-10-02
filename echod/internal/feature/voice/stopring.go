@@ -9,9 +9,13 @@ import (
 // alarm", "turn the timer off please". A sentence with any other word in it is something else and is
 // left to Home Assistant - "stop the music" is not about the alarm.
 var stopWords = map[string]bool{
-	"stop": true, "turn": true, "off": true, "it": true, "that": true, "the": true, "alarm": true,
-	"timer": true, "ringing": true, "please": true, "ok": true, "okay": true, "now": true, "shut": true,
-	"up": true,
+	"stop": true, "stopp": true, "turn": true, "off": true, "it": true, "that": true, "the": true,
+	"alarm": true, "timer": true, "ringing": true, "please": true, "ok": true, "okay": true, "now": true,
+	"shut": true, "up": true,
+	// German. Kept deliberately closed: an unrelated noun such as "Licht" makes the whole request
+	// fail this parser and leaves it to the assistant.
+	"mach": true, "mache": true, "den": true, "die": true, "das": true, "aus": true, "bitte": true,
+	"jetzt": true, "klingeln": true,
 }
 
 // stopsRing reports whether a transcript asks for the ring to stop: only the words above, and either
@@ -25,7 +29,7 @@ func stopsRing(text string) bool {
 		if !stopWords[w] {
 			return false
 		}
-		if w == "stop" || w == "off" {
+		if w == "stop" || w == "stopp" || w == "off" || w == "aus" {
 			asks = true
 		}
 	}

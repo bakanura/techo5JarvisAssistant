@@ -52,10 +52,6 @@ const (
 	// maxText is as much as an announcement carries: a line, not a letter.
 	maxText = 160
 
-	// header is where an older device puts the house word itself. Nothing here sends it any more
-	// (auth.go signs instead), but one that has not been updated yet is still heard.
-	header = "X-Techo5-House"
-
 	// chimeLevel is loud enough to fetch somebody from the next chair, not from another room: an
 	// announcement is about to say something, and the words are the point.
 	chimeLevel = 0.4
@@ -183,7 +179,7 @@ func (f *Feature) receive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := receiveNow()
-	legacy, err := verify(r, config.Get().Home.HouseWord, raw, now)
+	_, err = verify(r, config.Get().Home.HouseWord, raw, now)
 	if errors.Is(err, errSkew) {
 		slog.Info("announcement signed by another clock: sending ours back", "from", r.RemoteAddr)
 		w.Header().Set(timeHeader, strconv.FormatInt(now.Unix(), 10))
@@ -194,9 +190,6 @@ func (f *Feature) receive(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("announcement refused", "from", r.RemoteAddr, "err", err)
 		http.Error(w, "not this house", http.StatusForbidden)
 		return
-	}
-	if legacy {
-		noteLegacy(r)
 	}
 	r.Body = io.NopCloser(bytes.NewReader(raw))
 	m, err := decode(r)
@@ -236,7 +229,7 @@ func (f *Feature) show(m Message) {
 
 	f.Arrived.Emit(m)
 
-	quiet := config.Quiet()
+	quiet := announcementQuiet()
 	slog.Info("announcement", "from", m.From, "words", m.Text != "", "seconds", seconds(m.Voice), "quiet", quiet)
 	f.Changed.Emit(struct{}{})
 
@@ -247,6 +240,8 @@ func (f *Feature) show(m Message) {
 	}
 	safe.Go("announcement", func() { f.sound(m) })
 }
+
+func announcementQuiet() bool { return config.Quiet() || config.Get().Home.DoNotDisturb }
 
 // sound is the chime and then the voice, under one claim on the speaker so that stopping an
 // announcement stops all of it, and so that whatever was playing is put back afterwards.

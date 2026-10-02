@@ -59,6 +59,10 @@ func (m DashboardMode) Label() string {
 	return "Off"
 }
 
+func defaultDashboard() Dashboard {
+	return Dashboard{Mode: DashboardStreamed, Path: "jarvis-display", Idle: true, Kiosk: true}
+}
+
 type DashboardWriter struct{ st *Store }
 
 func (w DashboardWriter) Mode(v DashboardMode) error {

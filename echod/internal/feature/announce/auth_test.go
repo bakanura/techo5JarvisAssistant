@@ -43,7 +43,7 @@ func TestAnnouncementsAreSigned(t *testing.T) {
 	if _, err := verify(good, "bluebird", body, now); err == nil {
 		t.Error("the same announcement was taken twice: a replay")
 	}
-	if good.Header.Get(header) != "" {
+	if good.Header.Get("X-Techo5-House") != "" {
 		t.Error("a signed announcement still carries the house word")
 	}
 
@@ -62,17 +62,13 @@ func TestAnnouncementsAreSigned(t *testing.T) {
 	}
 }
 
-// Nothing signs with the word any more, but an older device that still sends it is heard while the
-// house updates; with the wrong word it is not.
-func TestAnOlderDeviceIsStillHeard(t *testing.T) {
+// Jarvis Crown never accepts the old plaintext house-word header: that same secret also protects
+// intercom, so exposing it on the wire for compatibility would weaken both services.
+func TestPlaintextHouseWordIsRejected(t *testing.T) {
 	r := httptest.NewRequest(http.MethodPost, "/announce", nil)
-	r.Header.Set(header, "bluebird")
-	if legacy, err := verify(r, "bluebird", nil, time.Now()); err != nil || !legacy {
-		t.Errorf("an older device's announcement: legacy=%v err=%v", legacy, err)
-	}
-	r.Header.Set(header, "anotherword")
+	r.Header.Set("X-Techo5-House", "bluebird")
 	if _, err := verify(r, "bluebird", nil, time.Now()); err == nil {
-		t.Error("an older device with the wrong word was taken")
+		t.Error("an announcement carrying the plaintext house word was taken")
 	}
 }
 

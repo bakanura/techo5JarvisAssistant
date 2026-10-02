@@ -47,7 +47,7 @@ func parseContacts(s string) ([]Contact, error) {
 			continue
 		}
 		name, number, ok := strings.Cut(part, "=")
-		name, number = strings.TrimSpace(name), dialable(number)
+		name, number = safeCallerText(name), dialable(number)
 		if !ok || name == "" || number == "" {
 			return nil, fmt.Errorf("phone: %q is not name=number", part)
 		}

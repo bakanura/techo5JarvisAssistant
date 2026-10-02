@@ -36,13 +36,15 @@ type BrainMode string
 
 const (
 	BrainHomeAssistant BrainMode = ""
+	BrainAutomatic     BrainMode = "automatic"
 	BrainDirect        BrainMode = "direct"
 )
 
-// Direct is whether turns go to the direct pipeline, and it is set up enough to run one.
-func (b Brain) Direct() bool {
-	return b.Mode == BrainDirect && b.STT != "" && b.TTS != "" && b.LLM != ""
-}
+// DirectReady reports whether the direct pipeline has the minimum services needed for a turn.
+func (b Brain) DirectReady() bool { return b.STT != "" && b.TTS != "" && b.LLM != "" }
+
+// Direct is whether explicit Direct mode is selected and ready.
+func (b Brain) Direct() bool { return b.Mode == BrainDirect && b.DirectReady() }
 
 type BrainWriter struct{ st *Store }
 

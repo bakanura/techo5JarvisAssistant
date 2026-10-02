@@ -3,7 +3,8 @@
 // microphones and the speaker.
 //
 // The login comes from Home Assistant only (the phone_account action), over its encrypted link, and
-// is kept in its own owner-only file. Calls go over TLS with SRTP unless the account says otherwise.
+// is kept in its own owner-only file. Calls go over TLS with SRTP; Jarvis Crown has no plaintext
+// signalling/media compatibility mode.
 //
 // To Home Assistant: a status sensor, the other party, answer and hang up buttons, the phone_call,
 // phone_answer and phone_hangup actions, and an esphome.techo5_phone event for each thing a call does,
@@ -248,7 +249,7 @@ func (p *Phone) set(f func(s *State)) {
 		p.callLED.Clear()
 	case Dialing, Talking:
 		p.ringLED.Clear()
-		p.callLED.Play(led.EffectPulse, callColor)
+		p.callLED.Play(led.EffectPulse, activeCallColor(st))
 	default:
 		p.ringLED.Clear()
 		p.callLED.Clear()
@@ -257,6 +258,14 @@ func (p *Phone) set(f func(s *State)) {
 }
 
 var callColor = led.Color{R: 0x00, G: 0xC8, B: 0x53}
+var dropInColor = led.Color{R: 0xFF, G: 0x8C, B: 0x00}
+
+func activeCallColor(st State) led.Color {
+	if st.DropIn {
+		return dropInColor
+	}
+	return callColor
+}
 
 func statusText(s State) string {
 	switch {
@@ -370,7 +379,7 @@ func (p *Phone) serve(ctx context.Context, acct Account) error {
 	first := true
 	err = l.register(ctx, func() {
 		if first {
-			slog.Info("phone: signed in", "server", acct.Server, "secure", !acct.Plain)
+			slog.Info("phone: signed in", "server", acct.Server, "secure", true)
 			first = false
 		}
 		p.set(func(s *State) { s.Registered, s.Problem = true, "" })
@@ -418,7 +427,7 @@ func (p *Phone) Call(number string) error {
 		return err
 	}
 	p.set(func(*State) {}) // tell Home Assistant and the lights
-	slog.Info("phone: calling", "number", number)
+	slog.Info("phone: calling")
 	fire("dialing", p.State())
 
 	safe.Go("phone: call", func() {
@@ -434,7 +443,7 @@ func (p *Phone) Call(number string) error {
 			if ctx.Err() != nil {
 				reason = "cancelled" // as Home Assistant receives it; automations match on it
 			}
-			slog.Info("phone: call not answered", "number", number, "err", err)
+			slog.Info("phone: call not answered", "err", err)
 			fire("not_answered", p.State(), "reason", reason)
 			p.set(func(s *State) { s.Phase, s.Peer = Idle, "" })
 			return
@@ -448,7 +457,7 @@ func (p *Phone) Call(number string) error {
 
 // incoming is a call offered to the device.
 func (p *Phone) incoming(d *diago.DialogServerSession) {
-	caller := callerOf(d.InviteRequest)
+	caller := callerOf(d.InviteRequest, p.Contacts())
 	p.mu.Lock()
 	busy := p.state.Phase != Idle
 	answered := make(chan struct{})
@@ -461,7 +470,7 @@ func (p *Phone) incoming(d *diago.DialogServerSession) {
 	defer cancel()
 
 	if busy {
-		slog.Info("phone: call refused, already on one", "from", caller)
+		slog.Info("phone: call refused, already on one")
 		_ = d.Respond(sip.StatusBusyHere, "Busy Here", nil)
 		return
 	}
@@ -469,7 +478,7 @@ func (p *Phone) incoming(d *diago.DialogServerSession) {
 		slog.Warn("phone: ringing", "err", err)
 	}
 	p.set(func(*State) {})
-	slog.Info("phone: ringing", "from", caller)
+	slog.Info("phone: ringing")
 	fire("ringing", p.State())
 
 	rctx, stopRing := context.WithCancel(ctx)
@@ -495,13 +504,13 @@ func (p *Phone) incoming(d *diago.DialogServerSession) {
 		p.set(func(s *State) { s.Phase, s.Peer = Idle, "" })
 	case <-d.Context().Done():
 		stopRing()
-		slog.Info("phone: missed call", "from", caller)
+		slog.Info("phone: missed call")
 		fire("missed", p.State())
 		p.set(func(s *State) { s.Phase, s.Peer = Idle, "" })
 	case <-timeout.C:
 		stopRing()
 		_ = d.Respond(sip.StatusTemporarilyUnavailable, "No Answer", nil)
-		slog.Info("phone: missed call", "from", caller)
+		slog.Info("phone: missed call")
 		fire("missed", p.State())
 		p.set(func(s *State) { s.Phase, s.Peer = Idle, "" })
 	}
@@ -512,7 +521,7 @@ func (p *Phone) incoming(d *diago.DialogServerSession) {
 func (p *Phone) talk(ctx, callCtx context.Context, audio func(context.Context) error, hangup func(context.Context) error) {
 	p.set(func(s *State) { s.Phase = Talking })
 	fire("answered", p.State())
-	slog.Info("phone: call up", "peer", p.State().Peer)
+	slog.Info("phone: call up")
 
 	// Anything said before the call was up is not for this call.
 	for len(p.say) > 0 {
@@ -542,7 +551,7 @@ func (p *Phone) talk(ctx, callCtx context.Context, audio func(context.Context) e
 		hcancel()
 	}
 	st := p.State()
-	slog.Info("phone: call ended", "peer", st.Peer, "by", who, "after", time.Since(st.Since).Round(time.Second))
+	slog.Info("phone: call ended", "by", who, "after", time.Since(st.Since).Round(time.Second))
 	fire("ended", st, "by", who, "seconds", fmt.Sprint(int(time.Since(st.Since).Seconds())))
 	p.set(func(s *State) { s.Phase, s.Peer = Idle, "" })
 }
@@ -614,12 +623,20 @@ func (p *Phone) Actions() []*esphome.Action {
 		{
 			Name: "phone_call",
 			Args: []esphome.Arg{{Name: "number", Type: esphome.ArgString}},
-			Run:  func(c esphome.Call) (any, error) { return nil, p.Call(c.String("number")) },
+			Run: func(c esphome.Call) (any, error) {
+				if !encrypted() {
+					return nil, errors.New("phone: set an API encryption key first; the number would otherwise cross the network in the clear")
+				}
+				return nil, p.Call(c.String("number"))
+			},
 		},
 		{
 			Name: "phone_contacts",
 			Args: []esphome.Arg{{Name: "contacts", Type: esphome.ArgString}},
 			Run: func(c esphome.Call) (any, error) {
+				if !encrypted() {
+					return nil, errors.New("phone: set an API encryption key first; contacts would otherwise cross the network in the clear")
+				}
 				list, err := parseContacts(c.String("contacts"))
 				if err != nil {
 					return nil, err
@@ -654,8 +671,11 @@ func dialable(number string) string {
 	return b.String()
 }
 
-// callerOf is who is calling: the display name if the network passed one on, and the number.
-func callerOf(req *sip.Request) string {
+const callerTextMost = 80
+
+// callerOf is who is calling. A local contact wins over untrusted provider display text; otherwise
+// the provider text is stripped to printable characters and bounded before it reaches screen/state.
+func callerOf(req *sip.Request, contacts []Contact) string {
 	if req == nil {
 		return "Unknown"
 	}
@@ -663,17 +683,36 @@ func callerOf(req *sip.Request) string {
 	if from == nil {
 		return "Unknown"
 	}
-	name := strings.Trim(from.DisplayName, `" `)
-	number := from.Address.User
+	name := safeCallerText(strings.Trim(from.DisplayName, `" `))
+	number := dialable(from.Address.User)
+	for _, contact := range contacts {
+		if number != "" && dialable(contact.Number) == number {
+			return safeCallerText(contact.Name)
+		}
+	}
 	switch {
 	case name != "" && number != "" && name != number:
-		return name + " (" + number + ")"
+		return safeCallerText(name + " (" + number + ")")
 	case number != "":
-		return number
+		return safeCallerText(number)
 	case name != "":
 		return name
 	}
 	return "Unknown"
+}
+
+func safeCallerText(s string) string {
+	s = strings.Map(func(r rune) rune {
+		if !unicode.IsPrint(r) {
+			return -1
+		}
+		return r
+	}, strings.TrimSpace(s))
+	runes := []rune(s)
+	if len(runes) > callerTextMost {
+		s = string(runes[:callerTextMost])
+	}
+	return strings.TrimSpace(s)
 }
 
 // encrypted reports whether the Home Assistant link has a key of its own rather than the reserved

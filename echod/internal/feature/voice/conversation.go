@@ -357,7 +357,7 @@ func (c *conversation) handle(e event) {
 		}
 
 	case evHeard:
-		if pageAsked(e.text) {
+		if c.pageAsked(e.text) {
 			c.lookHere = true
 		}
 		if e.text != "" {
@@ -612,7 +612,7 @@ func (c *conversation) start(n nextTurn) {
 	be := c.be
 	c.send("start", func() error { return be.Start(phrase) })
 
-	c.shown = State{}
+	c.shown = State{Backend: c.be.Name()}
 	c.enter(phaseListening)
 	c.turn.Listening()
 	c.reply = reply{}
@@ -1091,9 +1091,15 @@ func activeWakeWords(models []wake.Model, slots int) []string {
 	// whatever this device does have — a device carrying one model somebody copied on should listen for
 	// that one rather than for nothing. "No wake word" chosen on purpose stays chosen.
 	if len(active) == 0 && !saved.NoneChosen {
-		if m, ok := wake.Find(models, wake.DefaultModel); ok {
-			active = []string{m.ID}
-		} else if len(models) > 0 {
+		// Jarvis Crown deliberately prefers maintained local models in this order. Alexa remains
+		// only a recovery model; exactly one detector is armed at a time.
+		for _, id := range []string{"hey_jarvis", "okay_nabu", "alexa"} {
+			if m, ok := wake.Find(models, id); ok {
+				active = []string{m.ID}
+				break
+			}
+		}
+		if len(active) == 0 && len(models) > 0 {
 			active = []string{models[0].ID}
 		}
 	}
@@ -1103,10 +1109,11 @@ func activeWakeWords(models []wake.Model, slots int) []string {
 // pageAsked is whether what was heard puts something on the screen that the answer should be left on
 // rather than covered by listening again: the clock asked back ("go home"), a camera, or - where the
 // screen opens the forecast on the words, which it does for Home Assistant's answers - the weather.
-func pageAsked(heard string) bool {
+func (c *conversation) pageAsked(heard string) bool {
 	lang := config.Get().Screen.Language
 	if triggers.AboutGoingHome(heard, lang) || triggers.AboutCamera(heard, lang) {
 		return true
 	}
-	return !config.Get().Brain.Direct() && (triggers.AboutWeather(heard, lang) || triggers.AboutRadar(heard, lang))
+	_, direct := c.be.(*direct)
+	return !direct && (triggers.AboutWeather(heard, lang) || triggers.AboutRadar(heard, lang))
 }

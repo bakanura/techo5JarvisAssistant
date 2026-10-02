@@ -66,6 +66,7 @@ type Feature struct {
 	stream    *stream  // while the page is up in streamed mode
 	drawn     *session // while the page is up drawn, for drawnPath
 	drawnPath string
+	cold      bool // next streamed hello asks Dashcast for a brand-new browser tab
 
 	// When the page last asked for each: a session nobody has asked for in a while is closed, however
 	// the page went away - a turn, the screen going dark, the night.
@@ -346,6 +347,22 @@ func (f *Feature) Idle() bool {
 
 func (f *Feature) Actions() []*esphome.Action {
 	return []*esphome.Action{
+		{
+			Name: "dashboard_reload",
+			Run: func(esphome.Call) (any, error) {
+				f.mu.Lock()
+				f.cold = true
+				s := f.stream
+				f.stream = nil
+				f.mu.Unlock()
+				if s != nil {
+					s.close()
+				}
+				f.Changed.Emit(struct{}{})
+				slog.Info("dashboard: cold reload requested")
+				return nil, nil
+			},
+		},
 		{
 			// Where the dashcast server is, for the streamed mode. Here rather than a text box
 			// because the key is a secret, and an action's arguments are not kept as state.
