@@ -91,6 +91,14 @@ func (w SpeakerWriter) Treble(v float64) error {
 	return w.st.Update(func(c *Config) { c.Speaker.Treble = v })
 }
 
+// Tone stores both listener tone shelves atomically so callers never expose a half-updated EQ state.
+func (w SpeakerWriter) Tone(bass, treble float64) error {
+	return w.st.Update(func(c *Config) {
+		c.Speaker.Bass = bass
+		c.Speaker.Treble = treble
+	})
+}
+
 func (w SpeakerWriter) ClassicSounds(v bool) error {
 	return w.st.Update(func(c *Config) { c.Speaker.ClassicSounds = v })
 }

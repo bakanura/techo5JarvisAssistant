@@ -16,6 +16,7 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/feature/phone"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/ring"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/timer"
+	"github.com/HuskerMinion/techo5/echod/internal/lib/asp"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/llm"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/openmeteo"
 )
@@ -45,6 +46,9 @@ func object(props map[string]any, required ...string) map[string]any {
 
 func str(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
 func num(desc string) map[string]any { return map[string]any{"type": "number", "description": desc} }
+func boolean(desc string) map[string]any {
+	return map[string]any{"type": "boolean", "description": desc}
+}
 
 func argString(args map[string]any, k string) string {
 	v, _ := args[k].(string)
@@ -248,6 +252,76 @@ func deviceTools() []tool {
 				}
 				media.Get().Set(int(math.Round(v)))
 				return fmt.Sprintf("volume is %d of %d", media.Get().Volume(), media.VolumeSteps), nil
+			}},
+
+		{llm.Tool{Name: "set_speaker_eq", Description: "Turn this device's tuned speaker EQ on or off. Bass and treble controls are audible only while it is on.",
+			Parameters: object(map[string]any{"enabled": boolean("True to enable the tuned speaker EQ, false to disable it.")}, "enabled")},
+			func(a map[string]any) (string, error) {
+				want, ok := a["enabled"].(bool)
+				if !ok {
+					return "", errors.New("enabled is a boolean")
+				}
+				using := media.Get().SetEQ(want)
+				return fmt.Sprintf("speaker EQ is %s", map[bool]string{true: "on", false: "off"}[using]), nil
+			}},
+
+		{llm.Tool{Name: "set_equalizer", Description: "Set this device's bass and/or treble tone in dB. Use this for commands like 'Bass auf plus 3 dB' or 'Höhen auf minus 2'. Values are clamped to minus 6 through plus 6 dB. This enables Speaker EQ so the change is audible.",
+			Parameters: object(map[string]any{
+				"bass_db":   num("Absolute bass shelf in dB, -6 to +6. Omit to leave bass unchanged."),
+				"treble_db": num("Absolute treble/highs shelf in dB, -6 to +6. Omit to leave treble unchanged."),
+			})},
+			func(a map[string]any) (string, error) {
+				t := media.Get().Tone()
+				bass, hasBass := argNumber(a, "bass_db")
+				treble, hasTreble := argNumber(a, "treble_db")
+				if !hasBass && !hasTreble {
+					return "", errors.New("give bass_db or treble_db")
+				}
+				if hasBass {
+					t.Bass = bass
+				}
+				if hasTreble {
+					t.Treble = treble
+				}
+				if !media.Get().SetEQ(true) {
+					return "", errors.New("speaker EQ is unavailable on this device")
+				}
+				got, err := media.Get().SetTone(t)
+				if err != nil {
+					return "", err
+				}
+				return fmt.Sprintf("bass is %+.0f dB and treble is %+.0f dB", got.Bass, got.Treble), nil
+			}},
+
+		{llm.Tool{Name: "adjust_equalizer", Description: "Raise or lower this device's bass and/or treble. Use for relative commands such as 'more bass', 'mehr Bass', 'less treble' or 'weniger Höhen'. A vague more/less means one dB. Positive is more, negative is less. The final values are clamped to -6 through +6 dB and Speaker EQ is enabled.",
+			Parameters: object(map[string]any{
+				"bass_delta_db":   num("Bass change in dB. Use +1 for vague more bass and -1 for vague less bass."),
+				"treble_delta_db": num("Treble/highs change in dB. Use +1 for vague more highs and -1 for vague less highs."),
+			})},
+			func(a map[string]any) (string, error) {
+				bass, hasBass := argNumber(a, "bass_delta_db")
+				treble, hasTreble := argNumber(a, "treble_delta_db")
+				if !hasBass && !hasTreble {
+					return "", errors.New("give bass_delta_db or treble_delta_db")
+				}
+				if !media.Get().SetEQ(true) {
+					return "", errors.New("speaker EQ is unavailable on this device")
+				}
+				got, err := media.Get().AdjustTone(asp.Tone{Bass: bass, Treble: treble})
+				if err != nil {
+					return "", err
+				}
+				return fmt.Sprintf("bass is %+.0f dB and treble is %+.0f dB", got.Bass, got.Treble), nil
+			}},
+
+		{llm.Tool{Name: "reset_equalizer", Description: "Reset this device's listener bass and treble controls to the vendor-tuned flat setting, zero dB for both shelves.",
+			Parameters: object(map[string]any{})},
+			func(map[string]any) (string, error) {
+				got, err := media.Get().SetTone(asp.Tone{})
+				if err != nil {
+					return "", err
+				}
+				return fmt.Sprintf("equalizer reset; bass is %+.0f dB and treble is %+.0f dB", got.Bass, got.Treble), nil
 			}},
 
 		// Not "call": llama.cpp's grammar for a tool call has a rule by that name, and a tool called the

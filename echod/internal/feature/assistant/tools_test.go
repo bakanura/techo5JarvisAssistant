@@ -74,3 +74,22 @@ func TestGoingHomeIsHandledHere(t *testing.T) {
 		}
 	}
 }
+
+func TestDeviceToolsExposeEqualizer(t *testing.T) {
+	want := map[string]bool{
+		"set_speaker_eq":   false,
+		"set_equalizer":    false,
+		"adjust_equalizer": false,
+		"reset_equalizer":  false,
+	}
+	for _, tool := range deviceTools() {
+		if _, ok := want[tool.Name]; ok {
+			want[tool.Name] = true
+		}
+	}
+	for name, found := range want {
+		if !found {
+			t.Errorf("Direct Brain does not expose %s", name)
+		}
+	}
+}

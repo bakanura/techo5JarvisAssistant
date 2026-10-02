@@ -283,12 +283,7 @@ func build() *Player {
 	// tomorrow, when its coefficients arrive or a release learns its tuning, and writing the settled
 	// false back would leave it untuned for ever with nobody having chosen that.
 	p.asp.OnCommand = func(want bool) {
-		settled := speaker.Get().SetASP(want)
-		p.asp.Set(settled)
-		if err := config.Set().Speaker().ASP(want); err != nil {
-			slog.Error("saving a setting failed", "setting", p.asp.ObjectID, "err", err)
-		}
-		slog.Info("setting changed", "setting", p.asp.ObjectID, "using", settled, "asked", want)
+		p.SetEQ(want)
 	}
 
 	// Nothing to apply: the stream reads the setting when a turn begins, so changing it takes effect on
@@ -329,18 +324,18 @@ func build() *Player {
 	// The tone control is the tuning's own stage, so what it is set to is kept whether or not the
 	// tuning is on: a device that cannot tune today still remembers what somebody asked for.
 	p.bass.OnCommand = func(v float32) {
-		p.bass.Set(v)
-		if err := config.Set().Speaker().Bass(float64(v)); err != nil {
+		t := p.Tone()
+		t.Bass = float64(v)
+		if _, err := p.SetTone(t); err != nil {
 			slog.Error("saving a setting failed", "setting", p.bass.ObjectID, "err", err)
 		}
-		p.applyTone()
 	}
 	p.treble.OnCommand = func(v float32) {
-		p.treble.Set(v)
-		if err := config.Set().Speaker().Treble(float64(v)); err != nil {
+		t := p.Tone()
+		t.Treble = float64(v)
+		if _, err := p.SetTone(t); err != nil {
 			slog.Error("saving a setting failed", "setting", p.treble.ObjectID, "err", err)
 		}
-		p.applyTone()
 	}
 	p.stream = NewStream(speaker.Sound(), speaker.Get(), p.refresh, p.OnEnd.Emit)
 
@@ -433,10 +428,56 @@ func (p *Player) Restore(c config.Config) {
 	slog.Info("restored", "what", "tone", "bass", c.Speaker.Bass, "treble", c.Speaker.Treble)
 }
 
+// Tone is the persisted listener EQ state in dB.
+func (p *Player) Tone() asp.Tone {
+	c := config.Get().Speaker
+	return asp.Tone{Bass: c.Bass, Treble: c.Treble}
+}
+
+func clampTone(t asp.Tone) asp.Tone {
+	t.Bass = math.Max(-asp.ToneRange, math.Min(asp.ToneRange, t.Bass))
+	t.Treble = math.Max(-asp.ToneRange, math.Min(asp.ToneRange, t.Treble))
+	return t
+}
+
+// SetTone is the one product path for bass/treble changes, whether they came from Home Assistant,
+// the touchscreen or Direct Brain. It persists both shelves atomically, updates the exported entities
+// and hands the same values to the running DSP.
+func (p *Player) SetTone(t asp.Tone) (asp.Tone, error) {
+	t = clampTone(t)
+	if err := config.Set().Speaker().Tone(t.Bass, t.Treble); err != nil {
+		return p.Tone(), err
+	}
+	p.bass.Set(float32(t.Bass))
+	p.treble.Set(float32(t.Treble))
+	speaker.Get().SetTone(t)
+	return t, nil
+}
+
+// AdjustTone changes the current shelves by the requested dB and clamps them to the same safe range
+// exposed by the HA entities.
+func (p *Player) AdjustTone(delta asp.Tone) (asp.Tone, error) {
+	t := p.Tone()
+	t.Bass += delta.Bass
+	t.Treble += delta.Treble
+	return p.SetTone(t)
+}
+
+// SetEQ owns the driver's vendor tuning switch. Bass/treble are a stage of this chain, so Direct
+// Brain enables it before applying an audible tone request.
+func (p *Player) SetEQ(want bool) bool {
+	settled := speaker.Get().SetASP(want)
+	p.asp.Set(settled)
+	if err := config.Set().Speaker().ASP(want); err != nil {
+		slog.Error("saving a setting failed", "setting", p.asp.ObjectID, "err", err)
+	}
+	slog.Info("setting changed", "setting", p.asp.ObjectID, "using", settled, "asked", want)
+	return settled
+}
+
 // applyTone hands the speaker what the two numbers say.
 func (p *Player) applyTone() {
-	c := config.Get().Speaker
-	speaker.Get().SetTone(asp.Tone{Bass: c.Bass, Treble: c.Treble})
+	speaker.Get().SetTone(p.Tone())
 }
 
 // onTurns is what music may do about a turn.
