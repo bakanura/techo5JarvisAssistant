@@ -55,6 +55,7 @@ type musicPlaybackState struct {
 	view     MusicPlaybackView
 	queueAt  time.Time
 	queueFor string
+	picture  string
 }
 
 var musicPlayback musicPlaybackState

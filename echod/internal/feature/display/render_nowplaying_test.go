@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"image"
 	"testing"
+
+	"github.com/HuskerMinion/techo5/echod/internal/feature/home"
 )
 
 // The three transport buttons are drawn from the panel's own size, and their rectangles are the tap
@@ -42,6 +44,36 @@ func TestTheTransportButtonsFitTheirPanel(t *testing.T) {
 			}
 			if footer := panel.Y - r.s(26); next.Max.Y > footer {
 				t.Errorf("the buttons reach %d, into the footer at %d", next.Max.Y, footer)
+			}
+		})
+	}
+}
+
+func TestMusicRouteLabelReportsTheResolvedDestination(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		view home.MusicPlaybackView
+		want string
+	}{
+		{
+			name: "Jarvis fallback endpoint",
+			view: home.MusicPlaybackView{Entity: "media_player.living_room_jarvis", Output: "Living Room Jarvis"},
+			want: "Playing on  Living Room Jarvis",
+		},
+		{
+			name: "single resolved room",
+			view: home.MusicPlaybackView{Entity: "media_player.living_room_jarvis", Output: "Living Room Jarvis", Rooms: []string{"living"}},
+			want: "Playing in  Living",
+		},
+		{
+			name: "named group",
+			view: home.MusicPlaybackView{Route: "wohnung", Rooms: []string{"living", "bedroom"}},
+			want: "Playing in  Wohnung",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := musicRouteLabel(tc.view); got != tc.want {
+				t.Fatalf("musicRouteLabel() = %q, want %q", got, tc.want)
 			}
 		})
 	}

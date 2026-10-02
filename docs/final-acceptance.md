@@ -12,6 +12,13 @@ not a claim that the product is accepted today.
 - [ ] J36–J40 known deployment regressions are closed.
 - [ ] J41 current-upstream anti-brick review is complete for Crown and Checkers.
 - [ ] J42–J45 Music Assistant failover/group/full-screen music acceptance is complete.
+  - [ ] preferred speaker offline at Play start routes to that room's Jarvis Show;
+  - [ ] preferred speaker lost mid-playback transfers the active MA queue to the Jarvis Show;
+  - [ ] recovered preferred speaker does not pull a failed-over session back mid-song;
+  - [ ] next explicit Play re-resolves and returns to a healthy preferred speaker;
+  - [ ] a room with no preferred speaker uses its Jarvis Show as primary;
+  - [ ] named/whole-home groups substitute unavailable room primaries with their Jarvis fallbacks;
+  - [ ] Now Playing reports the real resolved endpoint/room/group, never an unavailable preferred speaker.
 - [ ] The release manifest is signed by the Jarvis Show release key and tamper verification fails as expected.
 - [ ] Rootfs contains `jarvis-show-v1`, version and both supported-board markers.
 - [ ] Published release contains only intended Show artifacts; no upstream/legacy publisher path was used.
