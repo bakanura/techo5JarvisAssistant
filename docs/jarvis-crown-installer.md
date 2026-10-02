@@ -1,26 +1,27 @@
 # Jarvis Crown v1 installer
 
-The installer is intentionally split into gates.  A later phase is not allowed
-to run unless every earlier phase completed successfully.
+The Jarvis Crown installer is deliberately built in fail-closed stages.  At J17 only the host-only
+preflight exists.  It **does not invoke adb or fastboot at all**, so running it cannot change an Echo.
 
-## Host preflight
+```sh
+python3 tools/jarvis_crown.py preflight \
+  --amonet /path/to/amonet-crown-v2.0.1/amonet \
+  --lineage-zip /path/to/lineage-18.1-...-UNOFFICIAL-crown.zip
+```
 
-`python3 tools/jarvis-crown.py preflight`
+The preflight requires:
 
-The preflight is host-only.  It does **not** enumerate, query, reboot, flash, or
-otherwise touch an Echo Show.  It verifies:
+- a Linux host;
+- Python 3.10 or newer;
+- `adb`, `fastboot`, `git`, `bash`, and GNU `timeout` in `PATH`;
+- usable USB-serial permissions (`dialout`/`uucp`, unless running as root);
+- ModemManager not running;
+- at least 8 GiB free on each distinct filesystem used for installer work/backups, with a writable parent path;
+- a complete local Amonet package whose `device.prop` says `DEVICE=crown`;
+- when a LineageOS ZIP is supplied, metadata whose `pre-device` is exactly `crown`.
 
-- Linux host and Python 3.10 or newer;
-- `adb` and `fastboot` availability;
-- mandatory USB-serial access (`dialout`/`uucp` for an unprivileged Linux user);
-- ModemManager is not active;
-- the Jarvis Crown source tree is present;
-- the locally supplied Amonet Crown bundle is present;
-- work and backup directories are writable;
-- at least 8 GiB free in the work filesystem.
+The Amonet directory is deliberately a local input rather than a redistributable Jarvis Crown asset;
+see the third-party asset policy.  Later installer stages must not weaken or bypass this preflight.
 
-Any FAIL stops the installer before device discovery.  Running as root is
-permitted for development but reported as WARN; the intended installation path
-is an unprivileged user with serial-device access.
-
-Device identification begins only in J18 and must remain fail-closed to CROWN.
+J18 adds the independent live-device `CROWN` gate.  Passing this host preflight therefore never means
+that a connected device is accepted for flashing.

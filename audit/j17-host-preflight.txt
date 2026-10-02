@@ -1,0 +1,10 @@
+J17 — Crown installer host preflight
+
+PASS: Linux/Python/tool/serial/ModemManager/disk/Amonet/Lineage host checks implemented.
+PASS: preflight does not invoke adb or fastboot; it only verifies executables are present.
+PASS: local Amonet must be structurally complete and device.prop must declare DEVICE=crown.
+PASS: optional Lineage ZIP is parsed host-side and must declare pre-device=crown.
+PASS: 8 GiB free-space floor and writable workspace/backup filesystem check.
+PASS: Python regression tests cover incomplete/wrong-board Amonet, wrong-board Lineage, missing fastboot, and low disk.
+PASS: live container rehearsal failed closed because adb/fastboot are absent and printed that no device command was executed.
+PASS: no rootfs/release tarball built and no device touched.
