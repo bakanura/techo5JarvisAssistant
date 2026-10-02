@@ -34,6 +34,7 @@ class PreflightTests(unittest.TestCase):
              mock.patch.object(preflight.sys, "version_info", (3, 13, 0)), \
              mock.patch.object(preflight.os, "geteuid", return_value=0), \
              mock.patch.object(preflight.shutil, "which", side_effect=which), \
+             mock.patch.object(preflight, "_modemmanager_active", return_value=False), \
              mock.patch.object(preflight.shutil, "disk_usage", return_value=mock.Mock(free=20 * 1024**3)):
             return preflight.run_preflight(
                 repo_root=repo,
