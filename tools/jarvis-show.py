@@ -9,7 +9,7 @@ import re
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from jarvis_crown.boards import profile_for_board  # noqa: E402
+from jarvis_crown.boards import profile_for_board, profile_for_product  # noqa: E402
 from jarvis_crown.device_gate import DeviceGateError, identify_show  # noqa: E402
 from jarvis_crown.flow import FlowError, InstallInputs, run_install_flow  # noqa: E402
 from jarvis_crown.preflight import preflight_ok, print_checks, run_preflight  # noqa: E402
@@ -21,7 +21,7 @@ SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="jarvis-show")
     parser.add_argument("command", choices=["preflight", "identify", "unlock", "install"], nargs="?", default="preflight")
-    parser.add_argument("--board", choices=("crown", "checkers"), required=True)
+    parser.add_argument("--board", choices=("crown", "checkers"), help="optional first-gen board cross-check; install/identify auto-detect by default")
     parser.add_argument("--amonet-dir", type=Path)
     parser.add_argument("--amonet-hashes", type=Path, help="trusted JSON SHA-256 map for a board whose Amonet bytes are not built-in")
     parser.add_argument("--twrp-sha256", help="trusted board-specific TWRP SHA-256 when not built-in")
@@ -65,14 +65,51 @@ def _validate_optional_sha(label: str, value: str | None) -> str | None:
     return normalized
 
 
+def _print_identity(identity, profile) -> None:
+    print(f"PASS: detected {profile.model}")
+    print(f"PASS: product={identity.product}")
+    print(f"PASS: fastboot serial={identity.serial}")
+    print(f"PASS: unlock_status={'true' if identity.unlocked else 'false'}")
+
+
+def _detect_profile(board: str | None):
+    identity = identify_show(expected_board=board)
+    profile = profile_for_product(identity.product)
+    _print_identity(identity, profile)
+    return identity, profile
+
+
 def main() -> int:
     args = parse_args()
-    profile = profile_for_board(args.board)
     root = Path(__file__).resolve().parents[1]
     project = root.parent
-    amonet = (args.amonet_dir or (project / "third_party" / profile.amonet_dir_name)).resolve()
     work = (args.work_dir or (project / "work")).resolve()
     backups = (args.backup_dir or (project / "backups")).resolve()
+
+    # Identity is always established with read-only fastboot queries before a live-device command
+    # chooses board-specific assets. --board, when supplied, is only a cross-check and can never make
+    # the installer treat a different product as that board.
+    if args.command == "identify":
+        try:
+            _detect_profile(args.board)
+        except DeviceGateError as exc:
+            print(f"FAIL: device identity gate: {exc}", file=sys.stderr)
+            return 2
+        return 0
+
+    # Offline preflight may still be requested for a known board. Without --board it auto-detects the
+    # attached first-generation Show, preserving the one-command installer experience.
+    identity = None
+    if args.board is not None and args.command == "preflight":
+        profile = profile_for_board(args.board)
+    else:
+        try:
+            identity, profile = _detect_profile(args.board)
+        except DeviceGateError as exc:
+            print(f"FAIL: device identity gate: {exc}", file=sys.stderr)
+            return 2
+
+    amonet = (args.amonet_dir or (project / "third_party" / profile.amonet_dir_name)).resolve()
 
     try:
         amonet_hashes = load_hash_manifest(args.amonet_hashes)
@@ -129,6 +166,7 @@ def main() -> int:
             wifi=args.wifi,
             wifi_passphrase_file=args.wifi_passphrase_file.resolve() if args.wifi_passphrase_file else None,
             ssh_key=args.ssh_key.resolve() if args.ssh_key else None,
+            expected_fastboot_serial=identity.serial if identity is not None else None,
         )
         try:
             result = run_install_flow(
@@ -153,22 +191,17 @@ def main() -> int:
     )
     print_checks(checks)
     if not preflight_ok(checks):
-        print("FAIL: host/input preflight failed; no device was queried or modified", file=sys.stderr)
+        print("FAIL: host/input preflight failed; no write was attempted", file=sys.stderr)
         return 1
     if args.command == "preflight":
-        print("PASS: host/input preflight complete; no device was queried or modified")
+        if identity is None:
+            print(f"PASS: offline {profile.model} host/input preflight complete; no device was queried or modified")
+        else:
+            print(f"PASS: auto-detected {profile.model} host/input preflight complete; no device was modified")
         return 0
 
-    try:
-        identity = identify_show(expected_board=profile.board)
-    except DeviceGateError as exc:
-        print(f"FAIL: {profile.board} identity gate: {exc}", file=sys.stderr)
-        return 2
-    print(f"PASS: product={identity.product}")
-    print(f"PASS: fastboot serial={identity.serial}")
-    print(f"PASS: unlock_status={'true' if identity.unlocked else 'false'}")
-    if args.command == "identify":
-        return 0
+    # unlock reaches here only after the live target was auto-detected above.
+    assert identity is not None
     if identity.unlocked:
         print(f"PASS: {profile.model} already unlocked; Amonet will not run")
         return 0

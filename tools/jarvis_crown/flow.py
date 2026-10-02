@@ -50,6 +50,7 @@ class InstallInputs:
     wifi: str | None = None
     wifi_passphrase_file: Path | None = None
     ssh_key: Path | None = None
+    expected_fastboot_serial: str | None = None
 
 
 @dataclass(frozen=True)
@@ -134,6 +135,11 @@ def run_install_flow(
 
     say("identify")
     identity = deps.identify(expected_board=profile.board)
+    if inputs.expected_fastboot_serial is not None and identity.serial != inputs.expected_fastboot_serial:
+        raise FlowError(
+            "fastboot device changed after auto-detection: "
+            f"expected {inputs.expected_fastboot_serial}, found {identity.serial}; stopping before writes"
+        )
 
     if not identity.unlocked:
         say("unlock")

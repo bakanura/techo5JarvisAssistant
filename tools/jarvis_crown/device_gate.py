@@ -11,7 +11,7 @@ import re
 import subprocess
 from typing import Callable, Sequence
 
-from jarvis_crown.boards import PROFILES, profile_for_board, profile_for_product
+from jarvis_crown.boards import PROFILES, profile_for_board, profile_for_product, unsupported_product_message
 
 FASTBOOT_TIMEOUT_SECONDS = 8
 SUPPORTED_PRODUCTS = {profile.fastboot_product for profile in PROFILES.values()}
@@ -110,9 +110,7 @@ def identify_show(*, expected_board: str | None = None, run: Callable = subproce
     try:
         detected = profile_for_product(product)
     except ValueError as exc:
-        raise DeviceGateError(
-            f"unsupported product {product!r}; Jarvis Show supports CROWN or CHECKERS"
-        ) from exc
+        raise DeviceGateError(unsupported_product_message(product)) from exc
     if expected_board is not None:
         expected = profile_for_board(expected_board)
         if detected.board != expected.board:

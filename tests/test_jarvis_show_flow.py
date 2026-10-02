@@ -271,6 +271,25 @@ class FlowAcceptanceTests(unittest.TestCase):
         self.assertIn("printf 'jarvis-%s-v1\\\\n'", source)
         self.assertNotIn("if a.jarvis_crown_prestaged:\n        prov +=", source)
 
+    def test_auto_detected_serial_cannot_be_swapped_before_flow_identity(self):
+        with tempfile.TemporaryDirectory() as td_s:
+            h = FlowHarness(board="crown", locked=False)
+            data = inputs(pathlib.Path(td_s), "crown")
+            data = InstallInputs(**{**data.__dict__, "expected_fastboot_serial": "ORIGINAL123"})
+            h.identity = DeviceIdentity("SWAPPED999", "CROWN", True, "lk")
+            with self.assertRaisesRegex(FlowError, "device changed after auto-detection"):
+                run_install_flow(
+                    data,
+                    confirm_unlock=lambda _p: "UNLOCK CROWN",
+                    confirm_install=lambda _p: "ERASE LINEAGE INSTALL JARVIS CROWN",
+                    deps=h.deps(),
+                )
+            self.assertNotIn("recovery", h.calls)
+            self.assertNotIn("backup", h.calls)
+            self.assertNotIn("stage", h.calls)
+            self.assertNotIn("execute", h.calls)
+
+
 
 if __name__ == "__main__":
     unittest.main()

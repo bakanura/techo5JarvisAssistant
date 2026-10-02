@@ -1,6 +1,6 @@
 # One-command Jarvis Show installer contract
 
-The production entry point is `tools/jarvis-show.py install --board crown|checkers ...`.
+The production entry point is `tools/jarvis-show.py install|checkers ...`.
 
 Its ordered safety gates are:
 
@@ -26,3 +26,20 @@ The Checkers code path is covered by synthetic regression tests, but a real Chec
 - Checkers boot image
 
 Synthetic hashes in tests are test data only and never become production trust anchors.
+
+
+## Auto-detection
+
+`jarvis-show install` does not trust a user-selected board. It reads the single attached fastboot
+product first and selects the board profile from the device itself:
+
+- `CROWN` → Jarvis Crown v1 / Echo Show 8 1st gen
+- `CHECKERS` → Jarvis Checkers v1 / Echo Show 5 1st gen
+
+`--board` remains optional as a cross-check for development/recovery. It can only make a mismatch
+fail; it cannot force another product down that board path. `CRONOS` (Echo Show 5 2nd gen) is
+explicitly refused, and every other product is treated as unsupported/possibly newer hardware. The
+identity gate performs read-only fastboot queries only and reports that no write was attempted.
+
+The initially detected fastboot serial is bound into the install flow. If the attached device changes
+before the later identity gate, the installer stops before recovery, backup or flash operations.

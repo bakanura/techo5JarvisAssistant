@@ -52,6 +52,28 @@ PROFILES = {
 
 PRODUCT_TO_BOARD = {profile.fastboot_product: board for board, profile in PROFILES.items()}
 
+# Products upstream may know about but Jarvis Show v1 intentionally refuses.
+# Keep this list descriptive only: no destructive code path may select these profiles.
+KNOWN_UNSUPPORTED_PRODUCTS = {
+    "CRONOS": "Echo Show 5 2nd gen",
+}
+
+
+def unsupported_product_message(product: str) -> str:
+    key = product.strip().upper()
+    if key in KNOWN_UNSUPPORTED_PRODUCTS:
+        return (
+            f"{key} is {KNOWN_UNSUPPORTED_PRODUCTS[key]}, which is intentionally unsupported by "
+            "Jarvis Show v1. Only Echo Show 5 1st gen (CHECKERS) and Echo Show 8 1st gen "
+            "(CROWN) are supported. Do not flash this device; no write was attempted."
+        )
+    return (
+        f"{key or product!r} is not a supported first-generation Jarvis Show target. "
+        "Jarvis Show v1 supports only CHECKERS (Echo Show 5 1st gen) and CROWN "
+        "(Echo Show 8 1st gen). This may be a newer generation; do not flash it. "
+        "No write was attempted."
+    )
+
 
 def profile_for_board(board: str) -> BoardProfile:
     key = board.strip().lower()
