@@ -1,0 +1,14 @@
+J31 SECURITY THREAT MODEL
+
+PASS: Home Assistant API has an encryption-key security boundary.
+PASS: SSH defaults off and uses keys only.
+PASS: signed-only house announcements and hardened SIP from earlier Jarvis work retained.
+PASS: Linux slot image has no resident adbd; remote ADB entity is Android-only.
+WARN: echod runs as root; network listener bugs therefore have high impact.
+FAIL: Sendspin 8928 defaults enabled, listens on all interfaces, accepts all origins and has no application authentication/source allowlist.
+FAIL: optional camera/screen HTTP reads on 8181 are unauthenticated once their switches are enabled.
+FAIL: persistent insecure-TLS diagnostic mode can globally disable certificate verification for normal outbound HTTP clients.
+PASS: setup writes themselves use the physical-presence session guard.
+PASS: release updater keeps its own verification client and signed manifest trust root.
+
+J32 must close the three FAIL findings before release acceptance.
