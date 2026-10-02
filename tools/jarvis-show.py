@@ -6,6 +6,7 @@ import argparse
 import json
 from pathlib import Path
 import re
+import subprocess
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -20,7 +21,7 @@ SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="jarvis-show")
-    parser.add_argument("command", choices=["preflight", "identify", "unlock", "install"], nargs="?", default="preflight")
+    parser.add_argument("command", choices=["preflight", "identify", "unlock", "install", "wifi"], nargs="?", default="preflight")
     parser.add_argument("--board", choices=("crown", "checkers"), help="optional first-gen board cross-check; install/identify auto-detect by default")
     parser.add_argument("--amonet-dir", type=Path)
     parser.add_argument("--amonet-hashes", type=Path, help="trusted JSON SHA-256 map for a board whose Amonet bytes are not built-in")
@@ -35,6 +36,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--rootfs-sha256")
     parser.add_argument("--wifi")
     parser.add_argument("--wifi-passphrase-file", type=Path)
+    parser.add_argument("--serial", help="TECHO5 USB serial for offline Wi-Fi recovery; auto-selected when exactly one Show is attached")
     parser.add_argument("--ssh-key", type=Path)
     return parser.parse_args()
 
@@ -85,6 +87,19 @@ def main() -> int:
     project = root.parent
     work = (args.work_dir or (project / "work")).resolve()
     backups = (args.backup_dir or (project / "backups")).resolve()
+
+    # Wi-Fi recovery runs against a booted Jarvis/TECHO5 USB serial console, not fastboot. Keep it
+    # inside this one front-end so an offline device never depends on HA, mDNS, or a second workflow.
+    if args.command == "wifi":
+        if not args.wifi:
+            print("FAIL: wifi recovery requires --wifi NETWORK", file=sys.stderr)
+            return 1
+        cmd = [sys.executable, str(root / "tools" / "show-wifi.py"), args.wifi]
+        if args.serial:
+            cmd += ["--serial", args.serial]
+        if args.wifi_passphrase_file:
+            cmd += ["--passphrase-file", str(args.wifi_passphrase_file.resolve())]
+        return subprocess.call(cmd)
 
     # Identity is always established with read-only fastboot queries before a live-device command
     # chooses board-specific assets. --board, when supplied, is only a cross-check and can never make

@@ -511,9 +511,12 @@ def main():
             os.replace(los_boot + '.partial', los_boot)
             note('LineageOS boot image: %s' % los_boot)
             saved = adb.sh('grep -c SSID /data/misc/apexdata/com.android.wifi/WifiConfigStore.xml 2>/dev/null')
-            if saved in ('', '0') and not wifi:
-                fail('LineageOS has no saved Wi-Fi network: join one first (TECHO5 uses it), or give one with --wifi')
-            note('a saved Wi-Fi network' if saved not in ('', '0') else 'no saved Wi-Fi network; --wifi is used')
+            if saved not in ('', '0'):
+                note('a saved Wi-Fi network is available for first boot')
+            elif wifi:
+                note('LineageOS has no saved Wi-Fi network; the installer-provided --wifi network will be used')
+            else:
+                note('no saved Wi-Fi network; first boot will open the on-screen Wi-Fi picker and USB recovery remains available')
         else:
             note('adb is not root (Rooted debugging off): no boot image backup; the LineageOS zip has one')
             note('make sure LineageOS is on your Wi-Fi: TECHO5 joins the network it saved')
@@ -714,7 +717,8 @@ def main():
     print("\nDone. '%s' runs TECHO5 %s from slot a; the slot commits itself after five healthy minutes." % (a.name, version))
     print('Home Assistant finds it as an ESPHome device. When it asks for the encryption key, paste:\n\n    %s\n\n(kept in %s)' % (psk, key_file))
     if twrp and not wifi:
-        print('It has no Wi-Fi yet: on the Show, swipe down for Settings, then Connections, then Wi-Fi.')
+        print('It has no Wi-Fi yet: the Show opens its Wi-Fi picker automatically after boot. You can also use Settings -> Connections -> Wi-Fi.')
+        print('USB fallback: python3 tools/jarvis-show.py wifi --wifi YOUR_NETWORK [--serial DEVICE_SERIAL]')
     print("Later versions arrive through Home Assistant's update card.")
 
 
