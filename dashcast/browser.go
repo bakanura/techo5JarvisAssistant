@@ -82,8 +82,8 @@ func initScript(origin, tokens, allowed []byte, kiosk bool) string {
 // by searching the whole page, which on a Pi every second would cost more than it saves.
 const kioskScript = `
   const css = {
-    "hui-root": ":host{--header-height:0px!important} .header{display:none!important}",
-    "ha-top-app-bar-fixed": ":host{--header-height:0px!important} header.top-app-bar{display:none!important} .mdc-top-app-bar--fixed-adjust,.content{padding-top:0!important}",
+    "hui-root": ":host{--header-height:0px!important;--safe-area-inset-top:0px!important;min-height:100vh!important;height:100vh!important} .header{display:none!important} #view,.view{padding-top:0!important;margin-top:0!important;min-height:100vh!important;height:100vh!important}",
+    "ha-top-app-bar-fixed": ":host{--header-height:0px!important;--safe-area-inset-top:0px!important;min-height:100vh!important;height:100vh!important} header.top-app-bar{display:none!important} .mdc-top-app-bar--fixed-adjust,.content{padding-top:0!important;margin-top:0!important;min-height:100vh!important}",
   };
   const dress = (el) => {
     const rule = css[el.tagName.toLowerCase()];
@@ -99,7 +99,7 @@ const kioskScript = `
     if (!main.getElementById("jarvis-show-shell")) {
       const shell = document.createElement("style");
       shell.id = "jarvis-show-shell";
-      shell.textContent = ":host{--header-height:0px!important;--safe-area-inset-top:0px!important} ha-sidebar{display:none!important} #view,.view{padding-left:0!important;margin-left:0!important;padding-top:0!important}";
+      shell.textContent = ":host{--header-height:0px!important;--safe-area-inset-top:0px!important;min-height:100vh!important;height:100vh!important} ha-sidebar{display:none!important;width:0!important;min-width:0!important} #view,.view{padding-left:0!important;margin-left:0!important;padding-top:0!important;margin-top:0!important;min-height:100vh!important;height:100vh!important}";
       main.appendChild(shell);
     }
     for (const panel of main.querySelectorAll("*")) {
