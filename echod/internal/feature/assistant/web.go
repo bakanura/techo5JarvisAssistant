@@ -41,7 +41,7 @@ func webTools() []tool {
 		return nil
 	}
 	return []tool{
-		{llm.Tool{Name: "web_search", Description: "Search the web. Use it for anything current or that you are not sure of: sports schedules and scores, news, weather elsewhere, business hours, prices. Returns titles, addresses and snippets; read a page for details.",
+		{llm.Tool{Name: "web_search", Description: "Search the web. Always use it when the person explicitly asks to search, look up, find something online, find a source, or find a recipe. Also use it for anything current or that you are not sure of: sports schedules and scores, news, weather elsewhere, business hours, prices. Returns titles, addresses and snippets; read a page for details.",
 			Parameters: object(map[string]any{"query": str("What to search for, as you would type it into a search engine.")}, "query")},
 			func(a map[string]any) (string, error) { return search(argString(a, "query")) }},
 
