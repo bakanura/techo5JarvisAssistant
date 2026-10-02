@@ -23,6 +23,10 @@ func (r *renderer) cameraView(s scene, v home.CameraView) {
 	if s.demo {
 		name = demoCameras[0]
 	}
+	heading := name
+	if v.Doorbell {
+		heading = "DOORBELL  ·  " + name
+	}
 	if v.Frame != nil {
 		b := v.Frame.Bounds()
 		x := (r.w - b.Dx()) / 2
@@ -37,7 +41,7 @@ func (r *renderer) cameraView(s scene, v home.CameraView) {
 	}
 	// Corners on a dark strip so they read over any picture.
 	draw.Draw(r.dst, image.Rect(0, 0, r.w, 44), image.NewUniform(shade), image.Point{}, draw.Over)
-	r.text(r.small, name, r.margin, 32, cream)
+	r.text(r.small, clipText(r, r.small, heading, r.w-2*r.margin-r.s(150)), r.margin, 32, cream)
 	t := clockHM(s.now)
 	r.text(r.small, t, r.w-r.margin-r.width(r.small, t), 32, dim)
 	left := time.Until(v.Until).Round(time.Second)

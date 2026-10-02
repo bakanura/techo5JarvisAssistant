@@ -16,7 +16,10 @@ import (
 // announce plays what Home Assistant asks for, then reports back. It runs off the connection's
 // read loop: fetching and playing must not block it.
 func (t *conversation) announce(a esphome.Announce) {
-	slog.Info("announce", "text", a.Text, "start_conversation", a.StartConversation)
+	// The words may be a private reminder/question. Keep them on the HA/device protocol and out of
+	// routine logs; operators only need to know whether text accompanied the media and whether a
+	// proactive conversation was requested.
+	slog.Info("announce", "has_text", a.Text != "", "start_conversation", a.StartConversation)
 	if config.Get().Home.DoNotDisturb {
 		// DND is a privacy boundary as well as a volume preference: a proactive HA announcement may
 		// not make noise and, crucially, StartConversation may not open the microphones afterwards.

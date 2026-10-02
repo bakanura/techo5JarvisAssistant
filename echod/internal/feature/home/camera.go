@@ -1,17 +1,22 @@
 package home
 
 import (
+	"errors"
 	"image"
 	_ "image/jpeg" // Home Assistant serves camera snapshots as JPEG
 	"log/slog"
+	"os"
 	"strings"
 	"time"
+	"unicode"
 
 	esphome "github.com/ygelfand/go-esphome-device"
 	xdraw "golang.org/x/image/draw"
 
 	"github.com/HuskerMinion/techo5/echod/internal/config"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/camera"
+	"github.com/HuskerMinion/techo5/echod/internal/hardware/speaker"
+	"github.com/HuskerMinion/techo5/echod/internal/layout"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/hass"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/triggers"
 )
@@ -30,9 +35,12 @@ const (
 type CameraView struct {
 	Entity string
 	Name   string
-	Until  time.Time
-	Frame  *image.RGBA // the latest frame, scaled to fit; nil until the first arrives
-	Error  string      // why there is no frame, when there is none
+	// Doorbell marks a proactive front-door view rather than one the user opened themselves. It is
+	// visual metadata only: opening a camera never opens the microphones.
+	Doorbell bool
+	Until    time.Time
+	Frame    *image.RGBA // the latest frame, scaled to fit; nil until the first arrives
+	Error    string      // why there is no frame, when there is none
 
 	span time.Duration // how long it was asked for; Until is restarted from the first frame
 }
@@ -76,7 +84,10 @@ func (f *Feature) homeAssistantCameras() []config.Camera {
 				if name == "" {
 					name = e.ID
 				}
-				cams = append(cams, config.Camera{Entity: e.ID, Name: name})
+				if !validCameraEntity(e.ID) {
+					continue
+				}
+				cams = append(cams, config.Camera{Entity: e.ID, Name: safeCameraName(name)})
 			}
 			f.mu.Lock()
 			f.haCamerasBusy = false
@@ -107,21 +118,21 @@ func (f *Feature) Camera() (CameraView, bool) {
 
 // ShowCamera puts a camera up for d, with its sound if the device's own setting asks for it.
 func (f *Feature) ShowCamera(entity string, d time.Duration) {
-	f.showCamera(entity, d, CameraSound())
+	f.showCamera(entity, d, CameraSound(), false)
 }
 
 // showCamera is ShowCamera with the sound decided by the caller, which is what the action does: an
 // automation for a doorbell wants that one camera heard whether or not the device's setting says so.
-func (f *Feature) showCamera(entity string, d time.Duration, sound bool) {
-	name := entity
+func (f *Feature) showCamera(entity string, d time.Duration, sound, doorbell bool) {
+	name := safeCameraName(entity)
 	for _, c := range f.Cameras() {
 		if c.Entity == entity {
-			name = c.Name
+			name = safeCameraName(c.Name)
 		}
 	}
 	f.mu.Lock()
 	fresh := f.cam.Entity != entity || time.Now().After(f.cam.Until)
-	f.cam = CameraView{Entity: entity, Name: name, Until: time.Now().Add(d), Frame: f.cam.Frame, span: d}
+	f.cam = CameraView{Entity: entity, Name: name, Doorbell: doorbell, Until: time.Now().Add(d), Frame: f.cam.Frame, span: d}
 	if fresh {
 		f.cam.Frame = nil
 		f.camMuted = false // a fresh view starts audible if its sound was asked for
@@ -141,6 +152,18 @@ func (f *Feature) showCamera(entity string, d time.Duration, sound bool) {
 		}
 	}
 	f.Changed.Emit(struct{}{})
+}
+
+// ShowDoorbell puts a front-door camera on screen and gives it a local arrival cue. DND/quiet hours
+// never suppress the visual notification, but they do suppress both the chime and the camera's own
+// audio. A doorbell popup never opens the microphone; HA may separately use Assist Satellite's
+// StartConversation when it deliberately wants a reply, which the voice feature also blocks under DND.
+func (f *Feature) ShowDoorbell(entity string, d time.Duration, sound bool) {
+	audible := doorbellAudible()
+	f.showCamera(entity, d, sound && audible, true)
+	if audible {
+		speaker.Sound().Chime(speaker.ToneDoorbell)
+	}
 }
 
 // HideCamera takes the view down.
@@ -304,15 +327,21 @@ func (f *Feature) cameraActions() []*esphome.Action {
 			Name: "home_cameras",
 			Args: []esphome.Arg{{Name: "cameras", Type: esphome.ArgString}}, // "camera.x=Front door,camera.y=Deck"
 			Run: func(c esphome.Call) (any, error) {
+				if !cameraAPIEncrypted() {
+					return nil, errors.New("home cameras: set an API encryption key first")
+				}
 				var cams []config.Camera
 				for _, item := range strings.Split(c.String("cameras"), ",") {
 					entity, name, _ := strings.Cut(strings.TrimSpace(item), "=")
-					entity, name = strings.TrimSpace(entity), strings.TrimSpace(name)
+					entity, name = strings.TrimSpace(entity), safeCameraName(name)
 					if entity == "" {
 						continue
 					}
+					if !validCameraEntity(entity) {
+						return nil, errors.New("home cameras: expected camera.* entities")
+					}
 					if name == "" {
-						name = strings.TrimPrefix(entity, "camera.")
+						name = safeCameraName(strings.TrimPrefix(entity, "camera."))
 					}
 					cams = append(cams, config.Camera{Entity: entity, Name: name})
 				}
@@ -328,7 +357,14 @@ func (f *Feature) cameraActions() []*esphome.Action {
 			Name: "home_show_camera",
 			Args: []esphome.Arg{{Name: "entity", Type: esphome.ArgString}, {Name: "seconds", Type: esphome.ArgInt}},
 			Run: func(c esphome.Call) (any, error) {
-				f.ShowCamera(strings.TrimSpace(c.String("entity")), cameraSeconds(c))
+				if !cameraAPIEncrypted() {
+					return nil, errors.New("show camera: set an API encryption key first")
+				}
+				entity := strings.TrimSpace(c.String("entity"))
+				if !validCameraEntity(entity) {
+					return nil, errors.New("show camera: expected a camera.* entity")
+				}
+				f.ShowCamera(entity, cameraSeconds(c))
 				return nil, nil
 			},
 		},
@@ -336,11 +372,69 @@ func (f *Feature) cameraActions() []*esphome.Action {
 			Name: "home_show_camera_sound",
 			Args: []esphome.Arg{{Name: "entity", Type: esphome.ArgString}, {Name: "seconds", Type: esphome.ArgInt}, {Name: "sound", Type: esphome.ArgString}},
 			Run: func(c esphome.Call) (any, error) {
-				f.showCamera(strings.TrimSpace(c.String("entity")), cameraSeconds(c), soundAsked(c.String("sound"), CameraSound()))
+				if !cameraAPIEncrypted() {
+					return nil, errors.New("show camera: set an API encryption key first")
+				}
+				entity := strings.TrimSpace(c.String("entity"))
+				if !validCameraEntity(entity) {
+					return nil, errors.New("show camera: expected a camera.* entity")
+				}
+				f.showCamera(entity, cameraSeconds(c), soundAsked(c.String("sound"), CameraSound()), false)
+				return nil, nil
+			},
+		},
+		{
+			Name: "home_doorbell",
+			Args: []esphome.Arg{{Name: "entity", Type: esphome.ArgString}, {Name: "seconds", Type: esphome.ArgInt}, {Name: "sound", Type: esphome.ArgString}},
+			Run: func(c esphome.Call) (any, error) {
+				if !cameraAPIEncrypted() {
+					return nil, errors.New("doorbell: set an API encryption key first")
+				}
+				entity := strings.TrimSpace(c.String("entity"))
+				if !validCameraEntity(entity) {
+					return nil, errors.New("doorbell: expected a camera.* entity")
+				}
+				f.ShowDoorbell(entity, cameraSeconds(c), soundAsked(c.String("sound"), CameraSound()))
 				return nil, nil
 			},
 		},
 	}
+}
+
+func validCameraEntity(entity string) bool {
+	return entity == LocalCamera || strings.HasPrefix(entity, "camera.")
+}
+
+const cameraNameMost = 80
+
+func safeCameraName(s string) string {
+	s = strings.Map(func(r rune) rune {
+		if !unicode.IsPrint(r) {
+			return -1
+		}
+		return r
+	}, strings.TrimSpace(s))
+	runes := []rune(s)
+	if len(runes) > cameraNameMost {
+		s = string(runes[:cameraNameMost])
+	}
+	return strings.TrimSpace(s)
+}
+
+func doorbellAudible() bool {
+	return !config.Quiet() && !config.Get().Home.DoNotDisturb
+}
+
+// cameraAPIEncrypted reports whether the HA↔device API has a real encryption key rather than the
+// all-zero adoption key. Camera popups can expose household video/audio on the panel, so HA-triggered
+// camera actions fail closed until provisioning has established the encrypted transport.
+func cameraAPIEncrypted() bool {
+	b, err := os.ReadFile(layout.KeyPath)
+	if err != nil {
+		return false
+	}
+	k, err := esphome.ParsePSK(strings.TrimSpace(string(b)))
+	return err == nil && !k.IsZero()
 }
 
 // cameraSeconds is how long a show-camera action's view lasts: its own seconds, or the default when

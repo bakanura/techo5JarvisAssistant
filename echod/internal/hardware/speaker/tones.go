@@ -36,6 +36,11 @@ var (
 	// TonePaired is pairing mode having worked: the pairing chime's top note twice, ending higher.
 	TonePaired = []Note{{Freq: 988, Ms: 90}, {Ms: 60}, {Freq: 1319, Ms: 200}}
 
+	// ToneDoorbell is a short two-note arrival cue. It is deliberately distinct from the wake,
+	// timer, pairing and failure sounds, so the room can tell a proactive front-door event from a
+	// device status sound without looking at the screen.
+	ToneDoorbell = []Note{{Freq: 988, Ms: 170}, {Ms: 70}, {Freq: 659, Ms: 300}}
+
 	// ToneTimer is a timer that has finished. Three of the same note, because it repeats until
 	// somebody stops it and a melody wears out faster than a beep does.
 	ToneTimer = []Note{

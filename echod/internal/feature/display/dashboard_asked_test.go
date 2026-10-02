@@ -37,3 +37,25 @@ func TestDashboardOpenedByHandIsForgotten(t *testing.T) {
 		t.Fatal("a dashboard opened by hand stayed past dashForget")
 	}
 }
+
+// A camera/doorbell temporarily owns the panel but does not consume an explicitly shown dashboard.
+// Once the camera is gone, the same dashboard becomes eligible again without another HA action.
+func TestCameraTemporarilyCoversDashboard(t *testing.T) {
+	d := &Display{}
+	d.dashboardAsked(true)
+
+	cam := scene{phase: "idle", showCamera: true}
+	d.dashScene(&cam, false)
+	if cam.showDash {
+		t.Fatal("dashboard drew through a camera popup")
+	}
+	if !d.dash || !d.dashHeld {
+		t.Fatal("camera popup consumed the dashboard request")
+	}
+
+	after := scene{phase: "idle"}
+	d.dashScene(&after, false)
+	if !after.showDash {
+		t.Fatal("dashboard did not return after the camera popup ended")
+	}
+}
