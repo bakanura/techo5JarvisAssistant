@@ -15,13 +15,18 @@ import (
 // The same two the favorite-by-voice automation uses, but it knows which station this speaker is
 // playing, where Home Assistant only knows the last one started anywhere in the house.
 func (f *Feature) FavoriteNow() error {
-	if _, _, _, held := media.Get().Held(); media.Get().Carried() || held {
-		ma, err := musicAssistantPlayer()
-		if err != nil {
-			return err
+	playback := f.MusicPlayback()
+	if _, _, _, held := media.Get().Held(); media.Get().Carried() || held || playback.Playing || playback.Paused {
+		ma := playback.Entity
+		if ma == "" {
+			var err error
+			ma, err = musicAssistantPlayer()
+			if err != nil {
+				return err
+			}
 		}
 		if ma == "" {
-			return errors.New("no Music Assistant player for this device")
+			return errors.New("no Music Assistant player for this playback")
 		}
 		button, err := hass.Get().Render("{{ device_entities(device_id('" + ma + "')) | select('search', 'favorite_current_song') | list | first | default('') }}")
 		if err != nil {

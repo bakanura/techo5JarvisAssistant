@@ -97,8 +97,10 @@ type scene struct {
 	weather home.Weather
 
 	// showWeather is the forecast page, for a while after a weather question; nowPlaying is the
-	// idle screen while the radio plays or sits paused.
+	// idle screen while the radio plays or sits paused. music is optional Music Assistant route,
+	// progress and next-item context refreshed in the background by feature/home.
 	showWeather bool
+	music       home.MusicPlaybackView
 	forecast    forecastDays
 	// showRadar is the rain map in place of the forecast.
 	showRadar  bool

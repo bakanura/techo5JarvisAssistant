@@ -944,15 +944,15 @@ func (d *Display) gesture(g touch.Gesture) {
 				case at.In(d.r.favButton()):
 					go d.favorite()
 				case at.In(back):
-					media.Get().Transport(media.TransportPrevious)
+					_ = home.Get().MusicTransport(media.TransportPrevious)
 				case at.In(next):
-					media.Get().Transport(media.TransportNext)
+					_ = home.Get().MusicTransport(media.TransportNext)
 				default:
-					media.Get().Transport(media.TransportToggle)
+					_ = home.Get().MusicTransport(media.TransportToggle)
 				}
 				return
 			}
-			media.Get().Transport(media.TransportToggle)
+			_ = home.Get().MusicTransport(media.TransportToggle)
 			return
 		}
 		voice.Get().Action()
@@ -993,6 +993,9 @@ func (d *Display) gesture(g touch.Gesture) {
 			return
 		}
 		rd := home.Get().Radio()
+		if rd.Now == "Music Assistant" {
+			return // MA owns a persistent full-screen Now Playing page while the session exists.
+		}
 		// Whether the music is playing, not whether the page says so: a carried stream that has stopped
 		// still has a page, and a dismissal made on one of those is over too.
 		playing, _ := media.Get().ScreenState()
@@ -1027,11 +1030,11 @@ func (d *Display) musicStripGesture(g touch.Gesture) bool {
 	case at.In(closeX):
 		go d.endMusic()
 	case at.In(back):
-		media.Get().Transport(media.TransportPrevious)
+		_ = home.Get().MusicTransport(media.TransportPrevious)
 	case at.In(play):
-		media.Get().Transport(media.TransportToggle)
+		_ = home.Get().MusicTransport(media.TransportToggle)
 	case at.In(next):
-		media.Get().Transport(media.TransportNext)
+		_ = home.Get().MusicTransport(media.TransportNext)
 	case at.In(d.r.stripSong()):
 		d.mu.Lock()
 		d.stripFullUntil = time.Now().Add(stripFull)
@@ -1727,9 +1730,12 @@ func (d *Display) frame() time.Duration {
 	}
 	s.camera, s.showCamera = home.Get().Camera()
 	s.cameraSound, s.cameraSoundLive = home.Get().CameraSoundOn(), home.Get().CameraSoundLive()
-	// Whether the idle screen wants to be what is playing. It is asked even when the page has been put
-	// away, because the track is what brings it back, so the radio is read either way.
-	wants := (s.phase == "idle") && d.nowPlaying()
+	// Whether the idle screen wants to be what is playing. A Jarvis-routed Music Assistant queue may
+	// live on this room's preferred external speaker rather than on this Show, so route state is also
+	// a real Now Playing session even when Sendspin is not carrying audio locally.
+	s.music = home.Get().MusicPlayback()
+	routedMusic := s.music.Playing || s.music.Paused
+	wants := (s.phase == "idle") && (d.nowPlaying() || routedMusic)
 	d.mu.Lock()
 	s.showDrawer, s.drawerTab, s.drawerScroll, s.drawerPick, s.pickScroll = d.drawer && !s.showSheet && !s.showCamera, d.drawerTab, d.drawerScroll, d.drawerPick, d.pickScroll
 	d.mu.Unlock()
@@ -1750,10 +1756,23 @@ func (d *Display) frame() time.Duration {
 	if (s.showDrawer && s.drawerTab == drawerRadio) || wants {
 		s.radio = home.Get().Radio()
 	}
+	if routedMusic && s.radio.Now != "Music Assistant" {
+		// Preferred external MA speakers do not send Sendspin audio to this Show. Populate the native
+		// page from the resolved HA/MA player instead so the screen still says what and where is playing.
+		s.radio.Now, s.radio.Music = "Music Assistant", true
+		s.radio.Title, s.radio.Artist, s.radio.Album = s.music.Title, s.music.Artist, s.music.Album
+		s.radio.Art, s.radio.Thumb = home.Get().MusicPlaybackArt()
+		s.playing, s.paused = s.music.Playing, s.music.Paused
+	}
 	s.nowPlaying = wants && !d.putAway(s.radio, wants, s.playing)
+	if s.radio.Now == "Music Assistant" {
+		// Jarvis Show treats Music Assistant as a dedicated full-screen surface for the complete
+		// active/paused session. Radio may still use the legacy timed strip setting.
+		s.nowPlaying = wants
+	}
 	d.mu.Lock()
 	// Not under the sunrise light, which draws no strip: taps on a strip nobody can see would still act.
-	if wants && d.stripDue(now, s.radio, s.nowPlaying) && sunriseProgress(now) == 0 {
+	if wants && s.radio.Now != "Music Assistant" && d.stripDue(now, s.radio, s.nowPlaying) && sunriseProgress(now) == 0 {
 		s.nowPlaying, s.strip = false, true
 	}
 	s.faved = d.favedKey != "" && d.favedKey == s.radio.Title+"\x00"+s.radio.Now

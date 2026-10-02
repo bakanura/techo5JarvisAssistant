@@ -775,11 +775,16 @@ func askFor(label string) string {
 // take only a pause gets a pause, because that is the strongest thing it offers, which is what the row
 // did before anything was carried and what it should go on doing.
 func (f *Feature) Stop() {
+	// A Jarvis-routed Music Assistant queue may be playing on the room's preferred external speaker,
+	// where this device's local media transport cannot reach it. Stop that real route first.
+	routed := f.stopRoutedMusic()
 	// The same request a transport button makes, so that what a stop reaches is media's to decide: a
 	// stream this device did not start is asked to stop, a track it is holding for somebody else is let
-	// go, and its own stream is ended. Working any of it out here as well is how the hold came to be
-	// dropped after the ask that had just made it.
-	media.Get().Transport(media.TransportStop)
+	// go, and its own stream is ended. A routed MA session was already stopped through its real HA
+	// player above, so do not send the same remote stop a second time through Sendspin.
+	if !routed {
+		media.Get().Transport(media.TransportStop)
+	}
 	// This player's own stream goes with it, whoever is being heard: a station can be sitting under a
 	// carried stream while the two hand the speaker over, and a person asking for silence means all of
 	// it. With nothing of its own playing this does nothing.

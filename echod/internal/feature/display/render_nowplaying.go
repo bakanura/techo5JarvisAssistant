@@ -3,9 +3,12 @@
 package display
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
+	"strings"
+	"unicode"
 
 	"github.com/HuskerMinion/techo5/echod/internal/feature/home"
 )
@@ -18,9 +21,7 @@ import (
 func (r *renderer) nowPlaying(s scene) {
 	rd := s.radio
 	r.background(rd)
-
-	r.cornerClockDated(s)
-	r.weatherCorner(s)
+	r.cornerClock(s)
 
 	station := rd.Now
 	if station == "" {
@@ -30,37 +31,65 @@ func (r *renderer) nowPlaying(s scene) {
 		station = "Radio"
 	}
 	label := "Radio"
-	if s.paused {
+	if rd.Now == "Music Assistant" {
+		label = musicRouteLabel(s.music)
+	} else if s.paused {
 		label = "Paused"
 	} else if s.playing {
 		label = "Playing"
 	}
-
-	headline, sub := station, ""
-	if rd.Title != "" {
-		// A song: the station joins the label, the song takes the middle.
+	if rd.Now != "Music Assistant" && station != "" {
 		label += "  ·  " + station
-		headline, sub = rd.Title, rd.Artist
 	}
-	r.text(r.small, label, r.margin, r.s(150), amber)
+	r.text(r.small, label, r.margin, r.s(76), amber)
+
+	headline := station
+	if rd.Title != "" {
+		headline = rd.Title
+	}
 	face := r.title
 	if r.width(face, headline) > r.w-2*r.margin {
 		face = r.body
 	}
-	y := r.s(225)
+	y := r.s(132)
 	for i, line := range r.wrap(face, headline, r.w-2*r.margin) {
 		if i == 2 {
 			break
 		}
 		r.text(face, line, r.margin, y, cream)
-		y += r.s(56)
+		y += r.s(54)
 	}
-	if sub != "" {
-		r.text(r.body, sub, r.margin, y+r.s(6), dim)
+	if rd.Artist != "" {
+		r.text(r.body, rd.Artist, r.margin, y+r.s(4), dim)
+		y += r.s(42)
+	}
+	if rd.Album != "" {
+		album := "Album  ·  " + rd.Album
+		r.text(r.small, r.fit(r.small, album, r.w-2*r.margin), r.margin, y, dim)
+		y += r.s(34)
 	}
 
-	// A rule, then the three buttons: back, play or pause, and forward. What they do belongs to whoever
-	// is playing, so a stream Music Assistant is carrying is paused and skipped by the server.
+	// Route context says where the synchronized queue actually landed, rather than just where the
+	// voice request was aimed. Named groups list the live room substitutions selected by J43.
+	if rd.Now == "Music Assistant" && len(s.music.Rooms) > 0 {
+		where := "Rooms  ·  " + strings.Join(s.music.Rooms, "  ·  ")
+		r.text(r.small, r.fit(r.small, where, r.w-2*r.margin), r.margin, y, amber)
+		y += r.s(32)
+	}
+	if rd.Now == "Music Assistant" && s.music.Next != "" && y < r.h-r.s(160) {
+		next := "Next  ·  " + s.music.Next
+		r.text(r.small, r.fit(r.small, next, r.w-2*r.margin), r.margin, y, dim)
+	}
+
+	// Music Assistant's player state supplies a best-effort position/duration. Sendspin deliberately
+	// has no position in its protocol, so an unavailable HA value leaves an honest empty bar rather
+	// than inventing timing.
+	if rd.Now == "Music Assistant" {
+		r.musicProgress(s.music)
+	}
+
+	// A rule, then the three transport buttons. Sendspin routes these back to Music Assistant, so the
+	// full-screen page controls the real queue/group rather than a local shadow player.
 	draw.Draw(r.dst, image.Rect(r.margin, r.h-r.s(84), r.w-r.margin, r.h-r.s(81)), image.NewUniform(ember), image.Point{}, draw.Src)
 	back, play, next := r.transportButtons()
 	r.control(back, r.markBack)
@@ -71,14 +100,12 @@ func (r *renderer) nowPlaying(s scene) {
 	}
 	r.control(next, r.markNext)
 
-	// Done, in the corner the buttons leave: the music ends and the screen goes back to the clock. A
-	// pause keeps this page up with play on it, and so does a stop from Music Assistant, which looks
-	// the same from here, so the page needs its own way out.
+	// Done stops the real playback session. The star uses Music Assistant's own favorite-current-song
+	// control when this is a carried MA track.
 	done := r.doneButton()
 	r.bevel(done, shift(ember, 16), true)
 	r.text(r.small, "Done", done.Min.X+(done.Dx()-r.width(r.small, "Done"))/2, done.Min.Y+done.Dy()/2+r.s(10), amber)
 
-	// The star saves what is playing to favorites, and fills in once it has.
 	fav := r.favButton()
 	r.bevel(fav, shift(ember, 16), true)
 	starColor := color.RGBA{0x9a, 0x8c, 0x7a, 0xff}
@@ -86,6 +113,52 @@ func (r *renderer) nowPlaying(s scene) {
 		starColor = amber
 	}
 	r.star(fav.Min.X+fav.Dx()/2, fav.Min.Y+fav.Dy()/2, r.s(17), starColor)
+}
+
+func musicRouteLabel(v home.MusicPlaybackView) string {
+	switch {
+	case v.Route != "":
+		return "Playing in  " + prettyMusicName(v.Route)
+	case len(v.Rooms) == 1:
+		return "Playing in  " + prettyMusicName(v.Rooms[0])
+	case v.Output != "":
+		return "Playing on  " + v.Output
+	default:
+		return "Music Assistant"
+	}
+}
+
+func prettyMusicName(v string) string {
+	v = strings.TrimSpace(strings.ReplaceAll(v, "_", " "))
+	if v == "" {
+		return v
+	}
+	r := []rune(v)
+	r[0] = unicode.ToUpper(r[0])
+	return string(r)
+}
+
+func (r *renderer) musicProgress(v home.MusicPlaybackView) {
+	x0, x1 := r.margin, r.w-r.margin
+	y := r.h - r.s(122)
+	draw.Draw(r.dst, image.Rect(x0, y, x1, y+r.s(7)), image.NewUniform(ember), image.Point{}, draw.Src)
+	if v.Duration > 0 {
+		p := min(max(v.Position/v.Duration, 0), 1)
+		fill := int(float64(x1-x0) * p)
+		draw.Draw(r.dst, image.Rect(x0, y, x0+fill, y+r.s(7)), image.NewUniform(amber), image.Point{}, draw.Src)
+		left := mediaClock(v.Position)
+		right := mediaClock(v.Duration)
+		r.text(r.small, left, x0, y-r.s(10), dim)
+		r.text(r.small, right, x1-r.width(r.small, right), y-r.s(10), dim)
+	}
+}
+
+func mediaClock(seconds float64) string {
+	if seconds < 0 {
+		seconds = 0
+	}
+	n := int(seconds + .5)
+	return fmt.Sprintf("%d:%02d", n/60, n%60)
 }
 
 // favButton is the star, beside Done.

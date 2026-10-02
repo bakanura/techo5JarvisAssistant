@@ -424,6 +424,25 @@ func (c *Client) Call(domain, service string, data map[string]any) error {
 	return err
 }
 
+// CallResponse runs a Home Assistant action that is defined to return response data. Home Assistant's
+// REST API wraps that response beside changed_states when ?return_response is requested.
+func (c *Client) CallResponse(domain, service string, data map[string]any) (json.RawMessage, error) {
+	out, err := c.do("POST", "/api/services/"+domain+"/"+service+"?return_response", data)
+	if err != nil {
+		return nil, err
+	}
+	var envelope struct {
+		ServiceResponse json.RawMessage `json:"service_response"`
+	}
+	if err := json.Unmarshal(out, &envelope); err != nil {
+		return nil, err
+	}
+	if len(envelope.ServiceResponse) == 0 || string(envelope.ServiceResponse) == "null" {
+		return nil, errors.New("Home Assistant action returned no response data")
+	}
+	return envelope.ServiceResponse, nil
+}
+
 // MediaPlay asks a media player to play again what it was playing.
 func (c *Client) MediaPlay(player string) error {
 	_, err := c.do("POST", "/api/services/media_player/media_play", map[string]any{"entity_id": player})
