@@ -8,6 +8,14 @@ PASS: camera/screen diagnostic HTTP reads require physical-presence setup author
 PASS: normal HA camera access remains available through the encrypted ESPHome camera entity.
 PASS: persistent global insecure-TLS control removed; legacy saved true state is cleared one-way.
 PASS: SSH remains off by default, key-only, and already requires encrypted HA + valid key before listening.
-PASS: production Linux still exposes no resident ADB service.
+PASS: Jarvis Show exposes no Remote ADB control on any platform; legacy saved state is cleared one-way.
+
+PASS: device web responses use no-store/nosniff/frame-deny/no-referrer headers and bounded request headers/timeouts.
+PASS: Dashcast transport reviewed: Noise PSK authentication/encryption already protects device traffic; no downgrade added.
+PASS: ESPHome adoption reviewed: zero-key exposure is limited to the physically authorized adoption window and auto-closes.
+PASS: SIP reviewed: TLS + SRTP only from J13.
+PASS: house announce/intercom reviewed: signed/replay-protected announcement path and authenticated encrypted intercom retained.
+PASS: Bluetooth reviewed: discoverable/pairable mode is explicit and bounded to three minutes.
+PASS: SSH reviewed: off by default, key-only, requires encrypted HA plus a valid authorized key before listening.
 WARN: echod remains root; J33 reviews privilege reduction and secret/file ownership.
 WARN: final network segmentation/OpenWrt policy remains J35.

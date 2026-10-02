@@ -16,8 +16,9 @@ therefore not authorization.
   operations. Ordinary HA camera access should use the encrypted ESPHome camera entity.
 - **Certificate verification:** always on. Older saved `insecure_tls=true` state is migrated to false;
   Jarvis Show exposes no control that can turn it back on.
-- **Remote ADB 5555:** not present on the production Linux image. Android-only diagnostic state is not
-  restored into the Linux appliance.
+- **Remote ADB 5555:** disabled as a Jarvis Show feature on every platform. Older `remote_adb=true`
+  state is one-way cleared and there is no entity/action that can turn it back on. USB serial/TWRP is
+  the supported recovery/debug path.
 
 ## Sendspin pairing
 
@@ -40,3 +41,28 @@ the setup page closes.
 J35 will publish the final OpenWrt rules. Until then, do not port-forward any Jarvis Show service and
 keep the devices on the IoT network with only explicitly required flows to HA, Music Assistant,
 Dashcast, DNS/NTP and configured local backends.
+
+## Reviewed listeners and peer surfaces
+
+- **Dashcast 9555:** device↔Dashcast traffic is Noise-encrypted/authenticated with the configured
+  `DASHCAST_KEY`; the server refuses to start without its HA URL, HA token and device key. Keep it
+  LAN-only and do not port-forward it.
+- **ESPHome/native API 6053:** remains the normal always-on control plane. Installer-provisioned
+  devices use a real PSK; deliberate re-adoption can temporarily open the upstream zero-key window
+  only from the physically authorized setup page, and it auto-closes with a random key if unused.
+- **SIP:** remains opt-in and secure-only (TLS signalling, SRTP media); J13 removed the plaintext
+  downgrade path.
+- **House announcements/intercom:** remain closed until a house secret exists. Announcements are
+  HMAC-signed with nonce/replay protection; intercom is authenticated/encrypted with the derived
+  house key; plaintext house-word compatibility is rejected.
+- **Bluetooth audio:** BlueZ is forced out of pairing/discoverable mode at start and pairing mode is
+  an explicit user action with a three-minute timeout.
+- **SSH 22:** remains opt-in and key-only. Starting it requires a real encrypted HA API key and at
+  least one valid public key; J33 separately audits permissions, key persistence and root privilege.
+
+## HTTP hardening
+
+The shared device web listener now applies `Cache-Control: no-store`, `X-Content-Type-Options:
+nosniff`, `X-Frame-Options: DENY`, and `Referrer-Policy: no-referrer`, limits request headers, and
+keeps a bounded header/idle timeout. Streaming camera responses remain possible because there is no
+global write timeout.
