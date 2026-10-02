@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/HuskerMinion/techo5/echod/internal/config"
 )
 
 func TestJarvisAccountCannotPersistPlaintextMode(t *testing.T) {
@@ -38,5 +40,18 @@ func TestSafeCallerTextBoundsAndStripsControls(t *testing.T) {
 	}
 	if len([]rune(got)) > callerTextMost {
 		t.Fatalf("caller text kept %d runes, want <= %d", len([]rune(got)), callerTextMost)
+	}
+}
+
+func TestDoNotDisturbTurnsAwayIncomingSIPCalls(t *testing.T) {
+	config.Use(filepath.Join(t.TempDir(), "state.json"))
+	if !incomingCallsAllowed() {
+		t.Fatal("incoming calls started disabled")
+	}
+	if err := config.Set().Home().DoNotDisturb(true); err != nil {
+		t.Fatal(err)
+	}
+	if incomingCallsAllowed() {
+		t.Fatal("incoming SIP calls remained allowed under DND")
 	}
 }

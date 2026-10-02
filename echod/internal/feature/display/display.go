@@ -478,8 +478,10 @@ func (d *Display) relight(jump bool) {
 		target = math.Max(target, floor)
 		if d.nightGlow {
 			target = float64(d.glowBacklight()) // relight holds mu
-		} else if phone.Get().Busy() && nightNow(time.Now()) {
-			target = math.Min(target, screen.BacklightMax/2) // a call at night: enough to see who it is
+		} else if nightNow(time.Now()) && (phone.Get().Busy() || ring.IsSounding()) {
+			// A call or a ringing alarm/timer at night must be visible, but need not blast the room at
+			// the panel's daytime ceiling. Sunrise alarms take over below with their own gradual level.
+			target = math.Min(target, screen.BacklightMax/2)
 		}
 	}
 	// The light before an alarm takes the backlight over while it runs: it starts under anything the
@@ -1191,7 +1193,7 @@ func (d *Display) night(now time.Time, on bool, view voice.State) bool {
 		// that has never been set (no network, no time) can put a new device in its night.
 		// And a browser asking to be let in to the setup page: its Allow has to be seen and pressed,
 		// and whoever is asking is standing at the device.
-		lift := phone.Get().Busy() || sunriseProgress(now) > 0 || wifiUp || setup.Get().Waiting()
+		lift := phone.Get().Busy() || ring.IsSounding() || sunriseProgress(now) > 0 || wifiUp || setup.Get().Waiting()
 		active := view.Phase != "idle" || now.Sub(touched) < nightIdle || now.Sub(viewAt) < nightIdle
 		// Something playing is not somebody using the screen. At night it is rain or music to sleep
 		// to, and it kept a guest room's screen at full brightness all night.
@@ -1571,10 +1573,9 @@ func (d *Display) frame() time.Duration {
 	call := phone.Get().State()
 	_, reminding := remind.Get().Showing()
 	night := nightNow(now)
-	if !on && (call.Phase != phone.Idle || (!night && (ring.any() || reminding))) {
-		// A call lights a dark panel, at night to half brightness (relight): its page is how it is
-		// answered. By day a ring and a reminder do too, the ring's page being how it is stopped and a
-		// reminder being its words. At night they leave the panel dark: "stop" or a tap ends a ring.
+	if !on && shouldWakeDarkScreen(call.Phase != phone.Idle, ring.any(), reminding, night) {
+		// Calls and rings are interactive even at night, so they wake a dark panel; relight caps them
+		// gently in the night. A reminder alone wakes the panel by day but not in a sleeping room.
 		d.apply(true, d.ceilingOrDefault(), false)
 		on = true
 	}
@@ -1877,4 +1878,8 @@ func (d *Display) frame() time.Duration {
 		return time.Until(now.Truncate(idleFrame).Add(idleFrame))
 	}
 	return activeFrame
+}
+
+func shouldWakeDarkScreen(call, ringing, reminding, night bool) bool {
+	return call || ringing || (!night && reminding)
 }

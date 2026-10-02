@@ -58,7 +58,9 @@ type Home struct {
 	// with nobody answering. Off unless somebody turns it on: it is a way to listen in on a room.
 	DropIn bool `json:"drop_in,omitempty"`
 
-	// DoNotDisturb turns intercom calls away: the caller is told, and nothing rings here.
+	// DoNotDisturb suppresses proactive room noise and microphone opening: intercom/Drop In and SIP
+	// calls are turned away, house/HA announcements stay quiet, and doorbells remain visual-only.
+	// Alarms, timers and explicit local/outgoing actions are deliberately not DND notifications.
 	DoNotDisturb bool `json:"do_not_disturb,omitempty"`
 
 	// RadarSource is where the rain map's radar comes from: RadarNWS (the U.S. National Weather

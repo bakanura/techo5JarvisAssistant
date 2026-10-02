@@ -119,7 +119,7 @@ func categoryRows(sv sheetView) (rows []settingRow, note string) {
 			{id: "quiet", label: "Quiet hours", sub: quietSub(), kind: ctlChoice, value: quietValue()},
 			{id: "hasounds", label: "Home Assistant sounds", sub: "For muting and timers", kind: ctlToggle, on: !config.Get().Speaker.ClassicSounds},
 			{id: "camerasound", label: "Camera sound", sub: "A camera's own audio, while its view is up", kind: ctlToggle, on: home.CameraSound()},
-			{id: "dnd", label: "Do not disturb", sub: "Intercom calls from other rooms are turned away", kind: ctlToggle, on: config.Get().Home.DoNotDisturb},
+			{id: "dnd", label: "Do not disturb", sub: "Silence announcements and doorbells; turn away incoming calls", kind: ctlToggle, on: config.Get().Home.DoNotDisturb},
 			{id: "bass", label: "Bass", sub: toneSub(), kind: ctlStepper, value: toneValue(config.Get().Speaker.Bass)},
 			{id: "treble", label: "Treble", kind: ctlStepper, value: toneValue(config.Get().Speaker.Treble)},
 			{id: "sendspin", label: "Music Assistant player", sub: "Play music in sync with other rooms", kind: ctlToggle, on: st.sendspin},

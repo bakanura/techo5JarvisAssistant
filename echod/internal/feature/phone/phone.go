@@ -457,6 +457,11 @@ func (p *Phone) Call(number string) error {
 
 // incoming is a call offered to the device.
 func (p *Phone) incoming(d *diago.DialogServerSession) {
+	if !incomingCallsAllowed() {
+		slog.Info("phone: incoming call refused by do not disturb")
+		_ = d.Respond(sip.StatusTemporarilyUnavailable, "Do Not Disturb", nil)
+		return
+	}
 	caller := callerOf(d.InviteRequest, p.Contacts())
 	p.mu.Lock()
 	busy := p.state.Phase != Idle
@@ -515,6 +520,8 @@ func (p *Phone) incoming(d *diago.DialogServerSession) {
 		p.set(func(s *State) { s.Phase, s.Peer = Idle, "" })
 	}
 }
+
+func incomingCallsAllowed() bool { return !config.Get().Home.DoNotDisturb }
 
 // talk runs an answered call until either end hangs up. audio carries the call's sound until it is
 // told to stop, over whichever line the call is on.
