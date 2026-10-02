@@ -1,0 +1,17 @@
+J22 JARVIS CROWN ROOTFS INSTALL / PROVISION AUDIT
+
+PASS: destructive storage conversion remains in upstream install-show.py / slotctl path
+PASS: J20 complete backup is re-verified before an install plan exists
+PASS: backup ADB serial is bound to the recovery target
+PASS: Crown boot image is pinned to SHA256 cf5a492f7ee7ec16305905c58bf7f0b2e3f3e75521668ca905b9ae1ffb6d0baa
+PASS: rootfs needs exact caller/release SHA256 plus jarvis-crown-v1/crown marker
+PASS: archived generic TECHO5 rootfs cannot satisfy the Jarvis product-marker gate
+PASS: final confirmation phrase is exact: ERASE LINEAGE INSTALL JARVIS CROWN
+PASS: J21 pre-staged path does not format userdata or reinstall LineageOS
+PASS: pre-staged path does not instantiate upstream GitHub Release downloader
+PASS: wrapper forces --amazon-logo, therefore J22 does not patch/write expdb
+PASS: wrapper does not pass --lineage-zip
+PASS: allowed destructive install targets are boot and system/mmcblk0p12 slot-store conversion
+PASS: lk/preloader/expdb/tee*/persist/metadata/eMMC boot areas are not J22 write targets
+PASS: persistent provisioning writes name, HA PSK, optional SSH/Wi-Fi and profile marker
+PASS: no rootfs or release tarball was built by J22

@@ -132,3 +132,56 @@ mounted read-only and both MT7668 vendor modules must report the exact kernel AB
 
 If either module is absent or has a different vermagic, the workflow stops in TWRP before the later
 slot-store conversion. LineageOS itself is never booted by this path.
+
+## J22 — Jarvis Crown rootfs install/provision wrapper
+
+J22 deliberately reuses TECHO5's proven rescue/slot-store implementation instead of cloning the
+partition conversion code.  Jarvis Crown adds a fail-closed wrapper around the only destructive part
+of the install.
+
+The wrapper will not construct an install plan until all of these are true:
+
+- J20's atomic `partitions/` backup passes its SHA-256/coverage verification again;
+- the backup manifest belongs to the same ADB recovery serial now being installed;
+- the boot image is byte-for-byte the known-good Crown v0.8.0 image
+  (`cf5a492f7ee7ec16305905c58bf7f0b2e3f3e75521668ca905b9ae1ffb6d0baa`);
+- the rootfs matches the exact SHA-256 supplied by the future signed Jarvis Crown release metadata;
+- the rootfs contains a regular `etc/jarvis-crown-release.json` marker naming
+  `product=jarvis-crown-v1`, `board=crown`, and a non-empty version;
+- the operator types exactly `ERASE LINEAGE INSTALL JARVIS CROWN`.
+
+The archived upstream v0.9.21 rootfs intentionally fails the Jarvis product-marker gate.  J22 therefore
+cannot accidentally install an old generic TECHO5 userspace while presenting it as Jarvis Crown.  The
+future release/build job will create the marked rootfs; J22 does not build one.
+
+J21 has already installed and checked LineageOS's Crown vendor tree.  The internal
+`--jarvis-crown-prestaged` path therefore **does not format userdata or install Lineage again**.  It
+mounts/checks the vendor modules once more and then enters the same upstream flow that:
+
+1. copies the wrapper-verified rootfs to userdata and verifies the transfer;
+2. saves the current Lineage boot image as the USB recovery path;
+3. flashes only the pinned Crown TECHO5/Jarvis boot image to the `boot` partition;
+4. boots the rescue environment;
+5. refuses to continue if a slot store already exists;
+6. saves the unit-specific Lineage vendor tree before `system` is erased;
+7. converts only `mmcblk0p12` (`system`) into the A/B slot store;
+8. installs rootfs slot A and copies the vendor tree into that slot;
+9. provisions the device name, encrypted Home Assistant API key, optional SSH public key and optional
+   Wi-Fi credentials;
+10. writes `/data/misc/techo5/profile` as `jarvis-crown-v1` and boots slot A.
+
+Jarvis Crown forces `--amazon-logo` on this internal handoff.  That is intentionally named after the
+upstream option: it means **do not patch the boot logo**, which keeps `expdb`/kaeru unchanged.  The J22
+wrapper never requests a Lineage ZIP, never writes `lk`, preloader, `expdb`, `tee1`, `tee2`, persist,
+metadata, recovery, swdl or either eMMC boot area.  J20's earlier TWRP handoff is the only recovery/swdl
+write in the one-installer flow.
+
+The pre-staged path also skips the upstream GitHub release lookup completely.  Boot and rootfs are
+local wrapper-verified inputs, so the destructive stage cannot substitute an asset fetched from the
+network.
+
+Fresh Jarvis behavior (Hey Jarvis, follow-up turns, stop threshold, streamed `/jarvis-display`, and the
+other product defaults) is compiled into the Jarvis Crown rootfs.  J22 intentionally does not create a
+large `state.json` that would freeze today's defaults forever; it writes only persistent identity/
+credentials and the profile marker.  Future OTA updates therefore retain user settings while still
+allowing new defaults to apply correctly to genuinely fresh devices.

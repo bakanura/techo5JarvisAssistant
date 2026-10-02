@@ -285,6 +285,16 @@ def check_lineage_driver(adb):
              % (', '.join(bad), want))
     note('Wi-Fi and Bluetooth drivers built for kernel %s' % KERNEL_RELEASE)
 
+def prepare_lineage_vendor(adb, lineage_zip=None, prestaged=False):
+    """Stage Lineage once, or consume J21's already-staged Crown vendor tree without rewriting it."""
+    if prestaged:
+        check_lineage_driver(adb)
+        return
+    if not lineage_zip:
+        fail('a LineageOS zip is required unless Jarvis Crown J21 already staged it')
+    install_lineage(adb, lineage_zip)
+    check_lineage_driver(adb)
+
 
 def default_key_file(backup):
     """backups/<serial>/home-assistant.key, as on the Dot; a unit installed while it was api.psk keeps
@@ -351,6 +361,8 @@ def main():
     ap.add_argument('--boot', help='a boot image you built (docs/building.md) instead of the release\'s')
     ap.add_argument('--rootfs', help='a root filesystem you built instead of the release\'s')
     ap.add_argument('--lineage-zip', help='install from TWRP: the LineageOS 18.1 zip for this board, installed only for its drivers')
+    ap.add_argument('--jarvis-crown-prestaged', action='store_true', help=argparse.SUPPRESS)
+    ap.add_argument('--jarvis-crown-version', help=argparse.SUPPRESS)
     ap.add_argument('--wifi', help="a Wi-Fi network to join (its passphrase is asked for); otherwise LineageOS's saved one, or the Show's screen")
     ap.add_argument('--wifi-passphrase-file', help='a file holding the --wifi passphrase, for running from a script')
     ap.add_argument('--amazon-logo', action='store_true',
@@ -367,8 +379,10 @@ def main():
     step('checks')
     need(a.adb, 'install the Android platform tools (adb and fastboot)')
     need(a.fastboot, 'install the Android platform tools (adb and fastboot)')
-    twrp = bool(a.lineage_zip)
-    if twrp and not os.path.exists(a.lineage_zip):
+    twrp = bool(a.lineage_zip) or a.jarvis_crown_prestaged
+    if a.jarvis_crown_prestaged and a.lineage_zip:
+        fail('--jarvis-crown-prestaged consumes the J21-staged vendor tree; do not pass --lineage-zip again')
+    if a.lineage_zip and not os.path.exists(a.lineage_zip):
         fail('no file at %s' % a.lineage_zip)
     a.serial = pick_unit(a.serial, a.adb, ('recovery',) if twrp else ('device',), 'Echo Show', consoles=(CONSOLE_TECHO5,))
     backup = os.path.join(a.backups, a.serial)
@@ -389,7 +403,7 @@ def main():
             fail('no file at %s' % f)
     state = adb.state()
     if twrp and state != 'recovery':
-        fail("adb does not see %s in TWRP (state '%s'): --lineage-zip installs from TWRP; on LineageOS leave it out"
+        fail("adb does not see %s in TWRP (state '%s'): the Crown install path requires recovery here"
              % (a.serial, state))
     if not twrp and state != 'device':
         fail("adb does not see %s running LineageOS (state '%s'): turn on USB debugging and accept this computer, "
@@ -398,11 +412,15 @@ def main():
     if dev not in BOARDS:
         fail("%s reports '%s', which is none of: %s"
              % (a.serial, dev, ', '.join('%s (%s)' % (b, n) for b, n in BOARDS.items())))
-    if twrp:
+    if twrp and not a.jarvis_crown_prestaged:
         zdev = lineage_board(a.lineage_zip)
         if zdev != dev:
             fail('%s is a LineageOS build for %s, and this unit is a %s' % (a.lineage_zip, zdev, dev))
         note('%s in TWRP; LineageOS zip for %s' % (dev, zdev))
+    elif a.jarvis_crown_prestaged:
+        if dev != 'crown':
+            fail('--jarvis-crown-prestaged is only valid for crown, got %s' % dev)
+        note('crown in TWRP; J21-staged LineageOS vendor tree will be consumed without formatting/installing again')
     else:
         kr = adb.sh('uname -r')
         if kr != KERNEL_RELEASE:
@@ -461,34 +479,49 @@ def main():
 
     # ------------------------------------------------------------------------------------ 3. release
     step('the release')
-    rel = Release(REPO, a.release, a.work)
-    version = rel.version
-    if a.rootfs:
+    if a.jarvis_crown_prestaged:
+        if not a.rootfs or not a.boot or not a.jarvis_crown_version:
+            fail('Jarvis Crown pre-staged mode requires wrapper-verified --rootfs, --boot and --jarvis-crown-version')
+        version = a.jarvis_crown_version
         rootfs = os.path.abspath(a.rootfs)
-        note('root filesystem: your own, %s' % rootfs)
-    else:
-        rootfs = rel.rootfs('arm')
-        note('root filesystem %s checked against the signed manifest' % os.path.basename(rootfs))
-    if a.boot:
         boot = os.path.abspath(a.boot)
-        note('boot image: your own, %s' % boot)
+        note('Jarvis Crown root filesystem: wrapper-verified local input %s' % rootfs)
+        note('Crown boot image: wrapper-verified pinned local input %s' % boot)
     else:
-        boot = boot_image(rel, a.work, dev)
-        note('boot image %s checked' % os.path.basename(boot))
+        rel = Release(REPO, a.release, a.work)
+        version = rel.version
+        if a.rootfs:
+            rootfs = os.path.abspath(a.rootfs)
+            note('root filesystem: your own, %s' % rootfs)
+        else:
+            rootfs = rel.rootfs('arm')
+            note('root filesystem %s checked against the signed manifest' % os.path.basename(rootfs))
+        if a.boot:
+            boot = os.path.abspath(a.boot)
+            note('boot image: your own, %s' % boot)
+        else:
+            boot = boot_image(rel, a.work, dev)
+            note('boot image %s checked' % os.path.basename(boot))
     if a.dry_run:
         print('\nDry run: TECHO5 %s downloaded and checked in %s; nothing written to the unit.' % (version, rel.dir))
         return
 
     if twrp:
-        # From TWRP the first thing written is userdata, so the one question comes before it.
-        confirm(a.force, [
-            "About to install TECHO5 %s on %s (%s) as '%s', from TWRP." % (version, a.serial, BOARDS[dev], a.name),
-            "This formats userdata (Fire OS's data), installs LineageOS for its drivers without starting it,",
-            "flashes TECHO5's boot image, then erases the system partition (mmcblk0p12) to make the slot store.",
-        ])
-        step('LineageOS, for its drivers')
-        install_lineage(adb, a.lineage_zip)
-        check_lineage_driver(adb)
+        # Jarvis Crown reaches here only after J20/J21 and gives the final destructive confirmation in
+        # its wrapper.  Generic TWRP installs keep upstream's one-question behavior.
+        if a.jarvis_crown_prestaged:
+            note('Jarvis Crown final erase confirmation was handled by the fail-closed wrapper')
+            step('pre-staged LineageOS vendor tree')
+            prepare_lineage_vendor(adb, prestaged=True)
+        else:
+            # From TWRP the first thing written is userdata, so the one question comes before it.
+            confirm(a.force, [
+                "About to install TECHO5 %s on %s (%s) as '%s', from TWRP." % (version, a.serial, BOARDS[dev], a.name),
+                "This formats userdata (Fire OS's data), installs LineageOS for its drivers without starting it,",
+                "flashes TECHO5's boot image, then erases the system partition (mmcblk0p12) to make the slot store.",
+            ])
+            step('LineageOS, for its drivers')
+            prepare_lineage_vendor(adb, lineage_zip=a.lineage_zip)
         if not os.path.exists(los_boot):
             # Through a .partial kept only when whole, as on the LineageOS path: this is the image the way
             # back flashes, and a short one kept for good would be skipped on every later run.
@@ -603,6 +636,8 @@ def main():
             note(line)
     prov = ("mkdir -p /data/misc/techo5 && printf '%%s\\n' %s > /data/misc/techo5/name && "
             "(umask 077; printf '%%s\\n' %s > /data/misc/techo5/psk)" % (quote(a.name), quote(psk)))
+    if a.jarvis_crown_prestaged:
+        prov += " && printf 'jarvis-crown-v1\\n' > /data/misc/techo5/profile"
     if pub:
         prov += (" && mkdir -p -m 700 /data/misc/techo5/ssh && (umask 077; printf '%%s\\n' %s > /data/misc/techo5/ssh/authorized_keys)"
                  " && { [ -e /data/misc/techo5/state.json ] || printf '{\"security\":{\"ssh\":true}}\\n' > /data/misc/techo5/state.json; }"

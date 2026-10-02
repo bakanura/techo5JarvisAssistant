@@ -95,6 +95,14 @@ class LineageStagingTests(unittest.TestCase):
         adb.data_writable = False
         self.assertFalse(install.twrp_data_ready(adb))
 
+    def test_prestaged_vendor_path_never_formats_or_reinstalls_lineage(self):
+        adb = FakeAdb()
+        install.prepare_lineage_vendor(adb, prestaged=True)
+        joined = "\n".join(adb.commands)
+        self.assertNotIn("twrp format data", joined)
+        self.assertNotIn("twrp install /data/lineage.zip", joined)
+        self.assertIn("mount -o ro /dev/block/mmcblk0p12", joined)
+
     def test_driver_gate_requires_wifi_and_bluetooth_exact_kernel_abi(self):
         adb = FakeAdb()
         original_fail = install.fail
