@@ -1,0 +1,12 @@
+J28 validation audit
+
+PASS: 88 Python tests
+PASS: Python syntax compile
+PASS: crown/checkers/shared profile JSON
+PASS: release/install/rootfs shell syntax
+PASS: GitHub workflow YAML parse
+PASS: git diff --check
+PASS: canonical validation runner added
+WARN: local Go 1.23.2 cannot execute repo Go suites requiring >=1.26
+PASS: CI workflow requires Go 1.26.x and runs root + echod + dashcast Go tests
+PASS: no rootfs/release tarball built
