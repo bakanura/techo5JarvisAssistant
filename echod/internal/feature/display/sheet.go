@@ -754,7 +754,7 @@ func (d *Display) rowTap(id string, p part, opt int) {
 			media.Get().Adjust(+1)
 		}
 	case "mic":
-		mute.Get().Toggle()
+		mute.Get().LocalToggle()
 	case "wakesens":
 		v := config.Get().Wake.Slot(0).Threshold
 		switch p {

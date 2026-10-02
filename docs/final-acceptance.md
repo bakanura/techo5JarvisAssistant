@@ -19,6 +19,13 @@ not a claim that the product is accepted today.
   - [ ] a room with no preferred speaker uses its Jarvis Show as primary;
   - [ ] named/whole-home groups substitute unavailable room primaries with their Jarvis fallbacks;
   - [ ] Now Playing reports the real resolved endpoint/room/group, never an unavailable preferred speaker.
+- [ ] J46 microphone privacy/control acceptance is complete.
+  - [ ] HA software mute cuts captured audio immediately, before history/wake/stream consumers;
+  - [ ] HA may always mute, but clearing an active software mute requires the device-local opt-in;
+  - [ ] remote unmute is refused unless the native API is provisioned with a real encryption key;
+  - [ ] the local touchscreen can clear the reversible software mute without granting HA permission;
+  - [ ] a physical Crown/Checkers privacy latch always wins and cannot be released by HA or touchscreen;
+  - [ ] HA reports `muted`, `unmuted`, `physical mute active`, and `remote unmute not permitted` truthfully.
 - [ ] The release manifest is signed by the Jarvis Show release key and tamper verification fails as expected.
 - [ ] Rootfs contains `jarvis-show-v1`, version and both supported-board markers.
 - [ ] Published release contains only intended Show artifacts; no upstream/legacy publisher path was used.
@@ -55,6 +62,7 @@ For each board separately:
 - [ ] Jarvis dashboard loads without header/sidebar/black-bar regression;
 - [ ] alarms/timers/reminders survive HA outage as designed;
 - [ ] DND/privacy/intercom/Drop In/SIP behavior passes;
+- [ ] physical mute, touchscreen software mute, HA mute, and trusted/untrusted HA unmute behavior pass;
 - [ ] Setup page and first-boot Wi-Fi provisioning pass;
 - [ ] music fallback/group/full-screen Now Playing passes;
 - [ ] device remains stable for the A/B health-commit window;

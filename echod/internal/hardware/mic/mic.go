@@ -85,6 +85,12 @@ type Source struct {
 	wasDenoising bool
 	denoising    atomic.Bool
 
+	// softwareMuted is the reversible mute Home Assistant controls. transitionMuted is the
+	// immediate local cut used while a physical privacy latch is still moving. Both are applied
+	// before history, wake detection or streaming sees a frame.
+	softwareMuted   atomic.Bool
+	transitionMuted atomic.Bool
+
 	// Which way the loudest sound is, as a beam, or -1 until something asks. finder belongs to the
 	// reader; wantFacing is how anything else asks it to look.
 	finder     *Beamformer
@@ -129,8 +135,20 @@ func New() *Source {
 	s.facing.Store(-1)
 	s.leveling.Store(config.Get().Microphone.Leveling)
 	s.denoising.Store(config.Get().Microphone.Denoise)
+	s.softwareMuted.Store(config.Get().Microphone.SoftwareMuted)
 	return s
 }
+
+// SetSoftwareMuted changes the reversible microphone cut. It takes effect on the next captured
+// frame and does not wait for Assist, an LLM, or the physical privacy latch.
+func (s *Source) SetSoftwareMuted(muted bool) { s.softwareMuted.Store(muted) }
+
+// SoftwareMuted reports the reversible microphone cut controlled by Home Assistant.
+func (s *Source) SoftwareMuted() bool { return s.softwareMuted.Load() }
+
+// SetTransitionMuted applies the short-lived local cut used while a hardware privacy latch is
+// catching up with a button press.
+func (s *Source) SetTransitionMuted(muted bool) { s.transitionMuted.Store(muted) }
 
 var (
 	once   sync.Once
@@ -376,7 +394,7 @@ func (s *Source) broadcast(raw []byte) {
 
 	// A software-only mute cuts here, before anything reads the frame: what is not handed on cannot
 	// be heard, kept or streamed.
-	if privacy.SoftwareCut() {
+	if privacy.SoftwareCut() || s.softwareMuted.Load() || s.transitionMuted.Load() {
 		clear(raw)
 	}
 

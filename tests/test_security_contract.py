@@ -27,6 +27,7 @@ class SecurityContractTests(unittest.TestCase):
         for package in (
             "./internal/feature/api",
             "./internal/feature/announce",
+            "./internal/feature/mute",
             "./internal/feature/phone",
             "./internal/feature/security",
             "./internal/feature/sendspin",

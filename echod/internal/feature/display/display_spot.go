@@ -896,7 +896,7 @@ func (d *Display) act(id itemID) {
 			d.contactTop = 0
 		})
 	case itemMute:
-		mute.Get().Toggle()
+		mute.Get().LocalToggle()
 	case itemMusic:
 		rd := home.Get().Radio()
 		playing, paused := musicState()

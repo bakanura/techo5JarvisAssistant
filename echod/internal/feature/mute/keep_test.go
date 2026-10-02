@@ -38,7 +38,7 @@ func TestKeepAfterARing(t *testing.T) {
 	} {
 		line := &fakeLine{muted: tc.now, acts: tc.acts}
 		m := &Mute{sw: &esphome.Switch{}, line: line}
-		m.sw.Set(tc.was)
+		m.physical.Store(tc.was)
 
 		m.keep()
 
@@ -48,8 +48,8 @@ func TestKeepAfterARing(t *testing.T) {
 		if line.muted != tc.wantMuted {
 			t.Errorf("%s: line ends muted=%v, want %v", tc.name, line.muted, tc.wantMuted)
 		}
-		if m.sw.Get() != tc.was {
-			t.Errorf("%s: switch says %v, want it unchanged at %v", tc.name, m.sw.Get(), tc.was)
+		if m.physical.Load() != tc.was {
+			t.Errorf("%s: physical state says %v, want it unchanged at %v", tc.name, m.physical.Load(), tc.was)
 		}
 	}
 }

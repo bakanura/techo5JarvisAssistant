@@ -2,8 +2,10 @@ package config
 
 // Microphone is the array: whether it is cut, how it is combined, and how hard it is driven.
 type Microphone struct {
-	Muted     bool `json:"muted"`
-	LEDBright bool `json:"led_bright"`
+	Muted             bool `json:"muted"`
+	SoftwareMuted     bool `json:"software_muted,omitempty"`
+	AllowRemoteUnmute bool `json:"allow_remote_unmute,omitempty"`
+	LEDBright         bool `json:"led_bright"`
 
 	// Gain is the analog gain on the array's converters, in dB.
 	Gain int `json:"gain"`
@@ -79,6 +81,14 @@ type MicrophoneWriter struct{ st *Store }
 
 func (w MicrophoneWriter) Muted(v bool) error {
 	return w.st.Update(func(c *Config) { c.Microphone.Muted = v })
+}
+
+func (w MicrophoneWriter) SoftwareMuted(v bool) error {
+	return w.st.Update(func(c *Config) { c.Microphone.SoftwareMuted = v })
+}
+
+func (w MicrophoneWriter) AllowRemoteUnmute(v bool) error {
+	return w.st.Update(func(c *Config) { c.Microphone.AllowRemoteUnmute = v })
 }
 
 func (w MicrophoneWriter) LEDBright(v bool) error {

@@ -252,6 +252,10 @@ func (f *Feature) save(w http.ResponseWriter, r *http.Request) {
 		}
 	case "dashboard":
 		problem = saveDashboard(r)
+	case "remote-unmute":
+		if err := config.Set().Microphone().AllowRemoteUnmute(r.PostFormValue("allow") == "yes"); err != nil {
+			problem = "could not save the microphone permission: " + err.Error()
+		}
 	case "timezone":
 		zone := strings.TrimSpace(r.PostFormValue("zone"))
 		switch {
@@ -346,7 +350,7 @@ func (f *Feature) settingsPage(w http.ResponseWriter, token, tab, saved, renamed
 		placeSection(w, token)
 		calendarLinksSection(w, token)
 	case "privacy":
-		privacySection(w)
+		privacySection(w, token)
 	case "general":
 		timezoneSection(w, token)
 		nameSection(w, token)
@@ -380,8 +384,9 @@ func timezoneSection(w http.ResponseWriter, token string) {
 // privacySection says what the device has open, and what this page will never do. It shows and does
 // not change: a web page that could open SSH would be a bigger hole than the convenience is worth, so
 // these stay on the device's own screen and in Home Assistant.
-func privacySection(w http.ResponseWriter) {
+func privacySection(w http.ResponseWriter, token string) {
 	s := config.Get().Security
+	mic := config.Get().Microphone
 	onOff := func(on bool) string {
 		if on {
 			return "<strong>on</strong>"
@@ -397,6 +402,14 @@ func privacySection(w http.ResponseWriter) {
 	  is left alone. It is on your own network, without encryption. It never touches SSH keys or the
 	  software the device runs, and never shows the Home Assistant key. It can let a Home Assistant add
 	  the device for 15 minutes (General), which sets a new key.</p></fieldset>`)
+	fmt.Fprint(w, `<fieldset><legend>Microphone remote unmute</legend><form method="post" action="/setup/save">`)
+	hidden(w, token, "remote-unmute", "privacy")
+	fmt.Fprintf(w, `<p><label><input type="checkbox" name="allow" value="yes"%s style="width:auto">
+	 Allow trusted Home Assistant to clear its software microphone mute</label></p>
+	 <p class="note">Off by default. Unmute is accepted only over the encrypted native Home Assistant
+	 API. This permission cannot release the physical privacy latch: when the red hardware mute is active,
+	 only the button on the device can make the microphones live again.</p>
+	 <p><button type="submit">Save microphone permission</button></p></form></fieldset>`, checked(mic.AllowRemoteUnmute))
 }
 
 // wifiSection is the networks: what the device is on, what it remembers, and how to add another.

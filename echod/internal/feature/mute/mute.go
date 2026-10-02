@@ -1,15 +1,12 @@
-// Package mute is the microphone mute: the switch in Home Assistant, the button on top of the
-// device, and what the ring shows while the microphones are cut.
-//
-// The cut is real rather than a software flag, so muted here means the microphones are
-// disconnected. Home Assistant asks for a state, the button asks for the other one, and start-up
-// asks for whatever was stored — they move the line differently and then want exactly the same
-// things to follow, so they share settled.
+// Package mute owns both microphone privacy layers: a reversible software cut for Home Assistant
+// and the device's physical privacy latch. Either one makes the microphone effectively muted; only
+// the button on the device can release a latched Crown/Checkers hardware mute.
 package mute
 
 import (
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	esphome "github.com/ygelfand/go-esphome-device"
@@ -17,6 +14,7 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/component"
 	"github.com/HuskerMinion/techo5/echod/internal/config"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/ring"
+	"github.com/HuskerMinion/techo5/echod/internal/feature/security"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/buttons"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/led"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/mic"
@@ -42,9 +40,11 @@ var mutedColor = led.Color{R: 0xC0, G: 0x00, B: 0x00}
 
 type Mute struct {
 	sw         *esphome.Switch
+	status     *esphome.TextSensor
 	brightness *esphome.Select
 	line       privacy.Mute
 	led        privacy.LED
+	physical   atomic.Bool
 
 	// ring is the animation to show while the microphones are cut, and claim is where it goes. The
 	// select lives here rather than with the other settings because choosing one has to take effect
@@ -75,6 +75,15 @@ func build() *Mute {
 				DeviceID: component.DeviceMicrophone,
 				Name:     "Microphone mute",
 				Icon:     "mdi:microphone-off",
+			},
+		},
+		status: &esphome.TextSensor{
+			Base: esphome.Base{
+				ObjectID: "microphone_mute_status",
+				DeviceID: component.DeviceMicrophone,
+				Name:     "Microphone mute status",
+				Icon:     "mdi:microphone-off",
+				Category: esphome.CategoryDiagnostic,
 			},
 		},
 		claim: led.Get().Claim(led.PriorityMute),
@@ -120,58 +129,101 @@ func build() *Mute {
 func (m *Mute) Name() string { return "microphone mute" }
 
 func (m *Mute) Entities() []esphome.Entity {
-	return []esphome.Entity{m.sw, m.ring, m.brightness}
+	return []esphome.Entity{m.sw, m.status, m.ring, m.brightness}
 }
 
 // Muted reports whether the line is cut, which is what a turn has to check before opening the
 // microphones.
 func (m *Mute) Muted() (bool, error) {
+	software := mic.Get().SoftwareMuted()
 	if m.line == nil {
-		return false, nil
+		return software, nil
 	}
-	return m.line.Get()
+	physical, err := m.line.Get()
+	if err != nil {
+		return m.physical.Load() || software, err
+	}
+	m.physical.Store(physical)
+	return physical || software, nil
 }
 
-// Restore cuts the microphones if they were cut when the device was last on. The line does not
-// survive a reboot, so what was stored is applied rather than read — and it is the line that
-// decides, so a device whose mute cannot be reached comes up live and says so rather than claiming
-// to be muted.
+// Restore puts both mute layers back. The saved physical latch remains a local privacy choice; the
+// separate software cut is the reversible Home Assistant control and is already seeded in mic.New
+// so not one captured frame leaks before this Device-phase component starts.
 func (m *Mute) Restore(c config.Config) {
-	if m.line == nil {
-		return
-	}
-	was, err := m.line.Get()
-	if err != nil {
-		slog.Error("reading mute state failed", "err", err)
-		return
-	}
-
 	// What to show while cut, before cutting, so the ring is right the first time settled looks.
 	component.RestoreEffect(m.ring, c.Ring.Muted, nil, config.Set().Ring().Muted)
+	mic.Get().SetSoftwareMuted(c.Microphone.SoftwareMuted)
+	m.sw.Set(c.Microphone.SoftwareMuted)
 
-	want := c.Microphone.Muted
-	if want != was {
-		if err := m.line.Set(want); err != nil {
-			slog.Error("setting mute failed", "muted", want, "err", err)
+	if m.line != nil {
+		was, err := m.line.Get()
+		if err != nil {
+			slog.Error("reading mute state failed", "err", err)
+		} else {
+			m.physical.Store(was)
+			want := c.Microphone.Muted
+			if want != was {
+				if err := m.line.Set(want); err != nil {
+					slog.Error("setting physical mute failed", "muted", want, "err", err)
+				}
+			}
+			m.settledPhysical(false, was)
 		}
 	}
-	m.settled(false)
-	slog.Info("restored", "what", "microphone mute", "muted", m.sw.Get(), "asked", want)
+	m.refresh(false)
+	slog.Info("restored", "what", "microphone software mute", "muted", m.sw.Get())
 
 	m.applyBrightness(c.Microphone.LEDBright)
 	slog.Info("restored", "what", m.brightness.ObjectID, "using", label(c.Microphone.LEDBright))
 }
 
-// Set is the switch in Home Assistant.
+// Set is the reversible software mute in Home Assistant. Muting is always accepted and takes
+// effect on the next captured frame. Unmuting is a stronger action: the owner must have opted in on
+// the device/setup UI and the native API must have a real encryption key. Neither path can release
+// the physical privacy latch.
 func (m *Mute) Set(muted bool) {
-	if m.line == nil {
+	// An already-clear software cut is not an unmute operation. In particular, Home Assistant may
+	// replay the entity's current false state after reconnecting; that must not turn into a refusal.
+	if !muted && !mic.Get().SoftwareMuted() {
+		m.sw.Set(false)
+		m.refresh(false)
 		return
 	}
-	if err := m.line.Set(muted); err != nil {
-		slog.Error("setting mute failed", "muted", muted, "err", err)
+	allowed := config.Get().Microphone.AllowRemoteUnmute
+	encrypted := security.APIEncrypted()
+	if !muted && !canRemoteUnmute(allowed, encrypted) {
+		m.sw.Set(mic.Get().SoftwareMuted())
+		m.refresh(true)
+		slog.Warn("remote microphone unmute refused", "allowed", allowed, "encrypted", encrypted)
 		return
 	}
-	m.settled(true)
+	m.setSoftware(muted)
+}
+
+func canRemoteUnmute(allowed, encrypted bool) bool { return allowed && encrypted }
+
+func (m *Mute) setSoftware(muted bool) {
+	before := m.effective()
+	mic.Get().SetSoftwareMuted(muted)
+	m.sw.Set(muted)
+	if err := config.Set().Microphone().SoftwareMuted(muted); err != nil {
+		slog.Error("saving software mute state failed", "err", err)
+	}
+	m.refresh(false)
+	m.changed(before)
+	slog.Info("microphone software mute", "muted", muted)
+}
+
+// LocalToggle is the touchscreen control. It owns only the reversible software cut: the physical
+// button remains the hardware privacy control, and a latched hardware mute cannot be cleared by a
+// screen tap either. Local software unmute never needs the Home Assistant permission.
+func (m *Mute) LocalToggle() {
+	if m.physical.Load() {
+		m.refresh(false)
+		return
+	}
+	m.setSoftware(!mic.Get().SoftwareMuted())
 }
 
 // Toggle is the button on top of the device. Where the hardware has already acted on the press, the
@@ -181,13 +233,20 @@ func (m *Mute) Toggle() {
 	if m.line == nil {
 		return
 	}
-	if !m.line.HardwareActs(m.sw.Get()) {
+	was := m.physical.Load()
+	if !m.line.HardwareActs(was) {
+		// On Crown/Checkers engaging the latch takes about a second. Stop handing frames on before
+		// the driver pulse so a local mute press is immediate from software's point of view too.
+		if !was {
+			mic.Get().SetTransitionMuted(true)
+		}
 		if _, err := m.line.Toggle(); err != nil {
+			mic.Get().SetTransitionMuted(false)
 			slog.Error("toggling mute failed", "err", err)
 			return
 		}
 	}
-	m.settled(true)
+	m.settledPhysical(true, was)
 }
 
 // pressed is the mute button. A hold only sounds: nothing is bound to it, and the tone says the
@@ -230,7 +289,7 @@ func (m *Mute) keep() {
 	if m.line == nil {
 		return
 	}
-	was := m.sw.Get()
+	was := m.physical.Load()
 	if !m.line.HardwareActs(was) {
 		return
 	}
@@ -247,31 +306,35 @@ func (m *Mute) keep() {
 		slog.Error("putting the mute back after a ring failed", "muted", was, "err", err)
 	}
 	if now, err := m.line.Get(); err == nil && now != was {
-		m.settled(true)
+		m.settledPhysical(true, was)
 		return
 	}
 	// A latch released under the microphones may take the chip down with it; see settled.
 	if !was {
 		mic.Rewire()
 	}
+	m.physical.Store(was)
+	m.refresh(false)
 	slog.Info("microphone mute left as it was after a press that went to a ring", "muted", was)
 }
 
-// settled publishes what the line now reads — not what was asked for, so a line that did not move
-// says so — and shows it on the ring. asked is false at start-up, where nobody asked.
-func (m *Mute) settled(asked bool) {
+// settledPhysical publishes what the privacy latch now reads — not what was asked for. from is the
+// last observed latch state, kept separately from the Home Assistant software-mute switch.
+func (m *Mute) settledPhysical(asked bool, from bool) {
 	if asked {
-		m.await(m.sw.Get())
+		m.await(from)
 	}
 
 	muted, err := m.line.Get()
 	if err != nil {
+		mic.Get().SetTransitionMuted(false)
 		slog.Error("reading mute state failed", "err", err)
 		return
 	}
-
-	m.sw.Set(muted)
-	m.show(component.ChosenEffect(m.ring))
+	before := m.effective()
+	m.physical.Store(muted)
+	mic.Get().SetTransitionMuted(false)
+	m.refresh(false)
 
 	// A latch that has just been released may have taken the microphone chip down with it, which
 	// brings it back muted and its stream dead (hardware/mic.Rewire). Only on a real change: at
@@ -285,17 +348,43 @@ func (m *Mute) settled(asked bool) {
 	}
 
 	if err := config.Set().Microphone().Muted(muted); err != nil {
-		slog.Error("saving mute state failed", "err", err)
+		slog.Error("saving physical mute state failed", "err", err)
 	}
-	slog.Info("microphone mute", "muted", muted)
+	slog.Info("microphone physical mute", "muted", muted)
+	m.changed(before)
+}
 
-	m.Changed.Emit(muted)
+func (m *Mute) effective() bool { return m.physical.Load() || mic.Get().SoftwareMuted() }
 
-	if muted {
-		speaker.Sound().Chime(speaker.MuteSound(true))
+func (m *Mute) changed(before bool) {
+	after := m.effective()
+	if before == after {
 		return
 	}
-	speaker.Sound().Chime(speaker.MuteSound(false))
+	m.Changed.Emit(after)
+	speaker.Sound().Chime(speaker.MuteSound(after))
+}
+
+func (m *Mute) refresh(remoteRefused bool) {
+	if m.ring != nil && m.claim != nil {
+		m.show(component.ChosenEffect(m.ring))
+	}
+	if m.status != nil {
+		m.status.Set(statusLabel(m.physical.Load(), mic.Get().SoftwareMuted(), remoteRefused))
+	}
+}
+
+func statusLabel(physical, software, remoteRefused bool) string {
+	switch {
+	case physical:
+		return "physical mute active"
+	case remoteRefused:
+		return "remote unmute not permitted"
+	case software:
+		return "muted"
+	default:
+		return "unmuted"
+	}
 }
 
 // pollInterval is how often await looks while it waits.
@@ -319,7 +408,7 @@ func (m *Mute) await(from bool) {
 // It takes the name rather than reading the setting, because it is called both when the mute state
 // changes and when the choice does, and on that second path the setting has not been written yet.
 func (m *Mute) show(name string) {
-	if name == "" || !m.sw.Get() {
+	if name == "" || !m.effective() {
 		m.claim.Clear()
 		return
 	}
