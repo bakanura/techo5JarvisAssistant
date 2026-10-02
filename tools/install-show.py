@@ -61,6 +61,7 @@ REPO = 'HuskerMinion/techo5'
 # All three boards run this same commit, which is why one daemon and one installer serve them.
 KERNEL_RELEASE = '4.9.337-g8d928c5176cc'
 WIFI_MODULE = 'vendor/lib/modules/mt76x8_wlan.ko'
+BT_MODULE = 'vendor/lib/modules/mt76x8_bt.ko'
 
 # The boards this installs on, as `getprop ro.product.device` reports them. They share the SoC, the
 # kernel commit, the partition numbers this script writes (MISC p8, boot p9, system p12) and the
@@ -229,6 +230,18 @@ def put_logo(adb, parts, board):
          '   and check it with: adb shell sha256sum %s' % (n, expdb_backup, part, part))
 
 
+def twrp_data_ready(adb):
+    """True only after TWRP is back and /data can actually be written.
+
+    A generic `adb reboot recovery` proved unreliable on Crown after formatting data.  TWRP's own
+    reboot command is used instead, and merely seeing /data in `mount` is not enough: the installer
+    must be able to create and remove a file before it sends the LineageOS zip there.
+    """
+    if adb.state() != 'recovery' or ' /data ' not in adb.sh('mount'):
+        return False
+    return adb.sh('touch /data/.jarvis-crown-write-test && rm -f /data/.jarvis-crown-write-test && echo OK') == 'OK'
+
+
 def install_lineage(adb, zip_path):
     """Format userdata and install the LineageOS zip from TWRP, without ever starting LineageOS: its
     system partition is where this unit's drivers come from. Fire OS's userdata is encrypted, so it is
@@ -236,10 +249,9 @@ def install_lineage(adb, zip_path):
     out = adb.sh('twrp format data')
     if 'Done' not in out:
         fail('formatting userdata in TWRP failed:\n%s' % out)
-    adb.reboot('recovery')
-    wait_for('TWRP after formatting userdata', 180,
-             lambda: adb.state() == 'recovery' and ' /data ' in adb.sh('mount'), 3)
-    note('userdata formatted')
+    adb.sh('twrp reboot recovery')
+    wait_for('TWRP after formatting userdata', 180, lambda: twrp_data_ready(adb), 3)
+    note('userdata formatted; /data mounted and writable after TWRP reboot')
     adb.push(zip_path, '/data/lineage.zip')
     with open(zip_path, 'rb') as f:
         want = hashlib.sha256(f.read()).hexdigest()
@@ -253,14 +265,25 @@ def install_lineage(adb, zip_path):
 
 
 def check_lineage_driver(adb):
-    """The Wi-Fi driver on the LineageOS system partition is built for the kernel TECHO5's is rebuilt
-    from, which is what the running-kernel check says on a unit that started LineageOS."""
-    out = adb.sh('mkdir -p /tmp/t5sys && mount -o ro /dev/block/mmcblk0p12 /tmp/t5sys && '
-                 'grep -a -o "vermagic=[^ ]*" /tmp/t5sys/system/%s | head -1; umount /tmp/t5sys' % WIFI_MODULE)
-    if 'vermagic=%s' % KERNEL_RELEASE not in out:
-        fail('the LineageOS system this zip installed has a Wi-Fi driver for %s, not %s: use the LineageOS '
-             '18.1 build the getting started guide links' % (out.strip() or 'no kernel it names', KERNEL_RELEASE))
-    note('Wi-Fi driver built for kernel %s' % KERNEL_RELEASE)
+    """Require both MT7668 vendor modules to match the exact kernel Jarvis Crown/TECHO5 runs."""
+    out = adb.sh(
+        'mkdir -p /tmp/t5sys && mount -o ro /dev/block/mmcblk0p12 /tmp/t5sys && '
+        'printf "wifi="; grep -a -o "vermagic=[^ ]*" /tmp/t5sys/system/%s | head -1; '
+        'printf "bt="; grep -a -o "vermagic=[^ ]*" /tmp/t5sys/system/%s | head -1; '
+        'umount /tmp/t5sys' % (WIFI_MODULE, BT_MODULE)
+    )
+    lines = dict(line.split('=', 1) for line in out.splitlines() if '=' in line)
+    want = 'vermagic=%s' % KERNEL_RELEASE
+    bad = []
+    for label in ('wifi', 'bt'):
+        got = lines.get(label, '').strip()
+        if got != want:
+            bad.append('%s=%s' % (label, got or 'missing'))
+    if bad:
+        fail('the LineageOS system this zip installed has vendor module ABI %s, expected %s for both Wi-Fi '
+             'and Bluetooth: use the Crown LineageOS 18.1 build the getting started guide links'
+             % (', '.join(bad), want))
+    note('Wi-Fi and Bluetooth drivers built for kernel %s' % KERNEL_RELEASE)
 
 
 def default_key_file(backup):

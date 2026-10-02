@@ -109,3 +109,26 @@ only after all hashes and partition coverage verify again.
 This is a **post-Amonet recovery backup**, not a pristine factory/pre-unlock dump. Amonet may already
 have replaced recovery/swdl with TWRP by this point. Its purpose is to preserve the known unlocked Crown
 state before Jarvis Crown/TECHO5 later formats userdata or converts `system` into the A/B rootfs store.
+
+## J21 — Crown Lineage vendor-driver staging
+
+The LineageOS ZIP remains a vendor-driver source only; Jarvis Crown never requires a first Android boot.
+Before any destructive action, the installer verifies the ZIP metadata names `crown` and the live TWRP
+unit is the same board.
+
+The known Crown recovery handoff bug is fixed in the fork: after `twrp format data`, the installer uses
+TWRP's own `twrp reboot recovery` command rather than generic `adb reboot recovery`. It then waits for
+all three conditions before pushing the ZIP:
+
+- ADB reports recovery state;
+- `/data` is mounted;
+- `/data` passes a real create/remove write probe.
+
+The ZIP is SHA-256 checked after transfer before TWRP installs it. After installation, `system` is
+mounted read-only and both MT7668 vendor modules must report the exact kernel ABI Jarvis Crown uses:
+
+- `mt76x8_wlan.ko` -> `4.9.337-g8d928c5176cc`
+- `mt76x8_bt.ko` -> `4.9.337-g8d928c5176cc`
+
+If either module is absent or has a different vermagic, the workflow stops in TWRP before the later
+slot-store conversion. LineageOS itself is never booted by this path.

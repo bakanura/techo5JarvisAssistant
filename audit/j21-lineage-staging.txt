@@ -1,0 +1,16 @@
+J21 Crown Lineage vendor-driver staging
+=======================================
+PASS: Lineage ZIP metadata board can be checked before device modification
+PASS: Crown path requires matching live board + Crown ZIP
+PASS: post-format handoff uses `twrp reboot recovery` (known-good Crown path)
+PASS: installer waits for recovery state + /data mount + successful write probe
+PASS: uploaded ZIP is SHA-256 checked before TWRP install
+PASS: LineageOS is installed only as vendor/system source and is not booted
+PASS: Wi-Fi module exact vermagic required: 4.9.337-g8d928c5176cc
+PASS: Bluetooth module exact vermagic required: 4.9.337-g8d928c5176cc
+PASS: system is mounted read-only for the ABI verification
+PASS: 5 J21 regression tests passed
+PASS: python syntax compilation passed
+PASS: git diff --check passed
+PASS: no real device I/O occurred
+PASS: no rootfs/release tarball built
