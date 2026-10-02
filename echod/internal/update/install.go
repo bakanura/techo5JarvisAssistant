@@ -90,17 +90,17 @@ func Install(ctx context.Context, m Manifest, progress func(float32)) error {
 // notOlder refuses a manifest offering a version below the one this binary reports as running.
 //
 // A signature says who wrote a manifest, not when: an old release's manifest is signed just as well as
-// today's, so anything able to answer for the channel — a compromised release asset, a proxy, a name
-// server on the network — can serve last month's and have it believed. Without this, that walks a
-// device backwards onto a version whose holes are published in its own release notes.
-//
-// Home Assistant already ranks the two versions and leaves the update card off when what is offered is
-// older; this makes the same answer binding where the manifest actually arrives, rather than trusting a
-// card in an app that is not the thing being protected. Equal is allowed through — reinstalling what is
-// already running is a repair, not a downgrade — and a version neither side can rank is left alone,
-// since refusing there would strand a hand-built daemon that stamped something unusual.
+// today's. Equal is allowed through as a repair. If the running build cannot be ranked, network OTA
+// fails closed instead of guessing whether the offered release is actually newer.
 func notOlder(offered, running string) error {
-	if rank, ok := compareVersions(offered, running); ok && rank < 0 {
+	if err := ValidVersion(running); err != nil {
+		return fmt.Errorf("update: running version %q cannot be ranked safely; refusing network OTA: %w", running, err)
+	}
+	rank, ok := compareVersions(offered, running)
+	if !ok {
+		return fmt.Errorf("update: cannot compare offered %s with running %s; refusing network OTA", offered, running)
+	}
+	if rank < 0 {
 		return fmt.Errorf("update: %s is older than the running %s, and an older release is not installed over a newer one", offered, running)
 	}
 	return nil

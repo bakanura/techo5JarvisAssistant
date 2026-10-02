@@ -44,8 +44,9 @@ type Firmware struct {
 	events  *esphome.Event
 	auto    *esphome.Switch
 
-	mu    sync.Mutex
-	found update.Manifest
+	mu           sync.Mutex
+	found        update.Manifest
+	foundChannel update.Channel
 
 	announced  sync.Once
 	rolledBack string
@@ -83,6 +84,26 @@ var (
 func Get() *Firmware {
 	once.Do(func() { shared = build() })
 	return shared
+}
+
+func (u *Firmware) rememberFound(channel update.Channel, found update.Manifest) {
+	u.mu.Lock()
+	u.found = found
+	u.foundChannel = channel
+	u.mu.Unlock()
+}
+
+func (u *Firmware) clearFound(channel update.Channel) {
+	u.rememberFound(channel, update.Manifest{})
+}
+
+func (u *Firmware) cachedFound(channel update.Channel) (update.Manifest, bool) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.foundChannel != channel || u.found.Version == "" {
+		return update.Manifest{}, false
+	}
+	return u.found, true
 }
 
 func build() *Firmware {
@@ -125,8 +146,11 @@ func build() *Firmware {
 			if err := config.Set().Update().Channel(c.Label()); err != nil {
 				return err
 			}
-			// The card still shows what the channel we just left was serving: nothing fetches the new
-			// one on a selection change, so ask as soon as the choice is saved.
+			// A cached manifest belongs to the channel that produced it. Drop the old offer now,
+			// before the asynchronous check, so a failed stable fetch can never leave a dev build
+			// installable (or vice versa).
+			u.clearFound(c)
+			u.publish(update.Manifest{Version: layout.Version})
 			safe.Go("update check", func() { u.Check(context.Background()) })
 			return nil
 		})
@@ -264,9 +288,7 @@ func (u *Firmware) Check(ctx context.Context) {
 		slog.Info("update check for a channel no longer followed; dropped", "channel", channel.Label())
 		return
 	}
-	u.mu.Lock()
-	u.found = found
-	u.mu.Unlock()
+	u.rememberFound(channel, found)
 
 	slog.Info("update check", "channel", channel.Label(), "running", layout.Version, "offered", found.Version)
 	u.publish(found)
@@ -293,16 +315,26 @@ func (u *Firmware) command(cmd esphome.UpdateCommand) {
 func (u *Firmware) Install(ctx context.Context) {
 	u.busy.Add(1)
 	defer u.busy.Add(-1)
-	found, err := update.Fetch(ctx, u.Channel())
+	channel := u.Channel()
+	found, err := update.Fetch(ctx, channel)
+	// A channel selection can change while the network request is in flight. Never install the result
+	// of a channel the device no longer follows, even if that manifest is perfectly signed.
+	if u.Channel() != channel {
+		slog.Info("update install fetch completed for a channel no longer followed; dropped", "channel", channel.Label())
+		return
+	}
 	if err != nil {
-		slog.Warn("re-reading the channel failed, using the last check", "err", err)
-		u.mu.Lock()
-		found = u.found
-		u.mu.Unlock()
+		var ok bool
+		found, ok = u.cachedFound(channel)
+		if !ok {
+			slog.Warn("re-reading the selected update channel failed and no same-channel cache exists",
+				"channel", channel.Label(), "err", err)
+			return
+		}
+		slog.Warn("re-reading the selected update channel failed, using its last same-channel check",
+			"channel", channel.Label(), "err", err)
 	} else {
-		u.mu.Lock()
-		u.found = found
-		u.mu.Unlock()
+		u.rememberFound(channel, found)
 	}
 
 	if found.Version == "" || found.Version == layout.Version || !found.Serves() || !update.Newer(found.Version, layout.Version) {

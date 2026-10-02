@@ -1,0 +1,14 @@
+J26 OTA channel audit
+
+PASS: stable URL is GitHub latest/download under bakanura/techo5JarvisAssistant
+PASS: dev URL is rolling releases/download/dev under the same repository
+PASS: both channels use the same embedded Ed25519 release key
+PASS: channel switch clears the previous manifest offer before asynchronous re-check
+PASS: cached manifest records the channel that produced it
+PASS: failed install fetch can only reuse same-channel cached manifest
+PASS: in-flight manifest result is discarded if the selected channel changed meanwhile
+PASS: older release cannot be offered/installed over a newer running release
+PASS: unrankable running build fails closed for network OTA
+PASS: A/B slot install/rollback contract remains channel-independent
+WARN: normal Go tests require Go >=1.26; local Go is 1.23.2
+WARN: lowering go.mod in a temporary copy still cannot compile because the source uses strings.SplitSeq

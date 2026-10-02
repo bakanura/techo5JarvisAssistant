@@ -246,11 +246,11 @@ func TestVersionsRankTheWayHomeAssistantRanksThem(t *testing.T) {
 	}
 }
 
-// A version neither side can rank is not treated as older: an unusual stamp on a hand-built daemon
-// should not be a device that can never be updated again.
+// A running build that cannot be ranked must not guess at ordering: USB/manual recovery is safer
+// than letting a signed-but-old manifest walk an ad-hoc build backwards.
 func TestAnUnrankableVersionIsNotTakenForADowngrade(t *testing.T) {
-	if err := notOlder("v0.5.10", "a build of my own"); err != nil {
-		t.Errorf("an unrankable running version blocked an install: %v", err)
+	if err := notOlder("v0.5.10", "a build of my own"); err == nil {
+		t.Error("an unrankable running version was allowed to use network OTA")
 	}
 	if err := notOlder("v0.5.10", "v0.5.10"); err != nil {
 		t.Errorf("reinstalling the running version was refused: %v", err)

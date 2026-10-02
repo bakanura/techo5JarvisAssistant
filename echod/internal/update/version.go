@@ -12,14 +12,14 @@ import (
 //
 // Only versions matching versionPattern get here — ValidVersion refuses the rest before a manifest is
 // believed — so this does not have to rank names, dates or tags. Anything it cannot read says so with
-// its second result instead of guessing an order, and the caller then leaves the decision alone.
+// its second result instead of guessing an order; OTA callers fail closed when ordering is unknown.
 
-// Newer reports whether offered is worth offering over running: newer by Home Assistant's ranking, or
-// not rankable at all (a development build), where the device leaves the decision to whoever presses
-// Install, as it always has. An older release is never offered: Install would refuse it.
+// Newer reports whether offered is strictly newer than running. If either side cannot be ranked, the
+// safe answer is false: a root updater must not guess ordering for an ad-hoc build and accidentally
+// walk it backwards. Release/CI builds are required to stamp a ValidVersion.
 func Newer(offered, running string) bool {
 	rank, ok := compareVersions(offered, running)
-	return !ok || rank > 0
+	return ok && rank > 0
 }
 
 // compareVersions ranks a against b: negative when a is the older, zero when they rank the same,
