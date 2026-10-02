@@ -4,7 +4,7 @@
 
 .DESCRIPTION
   The daemon's built-in updater fetches
-  https://github.com/HuskerMinion/techo5/releases/latest/download/manifest.json (stable) and
+  https://github.com/bakanura/techo5JarvisAssistant/releases/latest/download/manifest.json (stable) and
   installs the binary it names. This script produces both files and publishes them with gh.
 
 .EXAMPLE
@@ -24,8 +24,8 @@ param(
     # slots is offered a release only when it carries this; the Dot binary is built every time.
     [string]$DotRootfs = '',
     # The release signing key (ed25519 seed, base64). Devices take a manifest only with its signature, so
-    # a release cannot be published without it. Keep it off every repository and backed up: $env:TECHO5_SIGN_KEY.
-    [string]$SignKey = $env:TECHO5_SIGN_KEY,
+    # a release cannot be published without it. Keep it off every repository and backed up: $env:JARVIS_SHOW_SIGN_KEY.
+    [string]$SignKey = $env:JARVIS_SHOW_SIGN_KEY,
     # A boot image built with build-image.sh --no-key, published as techo5-boot-<version>.img for new
     # units (docs/install.md). Refused if it carries an SSH key.
     [string]$Boot = '',
@@ -60,8 +60,8 @@ if (($PrebuiltArm -and -not $PrebuiltArmDot) -or ($PrebuiltArmDot -and -not $Pre
 foreach ($t in @($Rootfs) | Where-Object { $_ }) {
     if (& tar -tzf $t | Where-Object { $_ -match '^(\./)?vendor/.' } | Select-Object -First 1) { throw "$t carries a vendor tree; build it without VENDOR_TGZ" }
 }
-if (-not $SignKey -or -not (Test-Path $SignKey)) { throw "no release signing key: set TECHO5_SIGN_KEY or pass -SignKey" }
-$repo = 'HuskerMinion/techo5'
+if (-not $SignKey -or -not (Test-Path $SignKey)) { throw "no release signing key: set JARVIS_SHOW_SIGN_KEY or pass -SignKey" }
+$repo = 'bakanura/techo5JarvisAssistant'
 $root = Resolve-Path (Join-Path $PSScriptRoot '..')
 $bin = Join-Path $root 'bin'
 New-Item -ItemType Directory -Force $bin | Out-Null

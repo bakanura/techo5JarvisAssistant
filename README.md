@@ -358,3 +358,10 @@ Android and any app on the screen keep running, silently.
 MIT. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
 TECHO5 isn't affiliated with Amazon. Echo and Alexa are trademarks of Amazon.com, Inc.
+
+
+## Jarvis Show release repository
+
+Official fork/releases: https://github.com/bakanura/techo5JarvisAssistant
+
+Device OTA trusts only the Jarvis Show Ed25519 release key; see `docs/ota-identity.md`.
