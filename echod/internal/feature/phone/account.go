@@ -10,8 +10,9 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/layout"
 )
 
-// accountPath holds the SIP login. Its own file rather than state.json, like the API key: the password
-// is a secret, state.json is not, and diagnostics read state.json.
+// accountPath holds the SIP login. Its own file rather than state.json keeps the credential lifecycle
+// separate from the rest of the appliance state; both are owner-only because state.json also carries
+// household secrets.
 var accountPath = filepath.Join(layout.StateDir, "phone.json")
 
 // Account is one SIP login at a provider.
@@ -36,6 +37,9 @@ func loadAccount() (Account, error) {
 		return a, nil
 	}
 	if err != nil {
+		return a, err
+	}
+	if err := os.Chmod(filepath.Dir(accountPath), 0o700); err != nil {
 		return a, err
 	}
 	if err := os.Chmod(accountPath, 0o600); err != nil {
@@ -63,6 +67,12 @@ func saveAccount(a Account) error {
 	a.Plain = false
 	b, err := json.Marshal(a)
 	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(accountPath), 0o700); err != nil {
+		return err
+	}
+	if err := os.Chmod(filepath.Dir(accountPath), 0o700); err != nil {
 		return err
 	}
 	tmp := accountPath + ".new"

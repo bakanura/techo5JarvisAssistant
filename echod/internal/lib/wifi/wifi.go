@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -179,6 +180,12 @@ func Join(ctx context.Context, ssid, passphrase string) error {
 	if !oneLine(passphrase) {
 		return errors.New("wifi: a passphrase cannot hold a line ending")
 	}
+	if err := os.MkdirAll(filepath.Dir(Conf), 0o700); err != nil {
+		return err
+	}
+	if err := os.Chmod(filepath.Dir(Conf), 0o700); err != nil {
+		return err
+	}
 	old, _ := os.ReadFile(Conf)
 	if len(old) > 0 {
 		_ = os.Chmod(Conf, 0o600)
@@ -199,7 +206,9 @@ func Join(ctx context.Context, ssid, passphrase string) error {
 		return err
 	}
 	if len(old) > 0 {
-		_ = os.WriteFile(Conf+".prev", old, 0o600)
+		if err := os.WriteFile(Conf+".prev", old, 0o600); err == nil {
+			_ = os.Chmod(Conf+".prev", 0o600)
+		}
 	}
 	if _, err := cli(ctx, "reconfigure"); err != nil {
 		return err

@@ -500,7 +500,7 @@ var errNotFound = errors.New("not found")
 func getLimit(ctx context.Context, url, accept string, limit int64) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("weather request is invalid")
 	}
 	req.Header.Set("User-Agent", userAgent)
 	if accept != "" {
@@ -508,18 +508,18 @@ func getLimit(ctx context.Context, url, accept string, limit int64) ([]byte, err
 	}
 	resp, err := tileClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("weather request failed")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("%s: %w", url, errNotFound)
+		return nil, errNotFound
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%s: %s", url, resp.Status)
+		return nil, fmt.Errorf("weather server returned %s", resp.Status)
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err == nil && int64(len(b)) > limit {
-		return nil, fmt.Errorf("%s: longer than %d bytes", url, limit)
+		return nil, fmt.Errorf("weather response is longer than %d bytes", limit)
 	}
 	return b, err
 }

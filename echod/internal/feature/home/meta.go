@@ -154,7 +154,7 @@ func (f *Feature) refreshMeta(ctx context.Context) {
 	if want != next.artURL {
 		img, thumb, err := fetchArt(ctx, want, logo)
 		if err != nil {
-			slog.Debug("radio: art", "url", want, "err", err)
+			slog.Debug("radio: art fetch failed", "err", err)
 			img, thumb = nil, nil
 		}
 		next.art, next.thumb, next.artURL, next.artLogo = img, thumb, want, logo

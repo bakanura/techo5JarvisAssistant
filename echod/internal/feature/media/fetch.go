@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -49,18 +50,18 @@ const mostAudio = 2 * 60 * speaker.Rate * speaker.Channels * 2
 func Fetch(ctx context.Context, url string) ([]int16, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("audio request is invalid")
 	}
 
 	client := &http.Client{Timeout: fetchTimeout}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("audio request failed")
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%s: %s", url, resp.Status)
+		return nil, fmt.Errorf("audio server returned %s", resp.Status)
 	}
 
 	// One byte past the bound, so a body that is exactly at it still plays and anything larger is
@@ -70,7 +71,7 @@ func Fetch(ctx context.Context, url string) ([]int16, error) {
 		return nil, err
 	}
 	if len(body) > mostAudio {
-		return nil, fmt.Errorf("%s: more than %d bytes of audio for one announcement", url, mostAudio)
+		return nil, fmt.Errorf("more than %d bytes of audio for one announcement", mostAudio)
 	}
 	var (
 		samples []int16
@@ -89,10 +90,10 @@ func Fetch(ctx context.Context, url string) ([]int16, error) {
 		err = fmt.Errorf("unrecognised audio: %d bytes, content-type %q, starts %q", len(body), resp.Header.Get("Content-Type"), string(head))
 	}
 	if err != nil {
-		return nil, fmt.Errorf("%w (from %s)", err, url)
+		return nil, err
 	}
 	if f.channels != 1 || f.rate != speaker.VoiceRate {
-		slog.Info("announcement converted", "from", fmt.Sprintf("%d Hz, %d ch, %s", f.rate, f.channels, f.codec), "url", url)
+		slog.Info("announcement converted", "from", fmt.Sprintf("%d Hz, %d ch, %s", f.rate, f.channels, f.codec))
 	}
 	return samples, nil
 }

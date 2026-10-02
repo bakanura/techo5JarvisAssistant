@@ -31,6 +31,9 @@ func (p *Phone) Contacts() []Contact {
 	if err != nil {
 		return nil
 	}
+	if os.Chmod(filepath.Dir(contactsPath), 0o700) != nil {
+		return nil
+	}
 	if os.Chmod(contactsPath, 0o600) != nil {
 		return nil
 	}
@@ -72,6 +75,12 @@ func saveContacts(list []Contact) error {
 	}
 	b, err := json.Marshal(list)
 	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(contactsPath), 0o700); err != nil {
+		return err
+	}
+	if err := os.Chmod(filepath.Dir(contactsPath), 0o700); err != nil {
 		return err
 	}
 	tmp := contactsPath + ".new"

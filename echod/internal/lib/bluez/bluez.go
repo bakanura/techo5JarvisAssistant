@@ -564,11 +564,13 @@ func (g agent) RequestPasskey(path dbus.ObjectPath) (uint32, *dbus.Error) {
 
 func (agent) DisplayPasskey(dbus.ObjectPath, uint32, uint16) *dbus.Error { return nil }
 
-func (g agent) RequestConfirmation(path dbus.ObjectPath, passkey uint32) *dbus.Error {
+func (g agent) RequestConfirmation(path dbus.ObjectPath, _ uint32) *dbus.Error {
 	if err := g.open(path, "confirmation"); err != nil {
 		return err
 	}
-	slog.Info("bluetooth pairing confirmed", "device", string(path))
+	// The BlueZ object path carries the peer address, and the numeric passkey is a short-lived
+	// credential. Neither belongs in the persistent appliance log.
+	slog.Info("bluetooth pairing confirmed")
 	return nil
 }
 

@@ -684,7 +684,8 @@ def main():
                  " && { [ -e /data/misc/techo5/state.json ] || (umask 077; printf '{\"security\":{\"ssh\":true}}\\n' > /data/misc/techo5/state.json); }"
                  % quote(pub))
     if wifi:
-        prov += (" && mkdir -p /data/techo5-linux && (umask 077; printf '%s' %s %s > /data/techo5-linux/wpa_supplicant.conf)"
+        prov += (" && mkdir -p -m 700 /data/techo5-linux && chmod 700 /data/techo5-linux"
+                 " && (umask 077; printf '%s' %s %s > /data/techo5-linux/wpa_supplicant.conf)"
                  % (WIFI_CONF_FORMAT, wifi[0], wifi[1]))
     o = console.run(prov + ' && sync && echo PROV-OK', 15)
     if 'PROV-OK' not in (o or ''):

@@ -168,12 +168,12 @@ func (m *Stream) Duck(db int) {
 // long and end on their own, and the track waits behind them rather than talking over them.
 func (m *Stream) Play(url string) {
 	if m == nil {
-		slog.Warn("asked to play media with no speaker", "url", url)
+		slog.Warn("asked to play media with no speaker")
 		return
 	}
 
 	t, ctx := m.start(&track{item: url})
-	slog.Info("playing media", "url", url)
+	slog.Info("playing media")
 
 	safe.Go("media", func() {
 		err := m.run(ctx, t, url)
@@ -455,7 +455,7 @@ func (m *Stream) finished(t *track, itself bool) {
 
 	m.bg.Gave(m)
 
-	slog.Info("media finished", "item", t.item, "by itself", itself)
+	slog.Info("media finished", "by itself", itself)
 	if itself && t.item != "" && len(t.sounds) == 0 && m.ended != nil {
 		m.ended(t.item)
 	}
@@ -478,17 +478,17 @@ func (m *Stream) run(ctx context.Context, t *track, url string) error {
 
 	req, err := http.NewRequestWithContext(fetch, http.MethodGet, url, nil)
 	if err != nil {
-		return err
+		return errors.New("media request is invalid")
 	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return err
+		return errors.New("media request failed")
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("%s: %s", url, resp.Status)
+		return fmt.Errorf("media server returned %s", resp.Status)
 	}
 
 	body := bufio.NewReaderSize(resp.Body, chunk)

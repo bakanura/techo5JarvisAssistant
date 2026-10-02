@@ -317,7 +317,7 @@ func (p *Player) playOver(url string, token OverToken, muted bool) {
 	safe.Go("sound over the music", func() {
 		<-claim.Done()
 		if err := claim.Err(); err != nil {
-			slog.Warn("the sound over the music ended badly", "url", url, "err", err)
+			slog.Warn("the sound over the music ended badly", "err", err)
 		}
 
 		p.overMu.Lock()
@@ -357,7 +357,7 @@ func (p *Player) overURL(url string) bool {
 	p.overMu.Unlock()
 
 	if ask.dropped {
-		slog.Info("a sound asked for over the music was let go before its stream arrived", "url", url)
+		slog.Info("a sound asked for over the music was let go before its stream arrived")
 		return true
 	}
 	p.playOver(url, ask.token, ask.muted)
@@ -429,17 +429,17 @@ func readOverOnce(stop context.Context, url string, spk *speaker.Player, muted f
 
 	req, err := http.NewRequestWithContext(fetch, http.MethodGet, url, nil)
 	if err != nil {
-		return err
+		return errors.New("overlay request is invalid")
 	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return err
+		return errors.New("overlay request failed")
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("%s: %s", url, resp.Status)
+		return fmt.Errorf("overlay server returned %s", resp.Status)
 	}
 
 	body := bufio.NewReaderSize(resp.Body, chunk)

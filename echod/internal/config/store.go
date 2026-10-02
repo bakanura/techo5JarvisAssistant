@@ -100,6 +100,9 @@ func Load(path string) (*Store, error) {
 	// keys and private calendar URLs live here. Older TECHO5 builds wrote it 0644, so loading a valid
 	// file also repairs its mode before the daemon carries on.
 	if runtime.GOOS != "windows" {
+		if err := os.Chmod(filepath.Dir(path), 0o700); err != nil {
+			return st, fmt.Errorf("config: securing state directory for %s: %w", path, err)
+		}
 		if err := os.Chmod(path, 0o600); err != nil {
 			return st, fmt.Errorf("config: securing %s: %w", path, err)
 		}
@@ -177,6 +180,11 @@ func (st *Store) write() error {
 	dir := filepath.Dir(st.path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
+	}
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(dir, 0o700); err != nil {
+			return err
+		}
 	}
 
 	tmp := st.path + ".tmp"

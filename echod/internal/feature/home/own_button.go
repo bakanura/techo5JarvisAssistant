@@ -50,7 +50,7 @@ func (f *Feature) PlayOwn(name string) bool {
 // it is how somebody finds out they typed it wrong, which is the whole use of the button.
 func (f *Feature) PlayStream(name, url string) bool {
 	if !playableURL(url) {
-		slog.Warn("home: that is not a stream address", "station", name, "url", url)
+		slog.Warn("home: that is not a stream address", "station", name)
 		return false
 	}
 	f.mu.Lock()

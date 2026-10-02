@@ -2,6 +2,7 @@ package diag
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/HuskerMinion/techo5/echod/internal/config"
 	"github.com/HuskerMinion/techo5/echod/internal/layout"
+	"github.com/HuskerMinion/techo5/echod/internal/lib/hass"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/redact"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/wifi"
 )
@@ -37,12 +39,8 @@ func Bundle() string {
 	c := config.Get()
 	r.Known("device", c.Device.Name)
 	r.Known("serial", serial())
-	r.Known("house-secret", c.Home.HouseWord)
-	r.Known("brain-key", c.Brain.Key)
-	r.Known("camera-password", c.Home.Reolink.Pass)
-	for _, cal := range c.Calendar.Links {
-		r.Known("calendar-url", cal.URL)
-	}
+	hassAccess, _ := os.ReadFile(hass.Path)
+	registerSecrets(r, c, readTrim(layout.KeyPath), hassAccess)
 	for _, ssid := range wifi.Saved() {
 		r.Known("wifi", ssid)
 	}
@@ -87,6 +85,26 @@ func Bundle() string {
 	section("kernel messages", tail("", 0))
 
 	return r.Text(b.String())
+}
+
+// registerSecrets teaches the bundle redactor the exact values that cannot reliably be recognized
+// from their shape. The diagnostics code reads these only to remove them; none is added to the
+// bundle itself. Keeping this separate also makes the redaction contract testable without a device.
+func registerSecrets(r *redact.Redactor, c config.Config, apiPSK string, hassAccess []byte) {
+	r.Known("house-secret", c.Home.HouseWord)
+	r.Known("brain-key", c.Brain.Key)
+	r.Known("camera-password", c.Home.Reolink.Pass)
+	r.Known("dashboard-key", c.Dashboard.Key)
+	r.Known("api-psk", apiPSK)
+	for _, cal := range c.Calendar.Links {
+		r.Known("calendar-url", cal.URL)
+	}
+	var access struct {
+		Token string `json:"token"`
+	}
+	if json.Unmarshal(hassAccess, &access) == nil {
+		r.Known("ha-token", access.Token)
+	}
 }
 
 // settingsSummary is what the device is set to, without the settings that are secrets in themselves.

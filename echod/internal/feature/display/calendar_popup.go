@@ -159,7 +159,9 @@ func (d *Display) popupTick(now time.Time) {
 	shown[popupKey(e)] = true
 	keepPopupShown(shown, now)
 
-	slog.Info("calendar: pop-up", "event", e.Summary, "starts", e.Start.Format(time.Kitchen), "night", night)
+	// Event summaries are private household content. The time and mode are enough to diagnose popup
+	// scheduling without writing the title into the persistent appliance log.
+	slog.Info("calendar: pop-up", "starts", e.Start.Format(time.Kitchen), "night", night)
 	component.Fire.Emit(component.Event{Name: CalendarEvent, Data: map[string]string{
 		"event": "popup", "summary": e.Summary, "calendar": e.Calendar,
 		"start": e.Start.Format(time.RFC3339), "device": config.Get().Device.Name,

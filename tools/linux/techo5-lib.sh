@@ -149,21 +149,26 @@ t5_wifi_from_store() {
 # and nothing leaves the device.
 t5_wifi_conf() {
 	out=$1
-	[ -s "$out" ] && return 0
+	dir=$(dirname "$out")
+	mkdir -p -m 700 "$dir"
+	chmod 700 "$dir" 2>/dev/null || true
+	if [ -s "$out" ]; then
+		chmod 600 "$out" 2>/dev/null || return 1
+		return 0
+	fi
 	xml=/data/misc/apexdata/com.android.wifi/WifiConfigStore.xml   # Android 11
 	[ -r "$xml" ] || xml=/data/misc/wifi/WifiConfigStore.xml         # older Android
 	if [ ! -r "$xml" ]; then
 		# Nothing to take one from: a unit installed from TWRP, or one that has moved house. An empty
 		# configuration still lets the supplicant start, so the screen's Wi-Fi page can find and join a
 		# network; without one the page would have nothing to talk to.
-		mkdir -p "$(dirname "$out")"
 		umask 077
 		printf 'ctrl_interface=/run/wpa\nupdate_config=0\n' > "$out"
+		chmod 600 "$out" 2>/dev/null || return 1
 		umask 022
 		log "wifi: no saved network and no Android store; waiting for one from the screen"
 		return 1
 	fi
-	mkdir -p "$(dirname "$out")"
 	umask 077
 	t5_wifi_from_store "$xml" > "$out.tmp"
 	umask 022
@@ -174,6 +179,7 @@ t5_wifi_conf() {
 		return 1
 	fi
 	mv -f "$out.tmp" "$out"
+	chmod 600 "$out" 2>/dev/null || return 1
 	log "wifi: configuration written from $n of Android's saved networks"
 }
 

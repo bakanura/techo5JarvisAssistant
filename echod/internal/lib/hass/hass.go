@@ -46,6 +46,10 @@ func Get() *Client {
 	once.Do(func() {
 		shared = &Client{http: &http.Client{Timeout: 15 * time.Second}}
 		if b, err := os.ReadFile(Path); err == nil {
+			if err := os.Chmod(filepath.Dir(Path), 0o700); err != nil {
+				slog.Error("hass: refusing saved access whose directory permissions cannot be secured", "err", err)
+				return
+			}
 			if err := os.Chmod(Path, 0o600); err != nil {
 				slog.Error("hass: refusing saved access whose permissions cannot be secured", "err", err)
 				return
@@ -79,6 +83,9 @@ func (c *Client) Set(url, token string) error {
 	c.mu.Unlock()
 	b, _ := json.Marshal(c.acc)
 	if err := os.MkdirAll(filepath.Dir(Path), 0o700); err != nil {
+		return err
+	}
+	if err := os.Chmod(filepath.Dir(Path), 0o700); err != nil {
 		return err
 	}
 	if err := os.WriteFile(Path, b, 0o600); err != nil {

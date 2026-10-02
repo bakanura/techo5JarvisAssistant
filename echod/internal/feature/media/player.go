@@ -604,7 +604,7 @@ func (p *Player) announce(url string) {
 		p.Sounding(false)
 
 		if err := claim.Err(); err != nil {
-			slog.Error("playing the announcement failed", "url", url, "err", err)
+			slog.Error("playing the announcement failed", "err", err)
 		}
 	})
 }

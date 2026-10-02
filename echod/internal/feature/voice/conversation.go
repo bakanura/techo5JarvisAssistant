@@ -680,7 +680,7 @@ func (c *conversation) speak(url string) {
 		<-held.Done()
 
 		if err := held.Err(); err != nil {
-			slog.Error("playing the reply failed", "url", url, "err", err)
+			slog.Error("playing the reply failed", "err", err)
 			// A url that cannot be fetched would be silence every turn; the streamed copy arrives
 			// over the connection the device already has.
 			if url != "" {

@@ -36,7 +36,12 @@ mountpoint -q /store || mount -t ext4 -o ro,noatime $STORE_DEV /store
 # The root is read-only; what needs writing lives on tmpfs or userdata.
 mount -t tmpfs tmpfs /var/log
 mount -t tmpfs tmpfs /var/tmp
-mkdir -p /run/lock /run/techo5 $LOGDIR /data/misc/techo5/models
+mkdir -p /run/lock /run/techo5
+# Older TECHO5 images used the system umask for these userdata paths. Repair them on every boot so
+# an upgraded unit does not keep readable credentials, logs or crash material indefinitely.
+mkdir -p -m 700 $LOGDIR /data/misc/techo5 /data/misc/techo5/models
+chmod 700 $LOGDIR /data/misc/techo5 /data/misc/techo5/models 2>/dev/null || true
+chmod 600 $LOGDIR/techo5.log $LOGDIR/techo5.log.1 $LOGDIR/boot.log 2>/dev/null || true
 # The clock's zone lives on userdata (echod sets it from Home Assistant); a unit without one starts
 # on the image's default.
 if [ ! -e /data/misc/techo5/timezone ] || [ ! -e /data/misc/techo5/localtime ]; then
@@ -52,9 +57,14 @@ mkdir -p -m 700 /data/misc/techo5/ssh
 if mount -t pstore pstore /sys/fs/pstore 2>/dev/null || [ -d /sys/fs/pstore ]; then
 	for f in /sys/fs/pstore/*; do
 		[ -e "$f" ] || continue
-		mkdir -p /data/techo5-linux/crash
-		cp "$f" "/data/techo5-linux/crash/$(date +%Y%m%d-%H%M%S)-${f##*/}" 2>/dev/null &&
-			log "kernel crash record kept: ${f##*/}" && rm -f "$f"
+		mkdir -p -m 700 /data/techo5-linux/crash
+		chmod 700 /data/techo5-linux/crash 2>/dev/null || true
+		dst="/data/techo5-linux/crash/$(date +%Y%m%d-%H%M%S)-${f##*/}"
+		if cp "$f" "$dst" 2>/dev/null; then
+			chmod 600 "$dst" 2>/dev/null || true
+			log "kernel crash record kept: ${f##*/}"
+			rm -f "$f"
+		fi
 	done
 fi
 # The wake word models the image carries, any this unit does not have yet: a fresh unit gets them
@@ -206,12 +216,12 @@ TRIAL_TIMEOUT=${TRIAL_TIMEOUT:-900}
 		fi
 		if [ $now -ge $TRIAL_TIMEOUT ]; then
 			log "slot $s: daemon did not settle within $TRIAL_TIMEOUT s; rebooting to use up a try"
-			cp /run/boot.log $LOGDIR/boot.log 2>/dev/null
+			cp /run/boot.log $LOGDIR/boot.log 2>/dev/null && chmod 600 $LOGDIR/boot.log 2>/dev/null
 			sync
 			reboot
 		fi
 	done
 ) &
 
-cp /run/boot.log $LOGDIR/boot.log 2>/dev/null
+cp /run/boot.log $LOGDIR/boot.log 2>/dev/null && chmod 600 $LOGDIR/boot.log 2>/dev/null
 log "boot script done"

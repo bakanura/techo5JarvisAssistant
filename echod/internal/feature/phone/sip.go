@@ -11,7 +11,6 @@ import (
 	"log/slog"
 	"math/big"
 	"net"
-	"strings"
 	"time"
 
 	"github.com/emiago/diago"
@@ -162,6 +161,8 @@ func throwawayCert() (tls.Certificate, error) {
 type slogWriter struct{}
 
 func (slogWriter) Write(b []byte) (int, error) {
-	slog.Warn("phone: sip", "said", strings.TrimSpace(string(b)))
+	// SIP-library warnings may include Authorization headers, usernames, phone numbers or provider
+	// addresses. Keep the fact that the library complained without persisting the line itself.
+	slog.Warn("phone: sip library warning", "bytes", len(b))
 	return len(b), nil
 }

@@ -160,7 +160,11 @@ func (f *Feature) readMonth(key string, first time.Time, sources []string, joine
 			continue
 		}
 		if err != nil {
-			slog.Warn("calendar: reading events failed", "calendar", src, "month", key, "err", err)
+			kind := "home-assistant"
+			if isLink(src) {
+				kind = "private-link"
+			}
+			slog.Warn("calendar: reading events failed", "source", kind, "month", key, "err", err)
 			continue
 		}
 		events, ok = append(events, ev...), true

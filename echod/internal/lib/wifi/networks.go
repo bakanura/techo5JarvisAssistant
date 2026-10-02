@@ -6,6 +6,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -17,6 +18,9 @@ import (
 func Saved() []string {
 	b, err := os.ReadFile(Conf)
 	if err != nil {
+		return nil
+	}
+	if os.Chmod(filepath.Dir(Conf), 0o700) != nil {
 		return nil
 	}
 	if os.Chmod(Conf, 0o600) != nil {
@@ -36,6 +40,9 @@ func Saved() []string {
 func Forget(ctx context.Context, ssid string) error {
 	b, err := os.ReadFile(Conf)
 	if err != nil {
+		return err
+	}
+	if err := os.Chmod(filepath.Dir(Conf), 0o700); err != nil {
 		return err
 	}
 	if err := os.Chmod(Conf, 0o600); err != nil {
