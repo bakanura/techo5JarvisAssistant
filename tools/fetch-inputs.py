@@ -19,10 +19,11 @@ What it fetches, over HTTPS from Alpine's CDN and GitHub:
   dot:        apks-dot/, apks-bt-dot/,    techo5-dot's tools/linux/packages-rescue.txt, packages-bt.txt and
               apks-rootfs-dot/            packages-rootfs.txt (the last only unpacked into the root filesystem)
 
-A package list names exact versions. Alpine keeps only the newest build of each package, so when a listed
-one is gone the newest is taken and the script says so (docs/building.md, "Package versions"). Nothing is
-kept unchecked: a package has to match the checksum Alpine's index gives for it and its own datahash, and
-a model has to match the sha256 recorded here.
+A package list names exact versions. Jarvis Show release inputs fail closed when an exact listed build is
+no longer present: changing package bytes requires an intentional pin review. Nothing is kept unchecked:
+an APK's Alpine RSA signature is verified against the keyring in the SHA-pinned minirootfs, its control
+segment must match Alpine's index and its data segment must match the signed datahash; a model has to
+match the sha256 recorded here.
 Windows, Linux and macOS alike; needs Python 3.
 """
 import argparse
@@ -32,8 +33,11 @@ import io
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import tarfile
+import tempfile
 import zlib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -93,6 +97,7 @@ MODEL_SHA256 = {
 }
 
 _indexes = {}
+_alpine_keys_archive = None
 
 
 def index(branch, repo, arch):
@@ -130,15 +135,85 @@ def apk_segments(data):
     return out
 
 
-def apk_mismatch(path, csum):
-    """What apk itself checks short of the signature, and returns why not when it does not hold: the
-    control segment against the checksum the index carries, and the files against the datahash inside
-    that control segment. Nothing downloaded here is signature-checked — that would need an RSA
-    implementation this script does not have, and apk does it properly when the packages are installed
-    (tools/linux/mkrootfs.sh). This catches a mirror, a proxy or a half-finished transfer handing back
-    something other than the package the index describes, which matters because these files are
-    unpacked into images by tools/linux/mkimage.py without apk ever seeing them.
+def alpine_key(archive, name):
+    """One Alpine package-signing public key from the already SHA-pinned minirootfs."""
+    wanted = 'etc/apk/keys/' + name
+    with tarfile.open(archive, 'r:*') as t:
+        for member in t.getmembers():
+            if member.name.lstrip('./') != wanted or not member.isfile():
+                continue
+            f = t.extractfile(member)
+            return None if f is None else f.read()
+    return None
+
+
+def apk_signature_mismatch(path, data=None):
+    """Why Alpine's RSA signature over this APK does not verify, or None.
+
+    APK v2 signs the raw compressed control gzip stream. The public key comes from the minirootfs,
+    whose whole archive is SHA256-pinned before any APK is trusted. The signed .PKGINFO in turn carries
+    the SHA256 of the data stream, which apk_mismatch checks below.
     """
+    if not _alpine_keys_archive:
+        return 'the pinned Alpine keyring has not been initialized'
+    if shutil.which('openssl') is None:
+        return 'openssl is required to verify Alpine package signatures'
+    if data is None:
+        with open(path, 'rb') as f:
+            data = f.read()
+    try:
+        segments = apk_segments(data)
+        if len(segments) < 3:
+            return 'not an apk: %d gzip streams, wanted 3' % len(segments)
+        signatures = []
+        with tarfile.open(fileobj=io.BytesIO(segments[0]), mode='r:gz') as t:
+            for member in t.getmembers():
+                name = member.name
+                while name.startswith('./'):
+                    name = name[2:]
+                m = re.fullmatch(r'\.SIGN\.(RSA|RSA256|RSA512)\.(.+)', name)
+                if not m or not member.isfile():
+                    continue
+                f = t.extractfile(member)
+                if f is not None:
+                    signatures.append((m.group(1), m.group(2), f.read()))
+    except Exception as e:
+        return 'cannot read its Alpine signature: %s' % e
+    if not signatures:
+        return 'it carries no supported Alpine RSA signature'
+
+    digest = {'RSA': 'sha1', 'RSA256': 'sha256', 'RSA512': 'sha512'}
+    saw_trusted_key = False
+    with tempfile.TemporaryDirectory(prefix='jarvis-apk-signature-') as tmp:
+        control = os.path.join(tmp, 'control.gz')
+        with open(control, 'wb') as f:
+            f.write(segments[1])
+        for scheme, key_name, signature in signatures:
+            key = alpine_key(_alpine_keys_archive, key_name)
+            if key is None:
+                continue
+            saw_trusted_key = True
+            key_path = os.path.join(tmp, 'key.pem')
+            sig_path = os.path.join(tmp, 'signature')
+            with open(key_path, 'wb') as f:
+                f.write(key)
+            with open(sig_path, 'wb') as f:
+                f.write(signature)
+            r = subprocess.run(
+                ['openssl', 'dgst', '-' + digest[scheme], '-verify', key_path,
+                 '-signature', sig_path, control],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            if r.returncode == 0:
+                return None
+    if not saw_trusted_key:
+        return 'its signing key is not present in the pinned Alpine minirootfs'
+    return 'its Alpine RSA package signature does not verify'
+
+
+def apk_mismatch(path, csum):
+    """What Alpine's package authentication says about this APK, or None when all checks hold."""
     if not csum:
         return 'the package index carries no checksum for it'
     algo = {'Q1': 'sha1', 'Q2': 'sha256'}.get(csum[:2])
@@ -146,6 +221,9 @@ def apk_mismatch(path, csum):
         return 'the index checksum %s is in a form this script does not know' % csum
     with open(path, 'rb') as f:
         data = f.read()
+    signed = apk_signature_mismatch(path, data)
+    if signed:
+        return signed
     # A file that is damaged rather than swapped fails here, in the middle of a gzip stream, so the
     # reading is done where it can be reported the same way as a checksum that does not match.
     try:
@@ -170,7 +248,7 @@ def apk_mismatch(path, csum):
 
 
 def get_apk(filename, dest, branch='v3.24', arch='armv7'):
-    """A listed package file (name-version-rN.apk): that version when the mirror still has it, else the newest."""
+    """Fetch exactly the listed package build; never silently substitute newer bytes."""
     m = re.match(r'^(.+?)-(\d[^-]*-r\d+)\.apk$', filename)
     if not m:
         fail('not a package file name: %s' % filename)
@@ -181,7 +259,7 @@ def get_apk(filename, dest, branch='v3.24', arch='armv7'):
             continue
         have, csum = entry
         if have != want:
-            note('%s %s is gone from Alpine %s; taking %s' % (name, want, branch, have))
+            fail('%s %s is not the current signed-index build in Alpine %s (mirror has %s); update the package pin deliberately instead of substituting bytes' % (name, want, branch, have))
         os.makedirs(dest, exist_ok=True)
         out = os.path.join(dest, '%s-%s.apk' % (name, have))
         if os.path.exists(out):
@@ -225,6 +303,7 @@ def from_apk(apk, member, out):
 
 
 def main():
+    global _alpine_keys_archive
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--device', choices=('show', 'spot', 'dot'), default='show')
     ap.add_argument('--out', default=os.environ.get('TECHO5_INPUTS') or os.path.join(repo_root(), 'inputs'))
@@ -236,7 +315,7 @@ def main():
     os.makedirs(tmp, exist_ok=True)
 
     step('Alpine base')
-    alpine(out)
+    _alpine_keys_archive = alpine(out)
     step('busybox.static, apk.static')
     from_apk(get_apk('busybox-static-1.37.0-r31.apk', tmp), 'bin/busybox.static', os.path.join(out, 'busybox.static'))
     from_apk(get_apk('apk-tools-static-2.14.12-r0.apk', tmp, 'v3.22', 'x86_64'), 'sbin/apk.static', os.path.join(out, 'apk.static'))

@@ -53,6 +53,11 @@ func verify(manifest, sig []byte, key string) error {
 
 // Sign is what mkmanifest uses: the signature file's contents for a manifest, from the private key
 // file's contents (base64 of the 32-byte seed).
+// VerifyReleaseSignature verifies with the exact public trust root embedded in Jarvis Show devices.
+// Release tooling uses it too, so a misconfigured CI signing secret cannot publish a manifest that
+// the devices themselves would reject.
+func VerifyReleaseSignature(manifest, sig []byte) error { return verify(manifest, sig, releaseKey) }
+
 func Sign(manifest []byte, seed string) (string, error) {
 	s, err := base64.StdEncoding.DecodeString(strings.TrimSpace(seed))
 	if err != nil || len(s) != ed25519.SeedSize {

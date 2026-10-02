@@ -262,3 +262,30 @@ func TestTwoAssetsUnderOneNameAreRefused(t *testing.T) {
 		t.Errorf("refused without saying why: %v", err)
 	}
 }
+
+func TestJarvisShowIdentityMustBeExactBeforeManifestIsWritten(t *testing.T) {
+	dir := t.TempDir()
+	build := filepath.Join(dir, "echod-arm")
+	if err := os.WriteFile(build, []byte("show"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, "manifest.json")
+
+	for name, m := range map[string]update.Manifest{
+		"wrong product": {Product: "jarvis-show-vl", Boards: []string{"crown", "checkers"}, Version: "v1.2.3"},
+		"no boards":     {Product: update.JarvisShowProduct, Version: "v1.2.3"},
+		"newer board":   {Product: update.JarvisShowProduct, Boards: []string{"cronos"}, Version: "v1.2.3"},
+		"duplicate":     {Product: update.JarvisShowProduct, Boards: []string{"crown", "crown"}, Version: "v1.2.3"},
+	} {
+		err := run(m, "https://example/download/v1.2.3", map[string]string{"arm": build}, nil, nil, out)
+		if err == nil {
+			t.Errorf("%s: bad release identity accepted", name)
+		}
+		_ = os.Remove(out)
+	}
+
+	good := update.Manifest{Product: update.JarvisShowProduct, Boards: []string{"crown", "checkers"}, Version: "v1.2.3"}
+	if err := run(good, "https://example/download/v1.2.3", map[string]string{"arm": build}, nil, nil, out); err != nil {
+		t.Fatalf("valid Jarvis Show identity refused: %v", err)
+	}
+}

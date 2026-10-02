@@ -43,13 +43,18 @@ func main() {
 		// Devices believe a manifest only with the release key's signature beside it
 		// (internal/update/trust.go), so a release without one offers nothing.
 		signKey = flag.String("sign-key", "", "the release signing key file; writes <out>.sig next to the manifest")
+		product = flag.String("product", "", "signed product identity for this release")
+		boards  boardNames
 	)
 	flag.Var(&assets, "asset", "another file this release publishes, hashed and measured under its own name; repeat for each")
+	flag.Var(&boards, "board", "supported board; repeat for each board")
 	flag.StringVar(&m.Version, "version", "", "version as Home Assistant will compare it")
 	flag.StringVar(&m.Title, "title", "", "title for Home Assistant's update card")
 	flag.StringVar(&m.Notes, "notes", "", "release notes, shown on the card")
 	flag.StringVar(&m.ReleaseURL, "release-url", "", "what the card's link points at")
 	flag.Parse()
+	m.Product = *product
+	m.Boards = append([]string(nil), boards...)
 
 	builds := map[string]string{"arm64": *arm64, "arm": *arm, "arm-dot": *armDot, "arm-spot": *armSpot}
 	rootfses := map[string]string{"arm": *rootfs, "arm-dot": *rootfsDot, "arm-spot": *rootfsSpot}
@@ -69,6 +74,17 @@ func main() {
 // which is the name the release publishes it under and the name an installer asks for, so the two
 // cannot drift: a file has to be copied to its published name before it is passed here, and all three
 // release scripts already do that.
+type boardNames []string
+
+func (b *boardNames) String() string { return strings.Join(*b, ",") }
+func (b *boardNames) Set(name string) error {
+	if name == "" {
+		return fmt.Errorf("mkmanifest: -board needs a value")
+	}
+	*b = append(*b, name)
+	return nil
+}
+
 type assetFiles []string
 
 func (a *assetFiles) String() string { return strings.Join(*a, ",") }
@@ -97,6 +113,9 @@ func sign(out, keyFile string) error {
 	sig, err := update.Sign(manifest, string(seed))
 	if err != nil {
 		return err
+	}
+	if err := update.VerifyReleaseSignature(manifest, []byte(sig)); err != nil {
+		return fmt.Errorf("mkmanifest: signing key does not match the Jarvis Show trust root: %w", err)
 	}
 	return os.WriteFile(out+".sig", []byte(sig), 0o644)
 }
@@ -187,6 +206,19 @@ func run(m update.Manifest, from string, builds map[string]string, rootfses map[
 	// The same rules the device applies, so a release cannot publish a manifest every device will reject.
 	if err := m.Valid(); err != nil {
 		return err
+	}
+	if m.Product != "" || len(m.Boards) != 0 {
+		if m.Product != update.JarvisShowProduct {
+			return fmt.Errorf("mkmanifest: product must be %q, got %q", update.JarvisShowProduct, m.Product)
+		}
+		if len(m.Boards) == 0 {
+			return fmt.Errorf("mkmanifest: Jarvis Show release names no supported boards")
+		}
+		for _, board := range m.Boards {
+			if err := m.ValidFor(m.Product, board); err != nil {
+				return err
+			}
+		}
 	}
 
 	encoded, err := json.MarshalIndent(m, "", "  ")

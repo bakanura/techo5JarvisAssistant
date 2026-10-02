@@ -1,4 +1,7 @@
+import os
 import pathlib
+import subprocess
+import tempfile
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -45,3 +48,78 @@ class ReleaseContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class SupplyChainReleaseContractTests(unittest.TestCase):
+    def test_release_manifest_is_bound_to_product_and_both_first_gen_boards(self):
+        source = (ROOT / "tools/release-jarvis-show.sh").read_text(encoding="utf-8")
+        self.assertIn('-product "jarvis-show-v1"', source)
+        self.assertIn('-board crown', source)
+        self.assertIn('-board checkers', source)
+        self.assertIn('ident.version != sys.argv[3]', source)
+        self.assertIn("signing key permissions are too open", source)
+        self.assertIn("signing key must not be a symlink", source)
+
+    def test_rootfs_build_never_allows_untrusted_apks(self):
+        source = (ROOT / "tools/linux/mkrootfs.sh").read_text(encoding="utf-8")
+        self.assertNotIn("--allow-untrusted", source)
+        self.assertIn("refusing an untrusted release build", source)
+
+    def test_bootstrap_inputs_are_authenticated_before_extraction(self):
+        source = (ROOT / "tools/fetch-inputs.py").read_text(encoding="utf-8")
+        self.assertIn("apk_signature_mismatch", source)
+        self.assertIn("_alpine_keys_archive = alpine(out)", source)
+        self.assertIn("openssl", source)
+        self.assertIn("instead of substituting bytes", source)
+
+    def test_go_actions_are_commit_pinned(self):
+        source = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        uses = [line.strip() for line in source.splitlines() if line.strip().startswith("uses:")]
+        self.assertTrue(uses)
+        for line in uses:
+            ref = line.rsplit("@", 1)[-1].split()[0]
+            self.assertRegex(ref, r"^[0-9a-f]{40}$", line)
+
+    def test_python_and_go_installers_embed_same_release_public_key(self):
+        import re
+        python = (ROOT / "tools/techo5lib.py").read_text(encoding="utf-8")
+        go = (ROOT / "echod/internal/update/trust.go").read_text(encoding="utf-8")
+        p = re.search(r"RELEASE_KEY = '([^']+)'", python)
+        g = re.search(r'releaseKey = "([^"]+)"', go)
+        self.assertIsNotNone(p)
+        self.assertIsNotNone(g)
+        self.assertEqual(p.group(1), g.group(1))
+
+    def test_host_installer_binds_signed_release_to_product_and_detected_board(self):
+        lib = (ROOT / "tools/techo5lib.py").read_text(encoding="utf-8")
+        installer = (ROOT / "tools/install-show.py").read_text(encoding="utf-8")
+        self.assertIn("expected_product=None, expected_board=None", lib)
+        self.assertIn("signed but belongs to product", lib)
+        self.assertIn("signed but does not support board", lib)
+        self.assertIn("expected_product='jarvis-show-v1', expected_board=dev", installer)
+
+    def test_release_script_rejects_world_readable_signing_seed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = pathlib.Path(tmp)
+            binary = tmp / "echod-arm"
+            rootfs = tmp / "rootfs.tar.gz"
+            key = tmp / "sign.seed"
+            binary.write_bytes(b"binary")
+            rootfs.write_bytes(b"not reached")
+            key.write_text("not reached\n", encoding="utf-8")
+            os.chmod(key, 0o644)
+            result = subprocess.run(
+                [
+                    str(ROOT / "tools/release-jarvis-show.sh"),
+                    "--version", "v1.2.3",
+                    "--notes", "test",
+                    "--binary", str(binary),
+                    "--rootfs", str(rootfs),
+                    "--sign-key", str(key),
+                    "--out", str(tmp / "out"),
+                ],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("signing key permissions are too open", result.stderr)

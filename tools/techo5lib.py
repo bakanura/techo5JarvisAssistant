@@ -28,6 +28,8 @@ ALPINE_SHA256 = '50942d567e6ee422c16cb46d5c282ed9d8adc9007c2a483faf4148a18c64ce3
 # manifest is believed only when this key signed it: HTTPS alone would let anything that can present a
 # certificate this computer accepts hand the installer a root filesystem of its own.
 RELEASE_KEY = 'MIKd5Pm5qmv1aSWDiO8isqqJXoZzyk/cCH4VEIyzg2I='
+JARVIS_SHOW_PRODUCT = 'jarvis-show-v1'
+JARVIS_SHOW_BOARDS = ('crown', 'checkers')
 
 # The USB serial consoles: TECHO5 Linux on the Show 5 and the Spot (Linux Foundation ids, told apart by
 # the serial number on the kernel command line), and on the Dot (Google ids, with the unit's serial
@@ -253,7 +255,7 @@ class Release:
     substituted SHA256SUMS and a payload to match. It is there for people to check a download by hand,
     not for an installer to trust."""
 
-    def __init__(self, repo, tag, workdir):
+    def __init__(self, repo, tag, workdir, expected_product=None, expected_board=None):
         base = 'https://github.com/%s/releases' % repo
         self.repo, self.tag = repo, tag
         self.dl = base + ('/latest/download' if tag == 'latest' else '/download/' + tag)
@@ -274,6 +276,18 @@ class Release:
             self.manifest = json.loads(raw.decode('utf-8'))
         except Exception as e:
             fail('the release manifest from %s is not readable JSON: %s' % (self.dl, e))
+        if expected_product is not None:
+            product = self.manifest.get('product')
+            if product != expected_product:
+                fail('release %s is signed but belongs to product %r, not %r; refusing it'
+                     % (tag, product, expected_product))
+        if expected_board is not None:
+            boards = self.manifest.get('boards')
+            if not isinstance(boards, list) or expected_board not in boards:
+                fail('release %s is signed but does not support board %r; refusing it'
+                     % (tag, expected_board))
+            if len(boards) != len(set(boards)) or any(b not in JARVIS_SHOW_BOARDS for b in boards):
+                fail('release %s has an invalid Jarvis Show boards list: %r' % (tag, boards))
         self.version = self.manifest['version']
         self.dir = os.path.join(workdir, 'release-%s-%s' % (repo.split('/')[-1], self.version))
         os.makedirs(self.dir, exist_ok=True)

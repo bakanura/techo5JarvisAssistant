@@ -107,25 +107,60 @@ func TestTheDefaultVersionStampCanBeRanked(t *testing.T) {
 	}
 }
 
-// A release with only the Show's build serves no Dot, and one with the Dot's serves it. (Off a slot
-// system, which is where tests run; on a slot device the rootfs map decides.)
-func TestServesOnlyWhatThisDeviceCanInstall(t *testing.T) {
+// Jarvis Show deliberately refuses manifests that do not name this product and this exact first-gen
+// board, even when their CPU architecture happens to match.
+func TestServesOnlyJarvisShowIdentityForThisBoard(t *testing.T) {
 	if slotSystem() {
 		t.Skip("running on a slot device")
 	}
-	restore := arch
-	t.Cleanup(func() { arch = restore })
-	arch = "arm-dot"
+	restoreArch, restoreBoard := arch, deviceBoard
+	t.Cleanup(func() { arch, deviceBoard = restoreArch, restoreBoard })
+	arch, deviceBoard = "arm", "crown"
 
-	show := Manifest{Version: "0.0.9", Binaries: map[string]Binary{
+	show := Manifest{Product: JarvisShowProduct, Boards: []string{"crown", "checkers"}, Version: "0.0.9", Binaries: map[string]Binary{
 		"arm": {URL: "https://example/echod-arm", SHA256: strings.Repeat("b", 64), Size: 22 << 20},
 	}}
-	if show.Serves() {
-		t.Error("a Show-only release was offered to a Dot")
-	}
-	show.Binaries["arm-dot"] = Binary{URL: "https://example/echod-arm-dot", SHA256: strings.Repeat("c", 64), Size: 22 << 20}
 	if !show.Serves() {
-		t.Error("a release carrying the Dot's build was not offered to it")
+		t.Error("a Crown-capable Jarvis Show release was not offered to Crown")
+	}
+	show.Boards = []string{"checkers"}
+	if show.Serves() {
+		t.Error("a Checkers-only release was offered to Crown")
+	}
+	show.Boards = []string{"crown"}
+	show.Product = "techo5"
+	if show.Serves() {
+		t.Error("a different product identity was offered to Crown")
+	}
+}
+
+func TestValidForBindsProductAndBoard(t *testing.T) {
+	base := Manifest{Product: JarvisShowProduct, Boards: []string{"crown", "checkers"}, Version: "v1.2.3"}
+	if err := base.ValidFor(JarvisShowProduct, "crown"); err != nil {
+		t.Fatalf("valid Crown identity refused: %v", err)
+	}
+	if err := base.ValidFor(JarvisShowProduct, "checkers"); err != nil {
+		t.Fatalf("valid Checkers identity refused: %v", err)
+	}
+
+	for name, mutate := range map[string]func(*Manifest){
+		"wrong product":      func(m *Manifest) { m.Product = "techo5" },
+		"no boards":          func(m *Manifest) { m.Boards = nil },
+		"wrong board":        func(m *Manifest) { m.Boards = []string{"checkers"} },
+		"unknown board":      func(m *Manifest) { m.Boards = []string{"crown", "cronos"} },
+		"duplicate board":    func(m *Manifest) { m.Boards = []string{"crown", "crown"} },
+		"empty device board": func(m *Manifest) {},
+	} {
+		m := base
+		m.Boards = append([]string(nil), base.Boards...)
+		mutate(&m)
+		board := "crown"
+		if name == "empty device board" {
+			board = ""
+		}
+		if err := m.ValidFor(JarvisShowProduct, board); err == nil {
+			t.Errorf("%s: invalid identity accepted", name)
+		}
 	}
 }
 

@@ -59,6 +59,10 @@ func installRootfs(ctx context.Context, m Manifest, progress func(float32)) erro
 		os.Remove(to)
 		return err
 	}
+	if err := verifyRootfsIdentity(to, m); err != nil {
+		os.Remove(to)
+		return err
+	}
 	slog.Info("update: installing the rootfs into the other slot", "version", m.Version, "file", to)
 	cmd := exec.CommandContext(ctx, slotctl, "install", to)
 	out, err := cmd.CombinedOutput()

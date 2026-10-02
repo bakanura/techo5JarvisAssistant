@@ -56,6 +56,9 @@ func Install(ctx context.Context, m Manifest, progress func(float32)) error {
 	if err := m.Valid(); err != nil {
 		return err
 	}
+	if err := m.ValidFor(JarvisShowProduct, deviceBoard); err != nil {
+		return err
+	}
 	if err := notOlder(m.Version, layout.Version); err != nil {
 		return err
 	}
@@ -246,6 +249,9 @@ func (c *counter) Read(p []byte) (int, error) {
 // architecture when it boots from slots, a binary otherwise. A release made for another device (the
 // Show's, seen from a Dot) is then not offered at all, rather than offered and failing on install.
 func (m Manifest) Serves() bool {
+	if err := m.ValidFor(JarvisShowProduct, deviceBoard); err != nil {
+		return false
+	}
 	if slotSystem() {
 		_, ok := m.Rootfs[arch]
 		return ok

@@ -47,7 +47,7 @@ func TestSignatureVerifies(t *testing.T) {
 // A manifest is taken from the channel only with its signature, and not at all before the clock is set.
 func TestFetchNeedsTheSignatureAndTheClock(t *testing.T) {
 	seed, pub := testKey(t)
-	body, _ := json.Marshal(Manifest{Version: "9.9.9", Binaries: map[string]Binary{
+	body, _ := json.Marshal(Manifest{Product: JarvisShowProduct, Boards: []string{"crown", "checkers"}, Version: "9.9.9", Binaries: map[string]Binary{
 		arch: {URL: "https://example/echod", SHA256: strings.Repeat("a", 64), Size: 1},
 	}})
 	good, _ := Sign(body, seed)
@@ -64,9 +64,12 @@ func TestFetchNeedsTheSignatureAndTheClock(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	restoreKey, restoreClock, restoreURL := releaseKey, clockSet, channelURL
-	t.Cleanup(func() { releaseKey, clockSet, channelURL = restoreKey, restoreClock, restoreURL })
+	restoreKey, restoreClock, restoreURL, restoreBoard := releaseKey, clockSet, channelURL, deviceBoard
+	t.Cleanup(func() {
+		releaseKey, clockSet, channelURL, deviceBoard = restoreKey, restoreClock, restoreURL, restoreBoard
+	})
 	releaseKey = pub
+	deviceBoard = "crown"
 	clockSet = func() bool { return true }
 	channelURL = func(Channel) string { return srv.URL + "/manifest.json" }
 
@@ -86,5 +89,34 @@ func TestFetchNeedsTheSignatureAndTheClock(t *testing.T) {
 	clockSet = func() bool { return false }
 	if _, err := Fetch(context.Background(), Stable); !errors.Is(err, ErrClock) {
 		t.Errorf("fetched on an unset clock: %v", err)
+	}
+}
+
+func TestFetchRefusesSignedManifestForAnotherBoard(t *testing.T) {
+	seed, pub := testKey(t)
+	body, _ := json.Marshal(Manifest{Product: JarvisShowProduct, Boards: []string{"checkers"}, Version: "9.9.9", Binaries: map[string]Binary{
+		arch: {URL: "https://example/echod", SHA256: strings.Repeat("a", 64), Size: 1},
+	}})
+	sig, err := Sign(body, seed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/manifest.json", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(body) })
+	mux.HandleFunc("/manifest.json.sig", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(sig)) })
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	restoreKey, restoreClock, restoreURL, restoreBoard := releaseKey, clockSet, channelURL, deviceBoard
+	t.Cleanup(func() {
+		releaseKey, clockSet, channelURL, deviceBoard = restoreKey, restoreClock, restoreURL, restoreBoard
+	})
+	releaseKey = pub
+	clockSet = func() bool { return true }
+	channelURL = func(Channel) string { return srv.URL + "/manifest.json" }
+	deviceBoard = "crown"
+
+	if _, err := Fetch(context.Background(), Stable); err == nil || !strings.Contains(err.Error(), "does not support") {
+		t.Fatalf("signed Checkers-only manifest on Crown: %v", err)
 	}
 }

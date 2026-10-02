@@ -47,6 +47,17 @@ for pair in "binary:$BINARY" "rootfs:$ROOTFS" "signing key:$SIGN_KEY"; do
   label=${pair%%:*}; path=${pair#*:}
   [ -f "$path" ] || { echo "$label not found: $path" >&2; exit 2; }
 done
+python3 - "$SIGN_KEY" <<'PYKEY'
+import os, stat, sys
+p = sys.argv[1]
+if os.path.islink(p):
+    raise SystemExit("signing key must not be a symlink")
+st = os.stat(p)
+if not stat.S_ISREG(st.st_mode):
+    raise SystemExit("signing key is not a regular file")
+if st.st_mode & 0o077:
+    raise SystemExit("signing key permissions are too open; require owner-only access (0600 or stricter)")
+PYKEY
 command -v go >/dev/null || { echo "go not found" >&2; exit 2; }
 if [ -n "$PUBLISH" ]; then
   command -v gh >/dev/null || { echo "gh not found" >&2; exit 2; }
@@ -70,7 +81,7 @@ fi
 
 # Rootfs has one shared product marker and must explicitly support both first-generation boards.
 rootfs_sha=$(sha256sum "$ROOTFS" | awk '{print $1}')
-PYTHONPATH="$ROOT/tools" python3 - "$ROOTFS" "$rootfs_sha" <<'PY'
+PYTHONPATH="$ROOT/tools" python3 - "$ROOTFS" "$rootfs_sha" "$VERSION" <<'PY'
 import pathlib, sys
 from jarvis_crown.install import verify_jarvis_rootfs
 path = pathlib.Path(sys.argv[1])
@@ -79,12 +90,17 @@ for board in ("crown", "checkers"):
     ident = verify_jarvis_rootfs(path, sha, board=board)
     if ident.product != "jarvis-show-v1":
         raise SystemExit("rootfs is not a shared jarvis-show-v1 image")
-print("PASS: shared Jarvis Show rootfs marker")
+    if ident.version != sys.argv[3]:
+        raise SystemExit(f"rootfs marker version {ident.version!r} does not match release filename")
+print("PASS: shared Jarvis Show rootfs marker/version")
 PY
 
 from="https://github.com/$REPO/releases/download/$VERSION"
 mk=(run ./cmd/mkmanifest
   -version "$VERSION"
+  -product "jarvis-show-v1"
+  -board crown
+  -board checkers
   -title "Jarvis Show $VERSION"
   -notes "$NOTES"
   -release-url "https://github.com/$REPO/releases/tag/$VERSION"

@@ -21,7 +21,12 @@ func release(t *testing.T, bodies map[string][]byte) Manifest {
 	t.Helper()
 
 	mux := http.NewServeMux()
-	m := Manifest{Version: "0.0.1", Binaries: make(map[string]Binary, len(bodies))}
+	m := Manifest{
+		Product:  JarvisShowProduct,
+		Boards:   []string{"crown", "checkers"},
+		Version:  "0.0.1",
+		Binaries: make(map[string]Binary, len(bodies)),
+	}
 
 	for a, body := range bodies {
 		mux.HandleFunc("/echod-"+a, func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(body) })
@@ -87,13 +92,18 @@ func TestInstallRefusesAManifestItCannotUse(t *testing.T) {
 	somewhere(t)
 
 	good := Binary{URL: "http://example/echod", SHA256: strings.Repeat("a", 64), Size: 1}
+	identity := func(m Manifest) Manifest {
+		m.Product = JarvisShowProduct
+		m.Boards = []string{"crown", "checkers"}
+		return m
+	}
 
 	for name, m := range map[string]Manifest{
-		"no version":  {Binaries: map[string]Binary{arch: good}},
-		"no binaries": {Version: "0.0.1"},
-		"no url":      {Version: "0.0.1", Binaries: map[string]Binary{arch: {SHA256: good.SHA256, Size: 1}}},
-		"no hash":     {Version: "0.0.1", Binaries: map[string]Binary{arch: {URL: good.URL, Size: 1}}},
-		"no size":     {Version: "0.0.1", Binaries: map[string]Binary{arch: {URL: good.URL, SHA256: good.SHA256}}},
+		"no version":  identity(Manifest{Binaries: map[string]Binary{arch: good}}),
+		"no binaries": identity(Manifest{Version: "0.0.1"}),
+		"no url":      identity(Manifest{Version: "0.0.1", Binaries: map[string]Binary{arch: {SHA256: good.SHA256, Size: 1}}}),
+		"no hash":     identity(Manifest{Version: "0.0.1", Binaries: map[string]Binary{arch: {URL: good.URL, Size: 1}}}),
+		"no size":     identity(Manifest{Version: "0.0.1", Binaries: map[string]Binary{arch: {URL: good.URL, SHA256: good.SHA256}}}),
 	} {
 		if err := Install(context.Background(), m, nil); err == nil {
 			t.Errorf("%s: installed something unusable", name)
@@ -202,7 +212,12 @@ func TestInstallRefusesAnOlderVersionThanTheOneRunning(t *testing.T) {
 	layout.Version = "v0.7.13"
 
 	b := Binary{URL: "http://example/echod", SHA256: strings.Repeat("a", 64), Size: 1}
-	m := Manifest{Version: "v0.7.9", Binaries: map[string]Binary{arch: b}}
+	m := Manifest{
+		Product:  JarvisShowProduct,
+		Boards:   []string{"crown", "checkers"},
+		Version:  "v0.7.9",
+		Binaries: map[string]Binary{arch: b},
+	}
 
 	err := Install(context.Background(), m, nil)
 	if err == nil {

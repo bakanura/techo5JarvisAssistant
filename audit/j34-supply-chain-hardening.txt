@@ -1,0 +1,24 @@
+J34 OTA / SUPPLY-CHAIN HARDENING
+
+PASS: manifest signature is Ed25519 and release tooling verifies its own signature against the exact device trust root before writing manifest.json.sig.
+PASS: Go updater and Python installer embed the same release public key.
+PASS: signed manifests are bound to product=jarvis-show-v1 and to the detected first-generation board (crown/checkers).
+PASS: missing, unknown or duplicate board identities fail closed.
+PASS: host installer applies the same signed product/board check as OTA.
+PASS: updater refuses cross-product/cross-board manifests before offering/installing them.
+PASS: rootfs downloads are hash/size checked, then must contain exactly one matching etc/jarvis-show-release.json product/boards/version marker before slotctl runs.
+PASS: duplicate/missing/malformed/wrong-version/wrong-board rootfs markers fail closed.
+PASS: release tooling verifies rootfs product/board/version before signing the manifest.
+PASS: signing-key mismatch is caught before publication because mkmanifest verifies its generated signature with the embedded trust root.
+PASS: manual release tooling rejects signing-key symlinks and group/world-readable signing-key files.
+PASS: Alpine package versions no longer silently float to a newer build when a pin disappears.
+PASS: every fetched APK is RSA-signature verified against keys from the SHA256-pinned Alpine minirootfs before extraction; signed control data then authenticates the data stream hash.
+PASS: legacy rootfs APK installation has no allow-untrusted fallback.
+PASS: minirootfs is SHA256-pinned; wake-word sources are commit + per-file SHA256 pinned; GitHub Actions are full commit-SHA pinned.
+PASS: stable/dev channel cache isolation and downgrade protections from J26 remain in force.
+PASS: A/B inactive-slot/trial/health-commit/rollback protections from J25 remain in force.
+PASS: GitHub workflow generates provenance attestations for daemon + rootfs.
+PASS: synthetic signed-APK tests accept a trusted package and reject payload tampering/untrusted signing keys.
+PASS: static Jarvis Show validation passes 100 tests after J34 changes.
+WARN: full updater Go package tests require Go 1.26; the sandbox has Go 1.23 and cannot download the toolchain. A temporary lowered-go attempt reaches source compilation but fails on Go-1.24+ strings.SplitSeq used elsewhere in the package.
+PASS: no rootfs/release firmware was built or published during J34.

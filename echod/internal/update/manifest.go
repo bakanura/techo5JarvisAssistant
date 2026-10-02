@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"runtime"
 	"time"
+
+	"github.com/HuskerMinion/techo5/echod/internal/layout"
 )
 
 // Manifest is what a release says about itself, and the only thing a device reads to decide there is
@@ -20,6 +22,11 @@ import (
 // read — dotted numerals, optionally a prerelease, and any build detail after an underscore, which is
 // where Home Assistant truncates before comparing.
 type Manifest struct {
+	// Product and Boards are signed identity, not display metadata. Jarvis Show v1 accepts only
+	// manifests naming its product and the exact board this daemon detected at boot.
+	Product string   `json:"product,omitempty"`
+	Boards  []string `json:"boards,omitempty"`
+
 	// Version is what a device reports as available, and what Home Assistant ranks against what it is
 	// running. ValidVersion is that rule, and a manifest breaking it is refused rather than offered.
 	Version string `json:"version"`
@@ -72,6 +79,13 @@ const flatArch = "arm64"
 // and each other's binaries would start and then drive the wrong hardware.
 var arch = runtime.GOARCH + archSuffix
 
+// deviceBoard is variable only so tests can emulate Crown/Checkers without running on the hardware.
+var deviceBoard = layout.Board
+
+// JarvisShowProduct is the signed product identity every Jarvis Show release carries. Exported so
+// release tooling can reject a typo before it signs and publishes a manifest devices would refuse.
+const JarvisShowProduct = "jarvis-show-v1"
+
 // manifestTimeout bounds the fetch. Home Assistant asks for this on connect and after every selection
 // change, so it has to fail quickly rather than hold up a configuration reply.
 const manifestTimeout = 10 * time.Second
@@ -111,7 +125,13 @@ func Fetch(ctx context.Context, c Channel) (Manifest, error) {
 	if err := json.Unmarshal(body, &m); err != nil {
 		return m, fmt.Errorf("update: reading the manifest at %s: %w", url, err)
 	}
-	return m, m.Valid()
+	if err := m.Valid(); err != nil {
+		return m, err
+	}
+	if err := m.ValidFor(JarvisShowProduct, deviceBoard); err != nil {
+		return m, err
+	}
+	return m, nil
 }
 
 // channelURL is Channel.URL, a variable so a test can serve the channel itself.
@@ -139,6 +159,38 @@ func get(ctx context.Context, url string, max int64) ([]byte, error) {
 		return nil, fmt.Errorf("update: %s is larger than %d bytes", url, max)
 	}
 	return b, nil
+}
+
+// ValidFor binds a signed manifest to one product and one detected board. A valid signature proves
+// who produced a manifest; these fields prove that what they produced was intended for this appliance.
+func (m Manifest) ValidFor(product, board string) error {
+	if m.Product != product {
+		return fmt.Errorf("update: manifest product %q is not %q", m.Product, product)
+	}
+	if board == "" {
+		return errors.New("update: device board is unknown; refusing OTA")
+	}
+	if len(m.Boards) == 0 {
+		return fmt.Errorf("update: manifest for %s names no supported boards", m.Version)
+	}
+	found := false
+	seen := make(map[string]bool, len(m.Boards))
+	for _, candidate := range m.Boards {
+		if candidate != "crown" && candidate != "checkers" {
+			return fmt.Errorf("update: manifest names unsupported board %q", candidate)
+		}
+		if seen[candidate] {
+			return fmt.Errorf("update: manifest names board %q more than once", candidate)
+		}
+		seen[candidate] = true
+		if candidate == board {
+			found = true
+		}
+	}
+	if !found {
+		return fmt.Errorf("update: manifest for %s does not support this %s board", m.Version, board)
+	}
+	return nil
 }
 
 func (m Manifest) flat() Binary {

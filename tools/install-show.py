@@ -339,7 +339,8 @@ def boot_image(rel, work, dev):
         # SHA256SUMS is not enough: nothing signs that file, so it proves only that whoever served the
         # image also served the list. Releases made before the manifest covered boot images are passed
         # over here rather than trusted, which is why the search keeps going.
-        earlier = Release(REPO, r['tag_name'], work)
+        earlier = Release(REPO, r['tag_name'], work,
+                          expected_product='jarvis-show-v1', expected_board=dev)
         if not earlier.signed(name):
             note('release %s has %s but does not name it in its signed manifest; looking further back'
                  % (r['tag_name'], name))
@@ -528,7 +529,8 @@ def main():
         note('Jarvis Show root filesystem: wrapper-verified local input %s' % rootfs)
         note('%s boot image: wrapper-verified pinned local input %s' % (dev, boot))
     else:
-        rel = Release(REPO, a.release, a.work)
+        rel = Release(REPO, a.release, a.work,
+                      expected_product='jarvis-show-v1', expected_board=dev)
         version = rel.version
         if a.rootfs:
             rootfs = os.path.abspath(a.rootfs)
