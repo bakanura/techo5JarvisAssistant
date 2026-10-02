@@ -1,0 +1,17 @@
+J20 TWRP + recovery backup
+==========================
+PASS: existing Crown TWRP is reused without fastboot writes
+PASS: pinned TWRP SHA-256 required before any recovery flash
+PASS: fallback flash targets only recovery and swdl, then reboot recovery
+PASS: fastboot boot is not used
+PASS: lk/preloader/expdb/tee*/boot/system/userdata are not written by J20
+PASS: fastboot identity must still be same unlocked CROWN before fallback flash
+PASS: TWRP must report crown + root adb + expected boot block
+PASS: p1-p11 plus p14/p15 and eMMC boot0/boot1 are backed up
+PASS: each backup file is size-checked and compared to device-side + host-side SHA-256
+PASS: partial backup is never reusable; finalization is atomic and re-verified
+PASS: existing backup is reused only after full hash/coverage verification
+PASS: 7 J20 recovery tests passed
+PASS: no real device I/O occurred
+PASS: no rootfs/release tarball built
+WARN: backup is post-Amonet, not a pristine pre-unlock factory image

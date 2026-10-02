@@ -74,3 +74,38 @@ before any retry.
 
 J19 does not flash TWRP, write TECHO5 partitions, or start the rootfs installer. Those operations are
 separate later gates.
+
+## J20 — TWRP handoff and recovery backup gate
+
+Jarvis Crown reuses an already-running Crown TWRP whenever possible. This matters because a successful
+Amonet fastbrick run normally lands in TWRP already, and reflashing recovery for no reason only adds
+risk.
+
+If an already-unlocked Crown is still in fastboot, J20 follows the archived Amonet Crown recovery
+sequence exactly, using the SHA-256 pinned `twrp.img`:
+
+1. `fastboot -s <serial> flash recovery twrp.img`
+2. `fastboot -s <serial> flash swdl twrp.img`
+3. `fastboot -s <serial> reboot recovery`
+
+`fastboot boot` is intentionally not used: TECHO5 documents that Amonet's Crown LK does not implement
+it. Before these writes, the live fastboot identity must still be the same unlocked `CROWN` serial.
+J20 never writes `lk`, `preloader`, `expdb`, `tee*`, `boot`, `system`, or userdata.
+
+Once TWRP is present, Jarvis Crown requires `ro.product.device=crown`, root ADB, and the expected Crown
+boot block before backup. It then saves the same small-partition set TECHO5 protects before install
+(p1-p11 except none skipped there, plus p14/p15) and both eMMC boot areas (`boot0`, `boot1`). Every file
+must match:
+
+- the block size reported by the device;
+- a device-side SHA-256 calculated from the block device;
+- a host-side SHA-256 calculated from the received file.
+
+The backup is written to `partitions.partial/`, receives `SHA256SUMS` plus a manifest, is fully
+re-verified, and is only then atomically renamed to `partitions/`. A failed/incomplete backup is removed
+and can never be mistaken for a reusable completed backup. A pre-existing completed backup is reused
+only after all hashes and partition coverage verify again.
+
+This is a **post-Amonet recovery backup**, not a pristine factory/pre-unlock dump. Amonet may already
+have replaced recovery/swdl with TWRP by this point. Its purpose is to preserve the known unlocked Crown
+state before Jarvis Crown/TECHO5 later formats userdata or converts `system` into the A/B rootfs store.
