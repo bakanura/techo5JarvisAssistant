@@ -62,7 +62,6 @@ func (d *Display) gather(s scene, restartArm time.Time) settings {
 		st.wifi = st.address
 	}
 	st.sendspin = sendspin.Get().Enabled()
-	st.insecureTLS = c.Diag.InsecureTLS
 	st.slot = slotName()
 
 	return st

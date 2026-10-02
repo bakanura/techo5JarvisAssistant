@@ -334,12 +334,10 @@ pipeline rather than the device: Home Assistant is replying in text only.
    a self-signed certificate, or one issued for a different name than the one the device is given,
    the device refuses the download and the log says `x509: certificate`. The fix that keeps checking
    is to give Home Assistant a certificate for the name it is reached by (or set its internal URL,
-   Settings → System → Network, to the plain `http://` address on your network). Otherwise turn on
-   **Skip certificate checks**, a diagnostic switch on the device in Home Assistant. It covers what
-   the device downloads for Home Assistant and the screen (replies and announcements, wake word
-   models, slideshow pictures), which is why it is off by default; the device's Settings screen shows
-   *Certificate checks: Off* while it is on. Updates never use it: they always check GitHub's
-   certificate and the release signature.
+   Settings → System → Network, to the plain `http://` address on your network). Jarvis Show always
+   verifies TLS certificates for outbound HTTPS. The old TECHO5
+   **Skip certificate checks** diagnostic mode is intentionally unavailable; fix the certificate,
+   hostname, CA trust, or endpoint instead of weakening the whole appliance.
 
 ## Windows, Linux or macOS
 

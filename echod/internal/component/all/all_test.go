@@ -55,7 +55,6 @@ var registered = []string{
 	"hardware_color",
 	"headphones",
 	"home_assistant_sounds",
-	"insecure_tls",
 	"intercom_do_not_disturb",
 	"intercom_drop_in",
 	"ip_address",

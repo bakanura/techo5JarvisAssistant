@@ -4,17 +4,13 @@ package diag
 
 import (
 	"context"
-	"crypto/tls"
 	"log/slog"
-	"net/http"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	esphome "github.com/ygelfand/go-esphome-device"
 
-	"github.com/HuskerMinion/techo5/echod/internal/android/firewall"
 	"github.com/HuskerMinion/techo5/echod/internal/android/setup"
 	"github.com/HuskerMinion/techo5/echod/internal/component"
 	"github.com/HuskerMinion/techo5/echod/internal/config"
@@ -29,10 +25,6 @@ import (
 )
 
 func init() {
-	// Before anything is built, so that no request has yet gone out over the transport being
-	// replaced and nothing is reading the variable as it is written.
-	http.DefaultTransport = transport
-
 	component.Register(component.Network, Get(), component.Order(90))
 }
 
@@ -42,9 +34,6 @@ const (
 	cpuZone   = "mtktscpu"
 	radioZone = "mtktswmt"
 )
-
-// adbPort is where adbd listens: the boot image sets service.adb.tcp.port, and this is that port.
-const adbPort = 5555
 
 type Diag struct {
 	testPlayback *esphome.Button
@@ -70,8 +59,6 @@ type Diag struct {
 
 	luxPath string
 
-	adb   *esphome.Switch
-	tls   *esphome.Switch
 	ip    *esphome.TextSensor
 	color *esphome.TextSensor
 
@@ -124,13 +111,8 @@ func (d *Diag) Entities() []esphome.Entity {
 		d.cached, d.free, d.purge, d.restart,
 		d.temperature, d.radioTemp, d.cores, d.coresOnline, d.load, d.memory, d.lux,
 		d.roomLevel, d.roomFloor,
-		d.tls, d.ip, d.color, d.signal, d.rxRate, d.txRate, d.ads,
+		d.ip, d.color, d.signal, d.rxRate, d.txRate, d.ads,
 		d.testPlayback, d.interval, d.minCores,
-	}
-	// adbd is Android's. On the Linux image there is none to reach, and the saved setting is read by
-	// the Android daemon the unit falls back to, where it would open root adb to the network.
-	if layout.OnAndroid() {
-		out = append(out, d.adb)
 	}
 	if d.lensCover != nil {
 		out = append(out, d.lensCover)
@@ -234,46 +216,9 @@ func (d *Diag) playback() {
 	}
 }
 
-// remote opens the port adbd listens on, for getting at a device that is not on a cable.
+// remote publishes the device address. Older TECHO5 builds also exposed a Remote ADB switch here;
+// Jarvis Show deliberately has no network-adb control. USB recovery remains the supported debug path.
 func (d *Diag) remote() {
-	d.adb = &esphome.Switch{
-		Base: esphome.Base{
-			ObjectID: "remote_adb",
-			Name:     "Remote adb",
-			Icon:     "mdi:bug-outline",
-			Category: esphome.CategoryDiagnostic,
-		},
-	}
-
-	d.adb.OnCommand = func(on bool) {
-		if err := d.reachable(on); err != nil {
-			d.adb.Set(!on)
-			return
-		}
-		if err := config.Set().Diag().RemoteADB(on); err != nil {
-			slog.Error("saving a setting failed", "setting", d.adb.ObjectID, "err", err)
-		}
-	}
-
-	d.tls = &esphome.Switch{
-		Base: esphome.Base{
-			ObjectID: "insecure_tls",
-			Name:     "Skip certificate checks",
-			Icon:     "mdi:lock-off-outline",
-			Category: esphome.CategoryDiagnostic,
-		},
-	}
-
-	d.tls.OnCommand = func(on bool) {
-		insecureTLS(on)
-		d.tls.Set(on)
-		if err := config.Set().Diag().InsecureTLS(on); err != nil {
-			slog.Error("saving a setting failed", "setting", d.tls.ObjectID, "err", err)
-		}
-	}
-
-	// The protocol's device info carries the mac and no address, so this is the only place Home
-	// Assistant can learn where the device actually is.
 	d.ip = &esphome.TextSensor{
 		Base: esphome.Base{
 			ObjectID: "ip_address",
@@ -283,76 +228,6 @@ func (d *Diag) remote() {
 		},
 	}
 	d.address()
-}
-
-// Everything the device downloads goes through the default transport: wake word models, the audio
-// Home Assistant serves, the pictures a slideshow shows. So the switch that stops certificates being
-// checked has to reach all of it, and it used to by writing a new TLS configuration into the shared
-// transport — a field several goroutines were reading as they made requests, written with no lock,
-// and leaving the connections opened under the old setting in the pool for the next request to pick
-// up.
-//
-// What is installed instead is two transports of our own, one that checks certificates and one that
-// does not, and a flag saying which a request goes to. The flag is read once per request, neither
-// transport is ever written to after it is built, and turning the switch back off closes the
-// connections that were made while it was on, so nothing carries on over one of them.
-//
-// The updater is not part of this either way: it keeps its own client, because an update installs as
-// root and must be believed only when the release key signed it (update/trust.go).
-type tlsSwitch struct {
-	checking *http.Transport
-	skipping *http.Transport
-	skip     atomic.Bool
-}
-
-// transport is the default transport from here on. Nothing may assert http.DefaultTransport to
-// *http.Transport any more; it is this.
-var transport = newTLSSwitch()
-
-func newTLSSwitch() *tlsSwitch {
-	base, ok := http.DefaultTransport.(*http.Transport)
-	if !ok {
-		// Nothing has replaced it in any build of this daemon; a transport of our own rather than a
-		// panic if something ever does.
-		base = &http.Transport{Proxy: http.ProxyFromEnvironment}
-	}
-	skipping := base.Clone()
-	skipping.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
-	return &tlsSwitch{checking: base, skipping: skipping}
-}
-
-func (t *tlsSwitch) RoundTrip(r *http.Request) (*http.Response, error) {
-	if t.skip.Load() {
-		return t.skipping.RoundTrip(r)
-	}
-	return t.checking.RoundTrip(r)
-}
-
-// insecureTLS moves the switch. Called from the entity's command and from Restore.
-func insecureTLS(on bool) {
-	transport.skip.Store(on)
-	if on {
-		slog.Warn("certificates are not being checked")
-		return
-	}
-	transport.skipping.CloseIdleConnections()
-}
-
-// reachable opens or closes the adb port and moves the switch to match what the chain now says.
-func (d *Diag) reachable(on bool) error {
-	change, what := func() error { return firewall.Close(firewall.ADB) }, "closing"
-	if on {
-		change, what = func() error { return firewall.Open(firewall.ADB, adbPort) }, "opening"
-	}
-
-	if err := change(); err != nil {
-		slog.Error(what+" the adb port failed", "port", adbPort, "err", err)
-		return err
-	}
-
-	slog.Warn("remote adb", "open", on, "port", adbPort)
-	d.adb.Set(on)
-	return nil
 }
 
 func (d *Diag) address() {
@@ -624,25 +499,23 @@ func (d *Diag) Restore(c config.Config) {
 	d.interval.Set(float32(c.Diag.Interval))
 	slog.Info("restored", "what", d.interval.ObjectID, "using", c.Diag.Interval)
 
-	// The chain is empty after a reboot but not after an echod restart, so the rule is put back or
-	// taken away rather than either being assumed.
-	if !layout.OnAndroid() {
-		// Off the Linux image the switch is not offered; one saved on before is cleared, so the Fire OS
-		// fallback does not open adb to the network from this file.
-		if c.Diag.RemoteADB {
-			if err := config.Set().Diag().RemoteADB(false); err != nil {
-				slog.Error("clearing remote adb failed", "err", err)
-			} else {
-				slog.Warn("remote adb was saved on; cleared, since this is not Android")
-			}
+	// Jarvis Show never opens Android's network ADB. Clear the persisted legacy request on every
+	// platform; USB serial/TWRP is the supported recovery/debug path.
+	if c.Diag.RemoteADB {
+		if err := config.Set().Diag().ClearLegacyRemoteADB(); err != nil {
+			slog.Error("clearing legacy remote adb setting failed", "err", err)
+		} else {
+			slog.Warn("legacy remote adb setting cleared; Jarvis Show never exposes adb over the LAN")
 		}
-	} else if err := d.reachable(c.Diag.RemoteADB); err == nil {
-		slog.Info("restored", "what", d.adb.ObjectID, "using", c.Diag.RemoteADB)
 	}
 
-	insecureTLS(c.Diag.InsecureTLS)
-	d.tls.Set(c.Diag.InsecureTLS)
-	slog.Info("restored", "what", d.tls.ObjectID, "using", c.Diag.InsecureTLS)
+	if c.Diag.InsecureTLS {
+		if err := config.Set().Diag().ClearLegacyInsecureTLS(); err != nil {
+			slog.Error("clearing legacy insecure TLS setting failed", "err", err)
+		} else {
+			slog.Warn("legacy insecure TLS setting cleared; Jarvis Show always verifies certificates")
+		}
+	}
 
 	if err := setup.MinCores(c.Diag.MinCores); err != nil {
 		slog.Error("holding cores online failed", "cores", c.Diag.MinCores, "err", err)

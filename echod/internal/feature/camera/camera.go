@@ -1,9 +1,9 @@
-// Package camera serves the Show's own camera over HTTP, for Home Assistant and anything else
-// on the network: a JPEG snapshot and an MJPEG stream. Home Assistant's "Generic Camera" takes the
-// snapshot URL, "MJPEG IP Camera" the stream; either makes the Show a camera entity there.
+// Package camera serves the Show's own camera over HTTP for physically-authorized diagnostics: a
+// JPEG snapshot and an MJPEG stream. Home Assistant uses the encrypted ESPHome camera entity for
+// ordinary camera access, so these debug endpoints do not need to be anonymous LAN services.
 //
-// Both pages are off unless switched on (feature/security): they have no login, so the port is only
-// open while the camera or the screen page is wanted.
+// Both pages are off unless switched on (feature/security), and every read still needs the
+// physical-presence setup session. The switch controls exposure; it is not the authorization.
 //
 // The sensor runs only while a request holds it, and stops a few seconds after the last one, so
 // a device nobody is watching has its camera off — and the mute button keeps it off entirely.
@@ -51,8 +51,8 @@ func (f *Feature) Name() string { return "camera" }
 // of its pages is switched on and shut when none is. A device with no camera registers nothing here
 // and still has the port for the pages it does have.
 func (f *Feature) register() {
-	web.Handle("/camera.jpg", "Camera", cameraOpen, f.snapshot)
-	web.Handle("/camera.mjpeg", "", cameraOpen, f.stream)
+	web.HandlePrivate("/camera.jpg", "Camera", cameraOpen, f.snapshot)
+	web.HandlePrivate("/camera.mjpeg", "", cameraOpen, f.stream)
 	f.registerScreen()
 }
 

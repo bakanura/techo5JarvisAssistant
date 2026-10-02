@@ -110,8 +110,10 @@ Android, with one Go daemon, `echod`, doing everything the device does:
 
 - The Bluetooth proxy on the Show only scans: BlueZ owns the controller, so there is no beacon
   and no active connections for Home Assistant. It stays off by default until it has run a while.
-- The camera and screen pages have no login: they are for a trusted network, and off until
-  switched on. The rescue environment (boot image) still trusts the key built into that image.
+- The optional camera and screen diagnostic pages are off until explicitly switched on and still
+  require the physical-presence setup session before they return an image. Home Assistant uses the
+  encrypted ESPHome camera entity for normal camera access. The rescue environment (boot image)
+  still trusts the key built into that image.
 - Song metadata rests on two undocumented service endpoints; when one changes shape the page
   falls back to the station logo.
 - Exposure knows the middle of the frame, not faces: somebody off to one side of a window is still

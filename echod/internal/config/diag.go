@@ -5,9 +5,12 @@ type Diag struct {
 	// Interval is how often the readings that drift are collected, in seconds.
 	Interval int `json:"interval"`
 
+	// RemoteADB is a legacy decode-only field. Jarvis Show never exposes adbd over the LAN; a
+	// saved true value is cleared during diagnostics restore.
 	RemoteADB bool `json:"remote_adb"`
 
-	// InsecureTLS stops certificates being checked on anything the device downloads.
+	// InsecureTLS is a legacy decode-only field. Jarvis Show never disables certificate checks; a
+	// saved true value is cleared during diagnostics restore.
 	InsecureTLS bool `json:"insecure_tls"`
 
 	// MinCores holds cores online that the governor would otherwise park.
@@ -31,12 +34,17 @@ func (w DiagWriter) Interval(v int) error {
 	return w.st.Update(func(c *Config) { c.Diag.Interval = v })
 }
 
-func (w DiagWriter) RemoteADB(v bool) error {
-	return w.st.Update(func(c *Config) { c.Diag.RemoteADB = v })
+// ClearLegacyRemoteADB is intentionally one-way. Older TECHO5 state files may contain the
+// network-adb bit; Jarvis Show migrates it off and provides no setter that can turn it back on.
+func (w DiagWriter) ClearLegacyRemoteADB() error {
+	return w.st.Update(func(c *Config) { c.Diag.RemoteADB = false })
 }
 
-func (w DiagWriter) InsecureTLS(v bool) error {
-	return w.st.Update(func(c *Config) { c.Diag.InsecureTLS = v })
+// ClearLegacyInsecureTLS is intentionally one-way. Older TECHO5 state files may contain the
+// diagnostic certificate-bypass bit; Jarvis Show migrates it off and provides no setter that can
+// turn it back on.
+func (w DiagWriter) ClearLegacyInsecureTLS() error {
+	return w.st.Update(func(c *Config) { c.Diag.InsecureTLS = false })
 }
 
 func (w DiagWriter) MinCores(v int) error {

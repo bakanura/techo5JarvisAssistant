@@ -108,6 +108,10 @@ func categoryRows(sv sheetView) (rows []settingRow, note string) {
 		if st.muted {
 			mic = "Muted"
 		}
+		sendspinSub := "Play music in sync with other rooms"
+		if !sendspin.Get().Paired() {
+			sendspinSub = "Pair a Music Assistant server from Home Assistant first"
+		}
 		return []settingRow{
 			{id: "volume", label: "Volume", kind: ctlStepper, value: fmt.Sprintf("%d of %d", st.volume, sheetVolumeSteps)},
 			{id: "mic", label: "Microphone", sub: "The mute button does this too", kind: ctlToggle, on: !st.muted, value: mic},
@@ -122,7 +126,7 @@ func categoryRows(sv sheetView) (rows []settingRow, note string) {
 			{id: "dnd", label: "Do not disturb", sub: "Silence announcements and doorbells; turn away incoming calls", kind: ctlToggle, on: config.Get().Home.DoNotDisturb},
 			{id: "bass", label: "Bass", sub: toneSub(), kind: ctlStepper, value: toneValue(config.Get().Speaker.Bass)},
 			{id: "treble", label: "Treble", kind: ctlStepper, value: toneValue(config.Get().Speaker.Treble)},
-			{id: "sendspin", label: "Music Assistant player", sub: "Play music in sync with other rooms", kind: ctlToggle, on: st.sendspin},
+			{id: "sendspin", label: "Music Assistant player", sub: sendspinSub, kind: ctlToggle, on: st.sendspin},
 		}, ""
 	case catConnections:
 		return connectionRows(sv), ""
@@ -167,13 +171,10 @@ func securityRows(sv sheetView) []settingRow {
 	if !sec.Encrypted {
 		link.sub, link.value = "Add the device in Home Assistant to encrypt it", "Not encrypted"
 	}
-	certs := settingRow{label: "Certificate checks", sub: "For downloads; updates always check", kind: ctlValue, value: "On"}
-	if st.insecureTLS {
-		certs.sub, certs.value = "Turned off in Home Assistant", "Off"
-	}
+	certs := settingRow{label: "Certificate checks", sub: "Always enforced", kind: ctlValue, value: "On"}
 	return append(rows,
-		settingRow{id: "camweb", label: "Camera on the network", sub: "No login", kind: ctlToggle, on: sec.Camera},
-		settingRow{id: "screenweb", label: "Screen on the network", sub: "No login", kind: ctlToggle, on: sec.Screen},
+		settingRow{id: "camweb", label: "Camera diagnostics", sub: "Requires local setup authorization", kind: ctlToggle, on: sec.Camera},
+		settingRow{id: "screenweb", label: "Screen diagnostics", sub: "Requires local setup authorization", kind: ctlToggle, on: sec.Screen},
 		setupRow(st.demo),
 		link, certs)
 }

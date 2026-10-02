@@ -2,7 +2,10 @@ package sendspin
 
 import (
 	"context"
+	"errors"
 	"log/slog"
+	"net"
+	"strings"
 	"sync"
 
 	esphome "github.com/ygelfand/go-esphome-device"
@@ -10,6 +13,7 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/android/firewall"
 	"github.com/HuskerMinion/techo5/echod/internal/component"
 	"github.com/HuskerMinion/techo5/echod/internal/config"
+	"github.com/HuskerMinion/techo5/echod/internal/feature/security"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/speaker"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/safe"
 )
@@ -56,6 +60,12 @@ func build() *Player {
 			DeviceID: component.DevicePlayback,
 		},
 		OnCommand: func(on bool) {
+			if on && pairedServer() == "" {
+				slog.Warn("sendspin: refusing to enable without a paired Music Assistant server")
+				p.enabled.Set(false)
+				p.state.Set(stateUnpaired)
+				return
+			}
 			p.enabled.Set(on)
 			if err := config.Set().Sendspin().Enabled(on); err != nil {
 				slog.Error("saving a setting failed", "setting", p.enabled.ObjectID, "err", err)
@@ -79,13 +89,16 @@ func build() *Player {
 
 // What the state sensor says, from switched off to audible.
 const (
-	stateOff     = "off"
-	stateWaiting = "waiting"
-	stateJoined  = "joined"
-	statePlaying = "playing"
+	stateOff      = "off"
+	stateUnpaired = "unpaired"
+	stateWaiting  = "waiting"
+	stateJoined   = "joined"
+	statePlaying  = "playing"
 )
 
 func (p *Player) Name() string { return "sendspin" }
+
+func (p *Player) Paired() bool { return pairedServer() != "" }
 
 // Enabled and SetEnabled are the switch, for the settings sheet: the player holds a port open to
 // the network while it is on.
@@ -97,8 +110,69 @@ func (p *Player) Entities() []esphome.Entity {
 	return []esphome.Entity{p.enabled, p.state}
 }
 
+// Actions pairs Sendspin to one Music Assistant server. The server address is private network
+// configuration and is accepted only over the encrypted Home Assistant API. An empty address
+// unpairs the device and closes the listener.
+func (p *Player) Actions() []*esphome.Action {
+	return []*esphome.Action{{
+		Name: "sendspin_server",
+		Args: []esphome.Arg{{Name: "ip", Type: esphome.ArgString}},
+		Run: func(c esphome.Call) (any, error) {
+			if !security.APIEncrypted() {
+				return nil, errors.New("sendspin_server: set an API encryption key first")
+			}
+			ip, err := normalizeServerIP(c.String("ip"))
+			if err != nil {
+				return nil, err
+			}
+			if err := config.Set().Sendspin().ServerIP(ip); err != nil {
+				return nil, err
+			}
+			if ip == "" {
+				_ = config.Set().Sendspin().Enabled(false)
+				p.enabled.Set(false)
+				p.state.Set(stateUnpaired)
+				slog.Info("sendspin: Music Assistant server unpaired")
+			} else {
+				slog.Info("sendspin: Music Assistant server paired")
+			}
+			p.stop()
+			p.rethink()
+			return nil, nil
+		},
+	}}
+}
+
+func normalizeServerIP(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+	ip := net.ParseIP(raw)
+	if ip == nil {
+		return "", errors.New("sendspin_server: ip must be one literal IPv4 or IPv6 address")
+	}
+	return ip.String(), nil
+}
+
+func pairedServer() string {
+	ip, _ := normalizeServerIP(config.Get().Sendspin.ServerIP)
+	return ip
+}
+
 // Restore puts the switch back where it was left. Listening waits for Run, once there is a network.
-func (p *Player) Restore(c config.Config) { p.enabled.Set(c.Sendspin.Enabled) }
+func (p *Player) Restore(c config.Config) {
+	if c.Sendspin.ServerIP == "" {
+		if c.Sendspin.Enabled {
+			_ = config.Set().Sendspin().Enabled(false)
+			slog.Warn("sendspin: old enabled-but-unpaired state cleared during secure migration")
+		}
+		p.enabled.Set(false)
+		p.state.Set(stateUnpaired)
+		return
+	}
+	p.enabled.Set(c.Sendspin.Enabled)
+}
 
 // Run holds the port open for as long as the switch is on.
 func (p *Player) Run(ctx context.Context) error {
@@ -125,7 +199,8 @@ func (p *Player) rethink() {
 
 // settle makes what is running match what was asked for.
 func (p *Player) settle(parent context.Context) {
-	want := config.Get().Sendspin.Enabled
+	cfg := config.Get().Sendspin
+	want := cfg.Enabled && pairedServer() != ""
 
 	p.mu.Lock()
 	already := p.running != nil
@@ -151,7 +226,7 @@ func (p *Player) settle(parent context.Context) {
 	}
 
 	name := config.Get().Device.Name
-	l := newListener(p.out, speaker.Sound().Backgrounds(), p.state.Set)
+	l := newListener(p.out, speaker.Sound().Backgrounds(), p.state.Set, pairedServer())
 
 	safe.Go("sendspin listen", func() {
 		if err := l.serve(ctx, name); err != nil {

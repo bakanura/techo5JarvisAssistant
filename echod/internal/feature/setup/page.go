@@ -376,9 +376,9 @@ func privacySection(w http.ResponseWriter) {
 		return "off"
 	}
 	fmt.Fprintf(w, `<fieldset><legend>What is switched on</legend>
-	 <p style="margin:0">SSH: %s · Camera on the network: %s · Screen on the network: %s</p>
+	 <p style="margin:0">SSH: %s · Camera diagnostics: %s · Screen diagnostics: %s</p>
 	 <p class="note">Shown here, not changed here. Change them on the device's own screen, or in Home
-	  Assistant.</p></fieldset>`, onOff(s.SSH), onOff(s.Camera), onOff(s.Screen))
+	  Assistant. Camera/screen images still require this page's local-button authorization.</p></fieldset>`, onOff(s.SSH), onOff(s.Camera), onOff(s.Screen))
 	fmt.Fprint(w, `<fieldset><legend>This page</legend>
 	 <p class="note" style="margin:0">It opens only after a press on the device, and closes itself when it
 	  is left alone. It is on your own network, without encryption. It never touches SSH keys or the

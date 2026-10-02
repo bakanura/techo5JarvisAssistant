@@ -465,7 +465,6 @@ func (d *Display) sheetView(now time.Time) sheetView {
 	}
 	st.slot = bootedSlot()
 	st.sendspin = sendspin.Get().Enabled()
-	st.insecureTLS = c.Diag.InsecureTLS
 	st.btProxy = bluetooth.Get().Enabled()
 	if st.demo {
 		st.name, st.address, st.weather = "Kitchen", "192.168.1.50", "Home"

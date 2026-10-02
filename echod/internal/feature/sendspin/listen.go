@@ -20,8 +20,9 @@ const Port = 8928
 // listener accepts the servers that dial in, one at a time. The spec ranks competing servers by
 // declared activity; until that is implemented the first to arrive holds the room.
 type listener struct {
-	out *out
-	bg  *speaker.Arbiter
+	out      *out
+	bg       *speaker.Arbiter
+	serverIP net.IP
 
 	// report says what the room is doing, for the diagnostic sensor. Called from the accept goroutine
 	// and from the session, so whatever it writes to has to tolerate that.
@@ -31,8 +32,8 @@ type listener struct {
 	busy bool
 }
 
-func newListener(o *out, bg *speaker.Arbiter, report func(string)) *listener {
-	return &listener{out: o, bg: bg, report: report}
+func newListener(o *out, bg *speaker.Arbiter, report func(string), server string) *listener {
+	return &listener{out: o, bg: bg, report: report, serverIP: net.ParseIP(server)}
 }
 
 // serve holds the port until ctx ends.
@@ -50,6 +51,10 @@ func (l *listener) serve(ctx context.Context, name string) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
+		if !l.allowed(r.RemoteAddr) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
 		if !l.take() {
 			http.Error(w, "already connected", http.StatusConflict)
 			return
@@ -75,7 +80,11 @@ func (l *listener) serve(ctx context.Context, name string) error {
 		}
 	})
 
-	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		MaxHeaderBytes:    8 << 10,
+	}
 
 	// Closing the server unblocks Serve and hangs up on whatever is connected, which is what stopping
 	// means here: the room is leaving the group, not pausing.
@@ -88,6 +97,18 @@ func (l *listener) serve(ctx context.Context, name string) error {
 		return err
 	}
 	return nil
+}
+
+func (l *listener) allowed(remote string) bool {
+	if l.serverIP == nil {
+		return false
+	}
+	host, _, err := net.SplitHostPort(remote)
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.Equal(l.serverIP)
 }
 
 // take admits one server and turns away the rest.

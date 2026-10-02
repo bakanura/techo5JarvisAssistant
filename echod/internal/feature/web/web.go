@@ -37,10 +37,11 @@ const Port = 8181
 
 // page is one path and the switch that decides whether it is there at all.
 type page struct {
-	path  string
-	label string // what the index calls it, empty to leave it out
-	open  func() bool
-	h     http.HandlerFunc
+	path    string
+	label   string // what the index calls it, empty to leave it out
+	open    func() bool
+	private bool
+	h       http.HandlerFunc
 }
 
 type Feature struct {
@@ -64,10 +65,22 @@ func (f *Feature) Name() string { return "web" }
 // Handle adds a path, served while open reports true and answered as not found while it does not.
 // Features call this as they are built, before anything runs.
 func Handle(path, label string, open func() bool, h http.HandlerFunc) {
+	handle(path, label, open, false, h)
+}
+
+// HandlePrivate adds a page that additionally requires the physical-presence setup session for
+// every request. It is for sensitive diagnostic reads such as camera frames and screenshots: the
+// feature switch decides whether the endpoint exists at all, and a local button press decides who
+// may read it while it exists.
+func HandlePrivate(path, label string, open func() bool, h http.HandlerFunc) {
+	handle(path, label, open, true, h)
+}
+
+func handle(path, label string, open func() bool, private bool, h http.HandlerFunc) {
 	f := Get()
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.pages = append(f.pages, page{path: path, label: label, open: open, h: h})
+	f.pages = append(f.pages, page{path: path, label: label, open: open, private: private, h: h})
 }
 
 // letIn answers whether a request carries a session the setup page has let in, which is the only
@@ -82,8 +95,9 @@ var letIn func(*http.Request) bool
 // Guard is how the setup page hands its session check in. Called once, as that feature is built.
 func Guard(check func(*http.Request) bool) { letIn = check }
 
-// LetIn reports whether this request comes from a browser the setup page has let in. Pages on this
-// port use it for anything that changes what the device is doing; reading needs only the switch.
+// LetIn reports whether this request comes from a browser the setup page has let in. Sensitive
+// diagnostic reads and every operation that changes device state require this physical-presence
+// session; a feature switch alone is never authorization for camera/screen data.
 func LetIn(r *http.Request) bool { return letIn != nil && letIn(r) }
 
 // Wake has the port looked at again, for a switch that is not one of Home Assistant's — the setup
@@ -116,7 +130,11 @@ func (f *Feature) mux() *http.ServeMux {
 
 	m := http.NewServeMux()
 	for _, p := range pages {
-		m.HandleFunc(p.path, allowed(p.open, p.h))
+		if p.private {
+			m.HandleFunc(p.path, privateAllowed(p.open, p.h))
+		} else {
+			m.HandleFunc(p.path, allowed(p.open, p.h))
+		}
 	}
 	m.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
@@ -135,7 +153,7 @@ func (f *Feature) mux() *http.ServeMux {
 		}
 		// Whoever typed the address wanted the one thing this port is open for. A Dot's setup page is
 		// always that: an index of one is a list somebody has to read and then type the rest of.
-		if len(on) == 1 {
+		if len(on) == 1 && (!on[0].private || LetIn(r)) {
 			http.Redirect(w, r, on[0].path, http.StatusSeeOther)
 			return
 		}
@@ -144,6 +162,9 @@ func (f *Feature) mux() *http.ServeMux {
 		fmt.Fprint(w, "<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\">"+
 			"<title>TECHO5</title><h1>TECHO5</h1><ul>")
 		for _, p := range on {
+			if p.private && !LetIn(r) {
+				continue
+			}
 			fmt.Fprintf(w, `<li><a href="%s">%s</a></li>`, p.path, html.EscapeString(p.label))
 		}
 		fmt.Fprint(w, "</ul>")
@@ -160,6 +181,34 @@ func allowed(open func() bool, h http.HandlerFunc) http.HandlerFunc {
 		}
 		h(w, r)
 	}
+}
+
+func privateAllowed(open func() bool, h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !open() {
+			http.NotFound(w, r)
+			return
+		}
+		if !LetIn(r) {
+			http.Error(w, "physical-presence setup session required", http.StatusForbidden)
+			return
+		}
+		h(w, r)
+	}
+}
+
+// hardenedHeaders marks device-management responses as private browser state and prevents the setup
+// surface being embedded by another LAN page. It deliberately avoids a restrictive CSP here because
+// the existing setup page uses inline script/style; J36 repairs that UI separately.
+func hardenedHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Pragma", "no-cache")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		next.ServeHTTP(w, r)
+	})
 }
 
 // Run keeps the port open while anything is switched on and shut while nothing is.
@@ -188,7 +237,12 @@ func (f *Feature) Run(ctx context.Context) error {
 				slog.Error("web port", "port", Port, "err", err)
 				break
 			}
-			srv = &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+			srv = &http.Server{
+				Handler:           hardenedHeaders(mux),
+				ReadHeaderTimeout: 10 * time.Second,
+				IdleTimeout:       30 * time.Second,
+				MaxHeaderBytes:    8 << 10,
+			}
 			go func(srv *http.Server) {
 				if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 					slog.Error("web port", "err", err)

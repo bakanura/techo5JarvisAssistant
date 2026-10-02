@@ -34,8 +34,8 @@ The security boundary is therefore the device/service credential, not merely "sa
 |---|---|---|---|
 | ESPHome/native API TCP 6053 | on | provisioned encryption key | Keep; private actions fail closed without encryption. |
 | Dashcast TCP 9555 (server-side) | external service | device PSK / authenticated protocol | Keep LAN-only; never port-forward. |
-| Device web TCP 8181 | closed unless feature opens it | setup writes use physical-presence session; camera/screen reads were unauthenticated | **High:** require session for camera/screen reads. |
-| Sendspin TCP 8928 | upstream default on | upstream accepted any LAN client | **Critical:** restrict to explicitly configured Music Assistant server and no listener without that pairing. |
+| Device web TCP 8181 | closed unless feature opens it | setup writes and camera/screen diagnostic reads require the physical-presence session | J32 closed the anonymous-read path. |
+| Sendspin TCP 8928 | off/unpaired by default | exact Music Assistant server IP, provisioned over encrypted HA API; every other source rejected before WebSocket upgrade | J32 closed the arbitrary-IoT-peer injection path. |
 | SSH TCP 22 | off | key-only; requires encrypted HA link + authorized key | Keep opt-in; audit binding/logging. |
 | Remote ADB TCP 5555 | Android diagnostic only | Android firewall toggle | Production Linux has no adbd; ensure saved setting cannot revive an exposure in Jarvis Show. |
 | SIP | opt-in | TLS certificate validation + SRTP | Keep secure-only; credentials stay private. |
@@ -43,7 +43,7 @@ The security boundary is therefore the device/service credential, not merely "sa
 | Camera ESPHome entity | HA-controlled | encrypted API | Preferred camera path. |
 | Bluetooth | opt-in/configured | Bluetooth protocol/pairing | Treat pairing as physical/user action; no hidden discoverability. |
 | OTA | scheduled/manual | signed manifest + hashes + version/channel/product checks | J34 audits supply chain. |
-| Direct Brain / SearXNG / LLM / STT / TTS | outbound | endpoint-specific configuration | Never disable TLS verification; secrets handled in J33. |
+| Direct Brain / SearXNG / LLM / STT / TTS | outbound | endpoint-specific configuration | TLS verification is mandatory; legacy bypass state is migrated off. Secrets handled in J33. |
 
 ## Privilege observation
 

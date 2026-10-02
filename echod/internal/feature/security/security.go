@@ -297,7 +297,7 @@ func keyLabel(k string) string {
 
 // encrypted reports whether the Home Assistant link has a key of its own rather than the reserved
 // all-zeros one an unprovisioned device answers with.
-func encrypted() bool {
+func APIEncrypted() bool {
 	b, err := os.ReadFile(layout.KeyPath)
 	if err != nil {
 		return false
@@ -305,3 +305,5 @@ func encrypted() bool {
 	k, err := esphome.ParsePSK(strings.TrimSpace(string(b)))
 	return err == nil && !k.IsZero()
 }
+
+func encrypted() bool { return APIEncrypted() }

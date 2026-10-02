@@ -47,34 +47,33 @@ type sheetCtl struct {
 
 // settings is what the settings screen shows, gathered by the display each frame.
 type settings struct {
-	cat         category
-	picker      string // the row whose list of choices is open, or empty
-	cardScroll  int    // how far the card is scrolled, in pixels
-	pickScroll  int    // how far an open list is scrolled
-	brightness  int    // ceiling, percent
-	auto        bool
-	muted       bool
-	wakeWord    string
-	weather     string // the weather source's name
-	volume      int    // step out of media.VolumeSteps
-	night       string
-	wifi        string
-	wifiName    string // the network joined, or what the Wi-Fi is doing
-	wifiOK      bool   // Wi-Fi is managed here, so it can be changed
-	btProxy     bool
-	checking    bool       // an update check from the screen is out
-	colors      bool       // the custom colors editor is open
-	demo        bool       // placeholders for the owner's details, for published screenshots
-	folder      folderView // the slideshow folder list, while it is open
-	name        string
-	version     string
-	slot        string
-	address     string
-	sendspin    bool
-	insecureTLS bool
-	restartArm  time.Time // set after a first tap on Restart
-	forgetArm   time.Time // set after a first tap on Forget, where there is one
-	now         time.Time
+	cat        category
+	picker     string // the row whose list of choices is open, or empty
+	cardScroll int    // how far the card is scrolled, in pixels
+	pickScroll int    // how far an open list is scrolled
+	brightness int    // ceiling, percent
+	auto       bool
+	muted      bool
+	wakeWord   string
+	weather    string // the weather source's name
+	volume     int    // step out of media.VolumeSteps
+	night      string
+	wifi       string
+	wifiName   string // the network joined, or what the Wi-Fi is doing
+	wifiOK     bool   // Wi-Fi is managed here, so it can be changed
+	btProxy    bool
+	checking   bool       // an update check from the screen is out
+	colors     bool       // the custom colors editor is open
+	demo       bool       // placeholders for the owner's details, for published screenshots
+	folder     folderView // the slideshow folder list, while it is open
+	name       string
+	version    string
+	slot       string
+	address    string
+	sendspin   bool
+	restartArm time.Time // set after a first tap on Restart
+	forgetArm  time.Time // set after a first tap on Forget, where there is one
+	now        time.Time
 }
 
 // sheetView is everything a settings card is made from: the gathered settings and the features'

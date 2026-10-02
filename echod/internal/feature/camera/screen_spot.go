@@ -18,7 +18,7 @@ import (
 // owner's details, for screenshots that will be published. Those three work the screen rather than
 // read it, so they need the setup page's press as well: see driving.
 func (f *Feature) registerScreen() {
-	web.Handle("/screen.png", "Screen", screenOpen, func(w http.ResponseWriter, r *http.Request) {
+	web.HandlePrivate("/screen.png", "Screen", screenOpen, func(w http.ResponseWriter, r *http.Request) {
 		if driving(r) && !web.LetIn(r) {
 			http.Error(w, "those options need a browser the setup page has let in",
 				http.StatusForbidden)

@@ -1,0 +1,13 @@
+J32 NETWORK/SERVICE HARDENING
+
+PASS: Sendspin now defaults OFF and unpaired.
+PASS: Sendspin server pairing is accepted only over the encrypted HA API.
+PASS: Sendspin accepts TCP/WebSocket traffic only from the exact paired Music Assistant IP.
+PASS: unpaired/legacy enabled state fails closed and is migrated off.
+PASS: camera/screen diagnostic HTTP reads require physical-presence setup authorization.
+PASS: normal HA camera access remains available through the encrypted ESPHome camera entity.
+PASS: persistent global insecure-TLS control removed; legacy saved true state is cleared one-way.
+PASS: SSH remains off by default, key-only, and already requires encrypted HA + valid key before listening.
+PASS: production Linux still exposes no resident ADB service.
+WARN: echod remains root; J33 reviews privilege reduction and secret/file ownership.
+WARN: final network segmentation/OpenWrt policy remains J35.
