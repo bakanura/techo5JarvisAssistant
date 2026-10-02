@@ -6,10 +6,10 @@
 // request, or an hour after it was opened, whichever comes first. While it is off the path is not
 // served and, with nothing else switched on, the port is not listening.
 //
-// Getting in is a press on the device rather than a password: a browser that asks is told to press
-// the action button, the device says so too, and the press authorizes that one browser. It proves
-// somebody is standing at the device, it cannot be read off a photograph, and it works on a Dot,
-// which has no screen to show a code on. See docs/setup-page-design.md.
+// Getting in is physical-presence approval rather than a password. A Show/Spot displays an
+// Allow/Not now prompt and a Dot uses its real action button. Only the browser that was already
+// waiting is authorized. This proves somebody is standing at the device and works without placing a
+// reusable management password on the LAN. See docs/setup-page-design.md.
 package setup
 
 import (

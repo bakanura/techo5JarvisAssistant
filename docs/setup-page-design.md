@@ -1,139 +1,97 @@
-# The setup page: a design to argue with
+# Setup page security and interaction contract
 
-Nothing here is built. This is the write-up asked for before any code, because this is the first
-thing on a TECHO5 device that **accepts input** rather than serving pictures, and the first that a
-browser on the network can change the device with.
+The device-local Setup page is the management surface for settings that are awkward to enter on the
+small touchscreen. It is deliberately simple HTML served from the device itself: no framework, no
+external JavaScript and no internet dependency.
 
-What it is for: the handful of settings that are miserable or impossible to set on the device itself
-— a radio station's stream URL, a SIP password, the time zone on a device with no screen. On a Show
-or a Spot it saves typing. **On a Dot it is the only interface there is.**
+## Exposure
 
-## What has to move first
+The page lives on the device web listener and is **off by default**. It can be opened from the device
+settings or Home Assistant. A Dot may additionally open it by holding its real action button. The
+listener closes again after inactivity and sessions are forgotten when Setup closes or the daemon
+restarts.
 
-The web server today lives inside `feature/camera` and starts only when `camera.Available()` is
-true. On a Dot that is `false`, so **a Dot runs no web server at all**. The server has to come out
-into a feature of its own that runs everywhere, with each path gated by its own switch:
+The page is plain HTTP on the local network. That is why opening the page is not enough to manage the
+device: every browser session requires a physical-presence approval on the device, and the IoT
+firewall policy must keep the management listener off untrusted networks.
 
-| Path | Gate | Today |
-|---|---|---|
-| `/camera.jpg`, `/camera.mjpeg` | Camera web access | in `feature/camera` |
-| `/screen.png` | Screen web access | in `feature/camera` |
-| `/setup` and its posts | Setup page, new | — |
+## Physical-presence approval
 
-One port (8181), three gates, none of them on by default, and the port closed when all three are off.
-That is how it behaves now and it should keep behaving that way.
+The original generic page assumed every device had an action button. Echo Show 5/8 do not. Telling a
+Show owner to press that nonexistent button made Setup unusable even though the display already had an
+approval screen.
 
-## Getting in: a press on the device
+Jarvis Show uses the hardware-appropriate approval path:
 
-No password, no code to read off a screen a Dot does not have. The page asks you to **press the
-button on the device**, and the press is what authorizes the browser.
+- **Crown / Checkers / other screen devices:** the device displays `Allow` and `Not now`. Tapping
+  `Allow` authorizes only the browser that is already waiting.
+- **Dot:** press the real action button while the browser is waiting.
 
-1. A browser asks for `/setup`. Nothing is readable yet: the page says *press the action button on
-   your Kitchen device*, and waits.
-2. The device says so too — a line on the screen where there is one, the light ring pulsing where
-   there is not — so that a page asking for a press cannot be mistaken for something else. **Anybody
-   in the room can see that a browser is asking.** That is the point of it.
-3. A press within sixty seconds issues a session cookie to *that* browser. No press, no session, and
-   the page says so and offers to ask again.
-4. The session lasts while setup mode is on and dies with it, with the daemon, or after an hour.
+One request waits at a time. It expires after sixty seconds. Repeated unanswered requests trigger a
+cool-down. Approval cannot be saved up for a future browser.
 
-Why a press rather than a code: it proves the same thing — someone is standing at the device — and it
-works on every device, including the one with no display. It also cannot be shoulder-surfed or read
-off a photograph.
+The browser receives an `HttpOnly`, `SameSite=Strict` session cookie scoped to the device web port.
+Every state-changing form also carries the live session token and posts to `/setup/save`; mismatched
+or missing tokens are refused.
 
-Rules that go with it:
+## HTTP contract
 
-- **One press, one session.** A press authorizes the browser that was waiting, not every browser that
-  happens to be asking. If two are waiting, the press is refused and both are told why: ask again,
-  one at a time.
-- **A press is not a login.** It cannot be replayed: the pending request has a nonce, it expires with
-  the sixty seconds, and it is forgotten once used.
-- **Setup mode is off by default**, turned on from the device's own screen (Settings → Privacy), from
-  Home Assistant, and — on a Dot — by holding the action button, since there is nowhere else to ask.
-  The Home Assistant switch is deliberate: a Dot across the house is otherwise a walk. An automation
-  can therefore open the page, but not get into it, because the press still gates entry.
-- **It turns itself off** seven minutes after the last request — typing counts, so a page being used
-  stays open — and in any case an hour after it was switched on.
+Read-only endpoints accept only GET/HEAD:
 
-## What it may write, and what it may never touch
+- `/setup`
+- `/setup/state`
+- `/setup/diagnostics.txt`
 
-Allowed:
+State-changing endpoints accept POST only:
 
-- Radio favorites: a name and a stream URL, a handful of them, reorderable.
-- The time zone.
-- The device's name.
-- The SIP account and the contact list — the reason the page is worth building at all, since a SIP
-  password on a five-inch screen is the worst typing in this project.
-- Wi-Fi, eventually, though provisioning over Bluetooth is the better answer for a device that has no
-  network yet (this page needs one to be reachable).
+- `/setup/wait`
+- `/setup/save`
+- `/setup/photo`
 
-Never, whatever the request says:
+Request bodies are bounded. Photo upload has its own bounded multipart limit. Diagnostics, photos and
+all settings remain behind the same physical-presence session.
 
-- **SSH keys.** They arrive from Home Assistant and nowhere else. Unchanged.
-- **The Home Assistant encryption key.**
-- **Anything that runs a command**, uploads a file that gets executed, or writes outside the settings
-  the page lists.
-- **Firmware.** Updates keep coming from signed releases, checked against the manifest, as they do
-  now. A web page on the LAN must never be a way to put code on the device.
+## Settings round-trip contract
 
-Every write is logged as what changed, never with a secret's value.
+The Setup page must be able to render, save and re-render the major management areas without losing
+state or rendering secrets back into HTML:
 
-## The shape of it
+- alarms, timers and reminders;
+- Wi-Fi and Home Assistant/adoption state;
+- Direct Brain / STT / TTS / LLM / SearXNG settings;
+- follow-up listening settings;
+- Dashcast/Jarvis dashboard address and key state;
+- update channel/automatic update settings;
+- weather/location and calendars;
+- SIP/contacts, house/intercom settings and radio stations;
+- photos, diagnostics and general settings.
 
-- **One page, served from the binary.** No framework, no fonts or scripts fetched from the internet,
-  nothing that stops working when the device has no route out. The whole thing should be a few
-  kilobytes of HTML.
-- **Forms that post and reload.** It should work in a browser with JavaScript turned off. Polling for
-  the press is the one place a little script earns its keep, with a "I pressed it" button as the
-  fallback.
-- **Plain HTTP on the LAN.** A device with no name has nothing to put a certificate on, and a
-  self-signed one teaches people to click through warnings. This is stated in the documentation
-  rather than implied away: anybody who can see your network traffic can see what you type on this
-  page, including a SIP password.
-- **Same-origin only.** The session cookie is `SameSite=Strict`, every write is a POST carrying a
-  token from the page it came from, and a request without one is refused — so a page on another site
-  cannot make your browser change your device.
-- **Small and bounded.** A request body has a low limit, the favorites list has a maximum, and a URL
-  is checked for being an `http`/`https` URL before it is stored.
+Secrets may be accepted but are never rendered back. The UI shows only that a key/password is saved.
+A save returns to the tab it came from and malformed values are reported on that same tab.
 
-## What it must do when things go wrong
+## What the page must never do
 
-- **A bad value never breaks the device.** Settings are validated before they are written, and a
-  write that fails says which field and why, on the page.
-- **A radio URL that does not play** is the device's problem to report, not the page's to guess:
-  saving is not testing, and the page says so rather than implying a working station.
-- **Too many attempts** to authorize are refused for a while, and the refusal is logged.
-- **A restart forgets sessions.** That is a feature, not a limitation worth fixing.
+The Setup page is not a firmware-upload or shell interface. It must never:
 
-## Decided
+- execute arbitrary commands;
+- accept SSH private keys;
+- expose the Home Assistant API key or ESPHome PSK;
+- bypass signed OTA manifests;
+- write boot/kernel/partition images;
+- make camera/screen diagnostics public without the local authorization gate.
 
-- **The switch is in Home Assistant as well as on the device.** A Dot across the house is otherwise a
-  walk to reach.
-- **A Dot opens setup by holding the action button.** It has no screen to ask from. Anyone in the room
-  can hold it, which is the same trust a device on a shelf already carries.
-- **A session ends seven minutes after the last request**, so typing keeps it alive and an abandoned
-  page closes itself.
+## Regression requirements
 
-- **The page shows what is set now**, including a SIP username when there is one. Getting this far
-  took a press on the device, so the page may say what it is editing. A password is never shown.
-- **A Dot out of the box has to be able to join a network by itself.** The page needs a network to be
-  reachable, so this is Bluetooth provisioning (or a hotspot), and it is the piece that makes a fresh
-  Dot usable by somebody who was handed one. Until it is built, a Dot's first network still comes
-  from the installer over USB.
+Release validation must cover:
 
-## Built so far
+1. Show builds never claim an action button exists.
+2. The on-screen `Allow` path really authorizes a waiting browser.
+3. Every rendered settings form has a corresponding save handler.
+4. Every settings POST uses `/setup/save` and the session token is checked before dispatch.
+5. Read-only routes reject state-changing methods.
+6. Major Brain, listening, dashboard, update, alarm/timer and tab state round-trip through HTTP.
+7. Diagnostics remain inaccessible before physical approval.
+8. The session cookie remains `HttpOnly` and `SameSite=Strict`.
 
-- The web port is its own feature, so a Dot has one at all.
-- Setup mode: off by default, opened from Privacy on the screen, from Home Assistant, or by holding
-  the action button; closes seven minutes after the last request, or an hour after opening.
-- A press on the device lets one waiting browser in. Asking five times with no press stops being
-  allowed for ten minutes. The screen and the Spot's face say when a browser is asking.
-- The page writes the **time zone** and **Wi-Fi**: it scans, adds a network keeping the ones already
-  saved, and forgets one on request.
-
-## Still to build
-
-- Radio favorites and the SIP account, which arrive with the local radio (M2).
-- The device's name: it is set at install because Home Assistant knows the device by it, so changing
-  it is more than a form field.
-- Bluetooth provisioning, for the Dot that has no network yet.
+These tests are intentionally browserless: they exercise the same HTTP handlers and persisted state as
+a browser, while making regressions deterministic in CI.

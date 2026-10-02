@@ -22,8 +22,9 @@ func updatesSection(w http.ResponseWriter, token string) {
 	if on, at := fw.Installing(); on {
 		fmt.Fprintf(w, ` Installing <strong>%s</strong>: <span id="upat">%d%%</span> downloaded.</p>
 		 <p class="note">The device restarts into it when the download is done, and is back in about a
-		  minute. This page checks by itself; after the restart, press the action button again to come back in.</p>
-		 <script>setTimeout(()=>location.reload(),3000)</script></fieldset>`, html.EscapeString(fw.Offered()), int(at*100))
+		  minute. This page checks by itself. After the restart, %s.</p>
+		 <script>setTimeout(()=>location.reload(),3000)</script></fieldset>`, html.EscapeString(fw.Offered()), int(at*100),
+			html.EscapeString(reopenInstruction()))
 		return
 	}
 	if why := fw.Failed(); why != "" {

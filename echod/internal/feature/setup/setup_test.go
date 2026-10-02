@@ -51,8 +51,13 @@ func TestNobodyIsLetInWithoutAPress(t *testing.T) {
 	}
 
 	c := ask(t, f)
-	if body := get(f, "/setup", c).Body.String(); !strings.Contains(body, "Press the action button") {
-		t.Errorf("a browser waiting for the press is not told to make it: %q", first(body))
+	body := get(f, "/setup", c).Body.String()
+	if buttons.HasAction() {
+		if !strings.Contains(body, "Press the action button") {
+			t.Errorf("a browser waiting for the press is not told to make it: %q", first(body))
+		}
+	} else if !strings.Contains(body, "Tap Allow on the device screen") {
+		t.Errorf("a Show browser waiting for approval is not told to use the screen: %q", first(body))
 	}
 	// The settings' tabs are the sign of being in: every tab has them, and the locked page has none.
 	if strings.Contains(get(f, "/setup", c).Body.String(), `class="rail"`) {
@@ -401,5 +406,49 @@ func TestANetworkNameCannotCarryALineEnding(t *testing.T) {
 	}
 	if _, err := os.Stat(wifi.Conf); !os.IsNotExist(err) {
 		t.Errorf("the configuration was written for a name that was refused: %v", err)
+	}
+}
+
+func TestAuthorizationCopyMatchesTheHardware(t *testing.T) {
+	f := build()
+	f.Open()
+
+	body := get(f, "/setup", nil).Body.String()
+	if buttons.HasAction() {
+		if !strings.Contains(body, "press the action button on the device") {
+			t.Fatalf("device with action button got impossible setup instruction: %q", first(body))
+		}
+	} else {
+		if !strings.Contains(body, "tap Allow on the device screen") {
+			t.Fatalf("screen device did not explain touchscreen authorization: %q", first(body))
+		}
+		if strings.Contains(body, "press the action button") {
+			t.Fatalf("screen device was told to press a nonexistent action button: %q", first(body))
+		}
+	}
+
+	c := ask(t, f)
+	waiting := get(f, "/setup", c).Body.String()
+	if buttons.HasAction() {
+		if !strings.Contains(waiting, "Press the action button on the device now") {
+			t.Fatalf("waiting page lost action-button instruction: %q", first(waiting))
+		}
+	} else {
+		if !strings.Contains(waiting, "Tap Allow on the device screen now") {
+			t.Fatalf("waiting page lost touchscreen instruction: %q", first(waiting))
+		}
+	}
+}
+
+func TestReadOnlySetupRoutesRejectStateChangingMethods(t *testing.T) {
+	f := build()
+	f.Open()
+	for _, path := range []string{"/setup", "/setup/state", "/setup/diagnostics.txt"} {
+		r := httptest.NewRequest(http.MethodPost, path, strings.NewReader("x=1"))
+		w := httptest.NewRecorder()
+		f.serve(w, r)
+		if w.Code != http.StatusMethodNotAllowed {
+			t.Errorf("POST %s = %d, want 405", path, w.Code)
+		}
 	}
 }

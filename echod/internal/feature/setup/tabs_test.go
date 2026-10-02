@@ -21,7 +21,11 @@ func in(t *testing.T) (*Feature, *http.Cookie) {
 	f := build()
 	f.Open()
 	c := ask(t, f)
-	f.button(buttons.Event{Name: buttons.Action, Kind: buttons.Tap})
+	if buttons.HasAction() {
+		f.button(buttons.Event{Name: buttons.Action, Kind: buttons.Tap})
+	} else if !f.Answer(true) {
+		t.Fatal("touchscreen Allow did not authorize the waiting setup browser")
+	}
 	return f, c
 }
 

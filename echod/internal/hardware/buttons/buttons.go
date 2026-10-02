@@ -78,6 +78,19 @@ const doubleTap = 400 * time.Millisecond
 // LongHolds reports whether this device reports LongHold at all.
 func LongHolds() bool { return longHoldAfter > 0 }
 
+// HasAction reports whether this hardware actually has a physical action button. First-generation
+// Shows do not: setup authorization is answered on their touchscreen instead. Keeping this derived
+// from the board-specific key map prevents UI copy from telling a Show owner to press a button that
+// does not exist.
+func HasAction() bool {
+	for _, name := range codes {
+		if name == Action {
+			return true
+		}
+	}
+	return false
+}
+
 // Event is one thing a button did.
 type Event struct {
 	Name Name

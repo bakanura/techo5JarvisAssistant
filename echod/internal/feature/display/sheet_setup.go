@@ -20,7 +20,7 @@ func setupRow(demo bool) settingRow {
 	row := settingRow{id: "setuppage", label: "Setup page", sub: "Off", kind: ctlToggle}
 	switch {
 	case s.Waiting():
-		row.sub, row.on = "A browser is asking: press the action button", true
+		row.sub, row.on = "A browser is asking: answer on this screen", true
 	case s.On():
 		row.sub, row.on = "Open "+setupURL(), true
 		if demo {

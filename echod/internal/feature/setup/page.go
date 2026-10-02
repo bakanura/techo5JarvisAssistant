@@ -17,6 +17,7 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/feature/media"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/timezone"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/web"
+	"github.com/HuskerMinion/techo5/echod/internal/hardware/buttons"
 	"github.com/HuskerMinion/techo5/echod/internal/layout"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/wifi"
 )
@@ -81,6 +82,10 @@ func (f *Feature) serve(w http.ResponseWriter, r *http.Request) {
 // keys and serial numbers already replaced — so that somebody can send it to an issue without
 // reading it line by line first. Behind the press, like everything else here.
 func (f *Feature) diagnostics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "get diagnostics", http.StatusMethodNotAllowed)
+		return
+	}
 	if _, in := f.session(r); !in {
 		http.Error(w, "not let in", http.StatusForbidden)
 		return
@@ -110,6 +115,10 @@ func (f *Feature) session(r *http.Request) (string, bool) {
 }
 
 func (f *Feature) index(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "get the setup page", http.StatusMethodNotAllowed)
+		return
+	}
 	token, in := f.session(r)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
@@ -152,6 +161,10 @@ func (f *Feature) wait(w http.ResponseWriter, r *http.Request) {
 
 // state is what the waiting page polls: whether the press has happened yet.
 func (f *Feature) state(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "get setup state", http.StatusMethodNotAllowed)
+		return
+	}
 	_, in := f.session(r)
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
@@ -275,15 +288,15 @@ func (f *Feature) lockedPage(w http.ResponseWriter) {
 	fmt.Fprintf(w, `<div class="wrap"><h1>%s</h1><p class="sub">Setup</p>`, html.EscapeString(deviceName()))
 	defer fmt.Fprint(w, `</div>`)
 	if !waiting {
-		fmt.Fprint(w, `<form method="post" action="/setup/wait"><p>To change anything here, press the
-		 action button on the device. That is what proves you are standing in front of it.</p>
-		 <p><button type="submit">Ask to be let in</button></p></form>`)
+		fmt.Fprintf(w, `<form method="post" action="/setup/wait"><p>To change anything here, first ask
+		 this device to authorize the browser, then %s. That is what proves you are standing in front of it.</p>
+		 <p><button type="submit">Ask to be let in</button></p></form>`, html.EscapeString(approvalInstruction()))
 	} else {
-		fmt.Fprint(w, `<p><strong>Press the action button on the device now.</strong></p>
-		 <p class="note">Waiting for the press. The device is showing that a browser is asking.</p>
+		fmt.Fprintf(w, `<p><strong>%s now.</strong></p>
+		 <p class="note">The device is showing that a browser is asking. This request expires by itself.</p>
 		 <p><a href="/setup">Check again</a></p>
-		 <script>setInterval(async()=>{try{const r=await fetch('/setup/state');const s=await r.json();
-		 if(s.in)location.href='/setup';}catch(e){}},2000)</script>`)
+		 <script>setInterval(async()=>{try{const r=await fetch('/setup/state',{cache:'no-store'});const s=await r.json();
+		 if(s.in)location.href='/setup';}catch(e){}},2000)</script>`, html.EscapeString(approvalInstructionCapitalized()))
 	}
 	fmt.Fprint(w, `<p class="note">This page is on your own network, without encryption, and closes
 	 itself when it is left alone.</p>`)
@@ -658,6 +671,31 @@ func joinWifi(ctx context.Context, ssid, passphrase string) string {
 	}
 	slog.Info("setup page: a network was added", "ssid", ssid)
 	return ""
+}
+
+// approvalInstruction is the physical-presence action this product can actually perform. Shows
+// have no action button, so their browser must never tell the user to press one; the waiting card on
+// the touchscreen supplies Allow/Deny instead. Dots retain their real action-button flow.
+func approvalInstruction() string {
+	if buttons.HasAction() {
+		return "press the action button on the device"
+	}
+	return "tap Allow on the device screen"
+}
+
+func approvalInstructionCapitalized() string {
+	s := approvalInstruction()
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+func reopenInstruction() string {
+	if buttons.HasAction() {
+		return "hold the action button to open Setup again"
+	}
+	return "open Setup page again from this device's Settings screen"
 }
 
 func selected(on bool) string {
