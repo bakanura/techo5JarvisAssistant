@@ -27,6 +27,7 @@
 # remounts it writable and back.
 
 STORE=${STORE:-/store}
+SLOT_FILE=${SLOT_FILE:-/run/techo5/slot}
 TRIES=3
 
 usage() {
@@ -77,7 +78,7 @@ state() { cat "$STORE/slots/$1.state" 2>/dev/null || echo none; }
 set_state() { put "$STORE/slots/$1.state" "$2"; }
 active() { cat "$STORE/active" 2>/dev/null; }
 set_active() { put "$STORE/active" "$1"; }
-booted() { cat /run/techo5/slot 2>/dev/null; }
+booted() { cat "$SLOT_FILE" 2>/dev/null; }
 other() { case "$1" in a) echo b;; b) echo a;; *) echo a;; esac; }
 release() { cat "$STORE/slots/$1/etc/techo5-release" 2>/dev/null || echo "-"; }
 valid_slot() { case "$1" in a|b) return 0;; esac; return 1; }
