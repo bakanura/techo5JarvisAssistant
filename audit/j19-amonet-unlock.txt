@@ -1,0 +1,14 @@
+J19 Amonet Crown unlock wrapper
+===============================
+PASS: already-unlocked Crown skips Amonet entirely
+PASS: wrong product cannot invoke Amonet
+PASS: exact destructive confirmation required for locked Crown
+PASS: known-good fastbrick script/profile/payload/fastboot binaries SHA-256 pinned
+PASS: asset hash mismatch aborts before execution
+PASS: Amonet nonzero/timeout state requires read-only re-identification before retry
+PASS: same fastboot serial must return after exploit
+PASS: product must still be CROWN
+PASS: unlock_status=true must be independently re-confirmed
+PASS: 24 combined J17-J19 pure-Python tests passed
+PASS: no real device was queried or modified
+PASS: no TWRP/rootfs/release build occurred

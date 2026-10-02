@@ -13,11 +13,12 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from jarvis_crown.device_gate import DeviceGateError, identify_crown  # noqa: E402
 from jarvis_crown.preflight import preflight_ok, print_checks, run_preflight  # noqa: E402
+from jarvis_crown.unlock import CONFIRM_PHRASE, UnlockError, unlock_crown  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="jarvis-crown")
-    parser.add_argument("command", choices=["preflight", "identify"], nargs="?", default="preflight")
+    parser.add_argument("command", choices=["preflight", "identify", "unlock"], nargs="?", default="preflight")
     parser.add_argument("--amonet-dir", type=Path, help="local amonet-crown-v2.0.1 package directory")
     parser.add_argument("--lineage-zip", type=Path, help="optional Crown LineageOS ZIP to validate host-side")
     parser.add_argument("--work-dir", type=Path)
@@ -61,7 +62,33 @@ def main() -> int:
     else:
         print("WARN: lk_build_desc unavailable; default Crown Amonet payload selection only")
     print("PASS: live device gate complete; device was queried read-only and not modified")
-    return 0
+
+    if args.command == "identify":
+        return 0
+
+    if identity.unlocked:
+        print("PASS: Crown bootloader already unlocked; Amonet will not be executed")
+        return 0
+
+    print()
+    print("WARN: the next stage intentionally runs the pinned Amonet Crown unlock exploit.")
+    print("WARN: do not disconnect power/USB while Amonet is operating.")
+    confirmation = input(f"Type {CONFIRM_PHRASE} to continue: ").strip()
+    try:
+        result = unlock_crown(
+            identity,
+            (args.amonet_dir or (project / "third_party" / "amonet-crown-v2.0.1")).resolve(),
+            confirmation=confirmation,
+        )
+    except UnlockError as exc:
+        print(f"FAIL: Crown unlock: {exc}", file=sys.stderr)
+        return 3
+    if result.identity.unlocked:
+        print("PASS: unlock_status=true re-confirmed read-only after Amonet")
+        print("PASS: J19 complete; no TWRP/recovery/partition installation was performed")
+        return 0
+    print("FAIL: unlock result was not proven", file=sys.stderr)
+    return 3
 
 
 if __name__ == "__main__":

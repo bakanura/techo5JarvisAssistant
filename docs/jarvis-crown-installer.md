@@ -51,3 +51,26 @@ Crown payload.
 The J18 implementation cannot issue `flash`, `erase`, `boot`, `reboot`, `oem`, or `flashing`
 commands. Wrong product, zero/multiple devices, malformed identity data, command failures, or timeouts
 all stop the installer before J19 can invoke Amonet.
+
+## J19 — pinned Amonet Crown unlock wrapper
+
+`unlock` first executes J17 and J18. If the proven Crown already reports
+`unlock_status=true`, Amonet is skipped entirely. A locked Crown requires the exact interactive phrase
+`UNLOCK CROWN` before any exploit is executed.
+
+Before execution, Jarvis Crown SHA-256 verifies the exact known-good archived bytes for:
+
+- `fastbrick.sh`;
+- `profile.sh`;
+- `device.prop`;
+- `bin/fastbrick.img`;
+- `bin/fastboot` and `bin/fastboot32`.
+
+A hash mismatch is fatal. The wrapper runs only the pinned `fastbrick.sh`; it does not duplicate or
+rewrite the exploit. When Amonet exits, Jarvis Crown treats the state as unproven until the read-only
+J18 gate sees the same fastboot serial, `product=CROWN`, and `unlock_status=true`. A timeout, Amonet
+error, serial change, or persistent locked state stops the workflow and requires re-identification
+before any retry.
+
+J19 does not flash TWRP, write TECHO5 partitions, or start the rootfs installer. Those operations are
+separate later gates.
