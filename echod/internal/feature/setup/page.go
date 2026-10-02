@@ -93,7 +93,7 @@ func (f *Feature) diagnostics(w http.ResponseWriter, r *http.Request) {
 	slog.Info("setup page: diagnostics collected")
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Disposition", `attachment; filename="techo5-diagnostics.txt"`)
+	w.Header().Set("Content-Disposition", `attachment; filename="jarvis-show-diagnostics.txt"`)
 	fmt.Fprint(w, diag.Bundle())
 }
 

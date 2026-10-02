@@ -3,34 +3,18 @@
 package display
 
 import (
-	"bytes"
-	_ "embed"
 	"image"
-	"image/color"
 	"image/draw"
-	"image/png"
-	"log/slog"
 	"math"
 	"time"
-
-	xdraw "golang.org/x/image/draw"
 )
 
-// The TECHO5 mark, drawn while the device comes up: the same picture the bootloader paints, so
-// the screen does not change identity between power-on and the clock, with the signal arcs
-// pulsing outward both ways until Home Assistant is listening.
-//
-//go:embed assets/techo5.png
-var logoPNG []byte
+// The Jarvis Show mark, drawn while the device comes up. It deliberately uses the active screen
+// palette rather than embedding an upstream TECHO5 bitmap, so a fresh White Jade device has one
+// visual identity from the first daemon-rendered frame onward. Signal arcs pulse outward until Home
+// Assistant is listening.
 
 const (
-	// logoScale is how much larger than the file the mark is drawn; the file is 330×276.
-	logoScale = 1.25
-
-	// arcCenter is where the signal radiates from, in the file's own pixels: the middle of the
-	// arcs drawn on the mark.
-	arcCenterX, arcCenterY = 164, 105
-
 	// The pulse: arcs leave the mark at arcFrom pixels from the center and fade out by arcTo,
 	// arcCount of them in flight, one full sweep every arcPeriod.
 	arcFrom   = 100.0
@@ -60,46 +44,35 @@ const (
 	noHomeAssistantWait = 60 * time.Second
 )
 
-var (
-	// navy is the mark's own background, so it sits on the screen without a rectangle.
-	navy = color.RGBA{28, 31, 36, 255}
-	teal = color.RGBA{20, 147, 180, 255}
-)
-
-// splash is the mark, scaled once, and where its arcs are centered on the canvas.
+// splash is the theme-aware wordmark's geometry and where its arcs are centered on the canvas.
 type splash struct {
-	img    *image.RGBA
-	at     image.Point // top-left on the canvas
-	cx, cy float64     // arc center on the canvas
+	cx, cy       float64
+	titleY, subY int
 }
 
 func newSplash(w, h int) *splash {
-	src, err := png.Decode(bytes.NewReader(logoPNG))
-	if err != nil {
-		slog.Error("decoding the logo failed", "err", err)
-		return nil
-	}
-	sw := int(float64(src.Bounds().Dx()) * logoScale)
-	sh := int(float64(src.Bounds().Dy()) * logoScale)
-	img := image.NewRGBA(image.Rect(0, 0, sw, sh))
-	xdraw.CatmullRom.Scale(img, img.Bounds(), src, src.Bounds(), draw.Src, nil)
-	at := image.Pt((w-sw)/2, (h-sh)/2)
+	cy := float64(h)/2 - 22
 	return &splash{
-		img: img, at: at,
-		cx: float64(at.X) + arcCenterX*logoScale,
-		cy: float64(at.Y) + arcCenterY*logoScale,
+		cx:     float64(w) / 2,
+		cy:     cy,
+		titleY: int(cy) + 10,
+		subY:   int(cy) + 54,
 	}
 }
 
 // draw paints the splash for the moment t into the elapsed animation.
 func (r *renderer) drawSplash(s *splash, elapsed time.Duration) {
-	draw.Draw(r.dst, r.dst.Rect, image.NewUniform(navy), image.Point{}, draw.Src)
+	draw.Draw(r.dst, r.dst.Rect, image.NewUniform(walnut), image.Point{}, draw.Src)
 	if s == nil {
-		r.text(r.title, "TECHO5", (r.w-r.width(r.title, "TECHO5"))/2, r.h/2, amber)
+		mark := "JARVIS"
+		r.text(r.title, mark, (r.w-r.width(r.title, mark))/2, r.h/2, cream)
 		return
 	}
 	r.arcs(s, elapsed)
-	draw.Draw(r.dst, s.img.Bounds().Add(s.at), s.img, image.Point{}, draw.Over)
+	mark := "JARVIS"
+	r.text(r.title, mark, (r.w-r.width(r.title, mark))/2, s.titleY, cream)
+	sub := "SHOW"
+	r.text(r.small, sub, (r.w-r.width(r.small, sub))/2, s.subY, amber)
 	if elapsed >= waitingAfter {
 		r.splashWaiting(s)
 	}
@@ -122,15 +95,14 @@ func (r *renderer) splashWaiting(s *splash) {
 		what  = "Waiting for Home Assistant"
 		where = "Settings > Devices & services > ESPHome"
 	)
-	// Below the mark, which reaches within about seventy pixels of the bottom on this panel: the two
-	// lines go in what is left rather than over the wordmark. If a panel ever leaves less room than
-	// they need, they sit on the bottom edge instead of climbing onto the mark.
+	// Below the wordmark. If a panel ever leaves less room than they need, the lines sit on the
+	// bottom edge instead of climbing onto the mark.
 	const gap, lead = 26, 32
-	y := s.at.Y + s.img.Bounds().Dy() + gap
+	y := s.subY + gap + 34
 	if bottom := r.h - 6; y+lead > bottom {
 		y = bottom - lead
 	}
-	r.text(r.tiny, what, (r.w-r.width(r.tiny, what))/2, y, teal)
+	r.text(r.tiny, what, (r.w-r.width(r.tiny, what))/2, y, amber)
 	r.text(r.tiny, where, (r.w-r.width(r.tiny, where))/2, y+lead, dim)
 }
 
@@ -168,9 +140,9 @@ func (r *renderer) arcs(s *splash, elapsed time.Duration) {
 				edge := 1 - math.Abs(dy)/(math.Abs(dx)*math.Tan(arcSpread)+1e-9)
 				a *= math.Min(edge*4, 1)
 				o := r.dst.PixOffset(x, y)
-				pix[o] = blend(pix[o], teal.R, a)
-				pix[o+1] = blend(pix[o+1], teal.G, a)
-				pix[o+2] = blend(pix[o+2], teal.B, a)
+				pix[o] = blend(pix[o], amber.R, a)
+				pix[o+1] = blend(pix[o+1], amber.G, a)
+				pix[o+2] = blend(pix[o+2], amber.B, a)
 			}
 		}
 	}

@@ -60,7 +60,7 @@ func Bundle() string {
 		b.WriteString(body + "\n")
 	}
 
-	fmt.Fprintf(&b, "TECHO5 diagnostics, %s\n", time.Now().Format(time.RFC3339))
+	fmt.Fprintf(&b, "Jarvis Show diagnostics, %s\n", time.Now().Format(time.RFC3339))
 	fmt.Fprintf(&b, "Addresses, names, keys and serial numbers have been replaced.\n")
 
 	section("device", strings.Join([]string{

@@ -14,7 +14,7 @@ import (
 func (r *renderer) welcome(s scene) {
 	name := config.Get().Device.Name
 	if name == "" {
-		name = "TECHO5"
+		name = "Jarvis Show"
 	}
 	r.bevel(image.Rect(r.margin, 40, r.w-r.margin, r.h-40), shift(walnut, 10), true)
 	r.text(r.title, "Hello", r.margin+40, 118, amber)

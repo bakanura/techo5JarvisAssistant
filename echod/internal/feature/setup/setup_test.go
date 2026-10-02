@@ -340,7 +340,7 @@ func TestDiagnosticsNeedThePressToo(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("diagnostics after the press got %d", w.Code)
 	}
-	if !strings.Contains(w.Body.String(), "TECHO5 diagnostics") {
+	if !strings.Contains(w.Body.String(), "Jarvis Show diagnostics") {
 		t.Errorf("that does not look like the bundle: %q", first(w.Body.String()))
 	}
 }

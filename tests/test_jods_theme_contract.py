@@ -11,6 +11,9 @@ class JodsThemeContractTests(unittest.TestCase):
         cls.screen = (ROOT / "echod/internal/config/screen.go").read_text(encoding="utf-8")
         cls.setup = (ROOT / "echod/internal/feature/setup/tabs.go").read_text(encoding="utf-8")
         cls.display = (ROOT / "echod/internal/feature/display/display.go").read_text(encoding="utf-8")
+        cls.splash = (ROOT / "echod/internal/feature/display/splash.go").read_text(encoding="utf-8")
+        cls.welcome = (ROOT / "echod/internal/feature/display/render_welcome.go").read_text(encoding="utf-8")
+        cls.settings = (ROOT / "echod/internal/feature/display/settings.go").read_text(encoding="utf-8")
         cls.jobs = (ROOT.parent / "JOBS.md").read_text(encoding="utf-8")
         cls.acceptance = (ROOT / "docs/final-acceptance.md").read_text(encoding="utf-8")
 
@@ -44,6 +47,13 @@ class JodsThemeContractTests(unittest.TestCase):
     def test_theme_is_applied_before_first_run_welcome_draws(self):
         frame = self.display[self.display.index("func (d *Display) frame() time.Duration") :]
         self.assertLess(frame.index("applyTheme(t)"), frame.index("if !config.Get().Screen.Welcomed"))
+
+    def test_runtime_branding_is_jarvis_show_not_techo5(self):
+        self.assertIn('mark := "JARVIS"', self.splash)
+        self.assertIn('sub := "SHOW"', self.splash)
+        self.assertNotIn('"TECHO5"', self.splash)
+        self.assertIn('name = "Jarvis Show"', self.welcome)
+        self.assertIn('st.name = "Jarvis Show"', self.settings)
 
     def test_live_display_and_klar_checks_are_post_install_e2e(self):
         self.assertIn("- [x] **J47 — JODS visual-system port / White Jade default**", self.jobs)
