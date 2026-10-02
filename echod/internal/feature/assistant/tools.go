@@ -232,6 +232,17 @@ func deviceTools() []tool {
 				return fmt.Sprintf("%d alarms matched; ask which one, nothing was deleted", len(found)), nil
 			}},
 
+		{llm.Tool{Name: "play_music", Description: "Play music through this room. The room's preferred Music Assistant speaker is used when online; this Jarvis Show is the automatic fallback. Use the requested track, artist, album, playlist, radio name, or provider URI as media_id.",
+			Parameters: object(map[string]any{"media_id": str("Track, artist, album, playlist, radio name, or Music Assistant/provider URI to play.")}, "media_id")},
+			func(a map[string]any) (string, error) {
+				id := argString(a, "media_id")
+				target, err := home.Get().PlayMusic(id)
+				if err != nil {
+					return "", err
+				}
+				return "playing through " + target, nil
+			}},
+
 		{llm.Tool{Name: "stop", Description: "Stop whatever is ringing or playing on this device right now: a ringing alarm or timer, the radio or music. It does not delete alarms or cancel timers.",
 			Parameters: object(map[string]any{})},
 			func(map[string]any) (string, error) {

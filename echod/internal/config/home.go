@@ -63,6 +63,11 @@ type Home struct {
 	// Alarms, timers and explicit local/outgoing actions are deliberately not DND notifications.
 	DoNotDisturb bool `json:"do_not_disturb,omitempty"`
 
+	// MusicPrimary is this room's preferred Music Assistant player. When it is unavailable, this
+	// Jarvis Show's own Music Assistant player is the fallback. Empty means this Show is primary.
+	// The value is the Music Assistant media_player entity, not the underlying duplicate HA player.
+	MusicPrimary string `json:"music_primary,omitempty"`
+
 	// RadarSource is where the rain map's radar comes from: RadarNWS (the U.S. National Weather
 	// Service's national composite, lower 48 only), RadarRainViewer (worldwide), or empty for
 	// automatic, which is the NWS when home is in the lower 48 and RainViewer anywhere else.
@@ -247,6 +252,10 @@ func (w HomeWriter) DropIn(v bool) error {
 
 func (w HomeWriter) DoNotDisturb(v bool) error {
 	return w.st.Update(func(c *Config) { c.Home.DoNotDisturb = v })
+}
+
+func (w HomeWriter) MusicPrimary(v string) error {
+	return w.st.Update(func(c *Config) { c.Home.MusicPrimary = v })
 }
 
 func (w HomeWriter) WeatherSources(ids []string) error {

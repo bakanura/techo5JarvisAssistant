@@ -172,6 +172,7 @@ const forecastEvery = 30 * time.Minute
 // Run keeps the forecast current. Nothing to do without a token or a weather entity.
 func (f *Feature) Run(ctx context.Context) error {
 	go f.metaLoop(ctx)
+	go f.musicRouteLoop(ctx)
 	if hasScreen {
 		go f.slideshowLoop(ctx)
 	}
@@ -426,6 +427,31 @@ func (f *Feature) Actions() []*esphome.Action {
 	if hasGlance {
 		actions = append(actions, f.glanceAction())
 	}
+	actions = append(actions, &esphome.Action{
+		Name: "music_primary_player",
+		Args: []esphome.Arg{{Name: "entity", Type: esphome.ArgString}},
+		Run: func(c esphome.Call) (any, error) {
+			entity := strings.TrimSpace(c.String("entity"))
+			if entity != "" && !strings.HasPrefix(entity, "media_player.") {
+				return nil, fmt.Errorf("music_primary_player: %q is not a media_player entity", entity)
+			}
+			if err := config.Set().Home().MusicPrimary(entity); err != nil {
+				return nil, err
+			}
+			musicRoute.Lock()
+			musicRoute.primaryWasPlaying, musicRoute.fallbackActive, musicRoute.activeOutput = false, false, ""
+			musicRoute.Unlock()
+			return nil, nil
+		},
+	})
+	actions = append(actions, &esphome.Action{
+		Name: "music_play",
+		Args: []esphome.Arg{{Name: "media_id", Type: esphome.ArgString}},
+		Run: func(c esphome.Call) (any, error) {
+			return f.PlayMusic(c.String("media_id"))
+		},
+	})
+
 	return append(actions, []*esphome.Action{
 		{
 			Name: "home_weather",
