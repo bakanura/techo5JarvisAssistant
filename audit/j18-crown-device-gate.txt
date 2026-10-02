@@ -1,0 +1,16 @@
+J18 Crown identity gate
+=======================
+PASS: requires exactly one fastboot device
+PASS: queries selected device by serial
+PASS: product must normalize exactly to CROWN
+PASS: unlock_status must normalize exactly to true/false
+PASS: lk_build_desc is diagnostic only
+PASS: query timeout fails closed
+PASS: regression test proves no write-capable fastboot verbs are emitted
+PASS: locked Crown accepted for J19 unlock handling
+PASS: already-unlocked Crown accepted for J19 skip handling
+PASS: 16 J17+J18 pure-Python tests passed
+PASS: python bytecode compilation passed
+PASS: git diff --check passed
+PASS: no device was queried during tests
+PASS: no rootfs/release tarball built

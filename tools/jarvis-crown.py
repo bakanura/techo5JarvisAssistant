@@ -11,12 +11,13 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from jarvis_crown.device_gate import DeviceGateError, identify_crown  # noqa: E402
 from jarvis_crown.preflight import preflight_ok, print_checks, run_preflight  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="jarvis-crown")
-    parser.add_argument("command", choices=["preflight"], nargs="?", default="preflight")
+    parser.add_argument("command", choices=["preflight", "identify"], nargs="?", default="preflight")
     parser.add_argument("--amonet-dir", type=Path, help="local amonet-crown-v2.0.1 package directory")
     parser.add_argument("--lineage-zip", type=Path, help="optional Crown LineageOS ZIP to validate host-side")
     parser.add_argument("--work-dir", type=Path)
@@ -36,11 +37,31 @@ def main() -> int:
         backup_dir=(args.backup_dir or (project / "backups")).resolve(),
     )
     print_checks(checks)
-    if preflight_ok(checks):
+    if not preflight_ok(checks):
+        print("FAIL: host preflight failed; no device was queried or modified", file=sys.stderr)
+        return 1
+
+    if args.command == "preflight":
         print("PASS: host preflight complete; no device was queried or modified")
         return 0
-    print("FAIL: host preflight failed; no device was queried or modified", file=sys.stderr)
-    return 1
+
+    print("PASS: host preflight complete; beginning read-only fastboot identity gate")
+    try:
+        identity = identify_crown()
+    except DeviceGateError as exc:
+        print(f"FAIL: Crown identity gate: {exc}", file=sys.stderr)
+        print("PASS: no write-capable fastboot/Amonet command was executed", file=sys.stderr)
+        return 2
+
+    print(f"PASS: product={identity.product}")
+    print(f"PASS: fastboot serial={identity.serial}")
+    print(f"PASS: unlock_status={'true' if identity.unlocked else 'false'}")
+    if identity.lk_build_desc:
+        print(f"INFO: lk_build_desc={identity.lk_build_desc}")
+    else:
+        print("WARN: lk_build_desc unavailable; default Crown Amonet payload selection only")
+    print("PASS: live device gate complete; device was queried read-only and not modified")
+    return 0
 
 
 if __name__ == "__main__":
