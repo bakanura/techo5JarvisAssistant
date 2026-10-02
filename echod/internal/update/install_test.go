@@ -205,6 +205,10 @@ func TestDownloadStopsAtTheOfferedSize(t *testing.T) {
 func TestInstallRefusesAnOlderVersionThanTheOneRunning(t *testing.T) {
 	somewhere(t)
 
+	restoreBoard := deviceBoard
+	t.Cleanup(func() { deviceBoard = restoreBoard })
+	deviceBoard = "crown"
+
 	// Stand where a released device stands: a stamped version, with the manifest offering the release
 	// before it.
 	running := layout.Version
