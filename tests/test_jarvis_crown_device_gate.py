@@ -6,6 +6,7 @@ import unittest
 from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools"))
 MODULE = ROOT / "tools" / "jarvis_crown" / "device_gate.py"
 spec = importlib.util.spec_from_file_location("jarvis_crown_device_gate", MODULE)
 gate = importlib.util.module_from_spec(spec)
@@ -45,7 +46,7 @@ class DeviceGateTests(unittest.TestCase):
         self.assertTrue(identity.unlocked)
 
     def test_wrong_product_fails_closed(self):
-        with self.assertRaisesRegex(gate.DeviceGateError, "unsupported product"):
+        with self.assertRaisesRegex(gate.DeviceGateError, "expected crown"):
             gate.identify_crown(run=self.runner(product="CHECKERS"))
 
     def test_no_device_fails_closed(self):

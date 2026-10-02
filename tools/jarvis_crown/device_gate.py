@@ -11,8 +11,11 @@ import re
 import subprocess
 from typing import Callable, Sequence
 
+from jarvis_crown.boards import PROFILES, profile_for_board, profile_for_product
+
 FASTBOOT_TIMEOUT_SECONDS = 8
-SUPPORTED_PRODUCT = "CROWN"
+SUPPORTED_PRODUCTS = {profile.fastboot_product for profile in PROFILES.values()}
+SUPPORTED_PRODUCT = "CROWN"  # compatibility alias for Crown-only callers/tests
 
 
 class DeviceGateError(RuntimeError):
@@ -88,10 +91,11 @@ def _getvar(serial: str, name: str, *, run: Callable = subprocess.run) -> str:
     raise DeviceGateError(f"fastboot getvar {name} returned no parseable {name}: value")
 
 
-def identify_crown(*, run: Callable = subprocess.run) -> DeviceIdentity:
-    """Prove exactly one connected fastboot device is a supported Crown.
+def identify_show(*, expected_board: str | None = None, run: Callable = subprocess.run) -> DeviceIdentity:
+    """Prove exactly one connected fastboot device is a supported Jarvis Show.
 
-    All operations in this function are read-only fastboot queries.
+    All operations in this function are read-only fastboot queries. When
+    expected_board is supplied, a different supported board still fails closed.
     """
     serials = fastboot_serials(run=run)
     if not serials:
@@ -103,10 +107,18 @@ def identify_crown(*, run: Callable = subprocess.run) -> DeviceIdentity:
 
     serial = serials[0]
     product = _getvar(serial, "product", run=run).upper()
-    if product != SUPPORTED_PRODUCT:
+    try:
+        detected = profile_for_product(product)
+    except ValueError as exc:
         raise DeviceGateError(
-            f"unsupported product {product!r}; Jarvis Crown v1 requires {SUPPORTED_PRODUCT}"
-        )
+            f"unsupported product {product!r}; Jarvis Show supports CROWN or CHECKERS"
+        ) from exc
+    if expected_board is not None:
+        expected = profile_for_board(expected_board)
+        if detected.board != expected.board:
+            raise DeviceGateError(
+                f"connected product {product!r} is {detected.board}, expected {expected.board}"
+            )
 
     raw_unlock = _getvar(serial, "unlock_status", run=run).strip().lower()
     if raw_unlock not in {"true", "false"}:
@@ -129,3 +141,13 @@ def identify_crown(*, run: Callable = subprocess.run) -> DeviceIdentity:
         unlocked=raw_unlock == "true",
         lk_build_desc=lk_build_desc,
     )
+
+
+def identify_crown(*, run: Callable = subprocess.run) -> DeviceIdentity:
+    """Compatibility wrapper requiring the Crown profile."""
+    return identify_show(expected_board="crown", run=run)
+
+
+def identify_checkers(*, run: Callable = subprocess.run) -> DeviceIdentity:
+    """Require an Echo Show 5 1st gen / checkers target."""
+    return identify_show(expected_board="checkers", run=run)

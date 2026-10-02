@@ -9,9 +9,10 @@ import subprocess
 import time
 from typing import Callable, Mapping
 
-from jarvis_crown.device_gate import DeviceGateError, DeviceIdentity, SUPPORTED_PRODUCT, identify_crown
+from jarvis_crown.boards import profile_for_board, profile_for_product
+from jarvis_crown.device_gate import DeviceGateError, DeviceIdentity, identify_crown, identify_show
 
-CONFIRM_PHRASE = "UNLOCK CROWN"
+CONFIRM_PHRASE = "UNLOCK CROWN"  # Crown compatibility alias
 FASTBRICK_TIMEOUT_SECONDS = 300
 VERIFY_ATTEMPTS = 45
 VERIFY_INTERVAL_SECONDS = 2.0
@@ -111,19 +112,61 @@ def _wait_for_unlocked(
                     f"fastboot serial changed from {original.serial} to {current.serial}; "
                     "refusing to continue on an ambiguous device"
                 )
-            if current.product != SUPPORTED_PRODUCT:
+            if current.product != original.product:
                 raise UnlockError(
-                    f"post-unlock device reports {current.product}, not {SUPPORTED_PRODUCT}"
+                    f"post-unlock device reports {current.product}, not original {original.product}"
                 )
             if current.unlocked:
                 return current
-            last_error = "Crown still reports unlock_status=false"
+            last_error = f"{original.product} still reports unlock_status=false"
         if attempt + 1 < attempts:
             sleep(VERIFY_INTERVAL_SECONDS)
     raise UnlockError(
         "unlock could not be confirmed read-only after Amonet; "
         f"last state: {last_error or 'unknown'}"
     )
+
+
+def unlock_show(
+    identity: DeviceIdentity,
+    amonet_dir: Path,
+    *,
+    confirmation: str | None,
+    run: Callable = subprocess.run,
+    identify: Callable[[], DeviceIdentity] | None = None,
+    sleep: Callable[[float], None] = time.sleep,
+    expected_hashes: Mapping[str, str] | None = None,
+) -> UnlockResult:
+    """Unlock one proven supported Show, or safely skip an already-unlocked one."""
+    try:
+        profile = profile_for_product(identity.product)
+    except ValueError as exc:
+        raise UnlockError(
+            f"unlock wrapper received unsupported product {identity.product!r}; refusing Amonet"
+        ) from exc
+    if identity.unlocked:
+        return UnlockResult(identity=identity, amonet_invoked=False)
+
+    if expected_hashes is None:
+        if profile.board == "crown":
+            expected_hashes = AMONET_UNLOCK_SHA256
+        else:
+            raise UnlockError(
+                f"{profile.board} Amonet bundle has not been cryptographically pinned in this checkout; "
+                "supply a trusted board-specific hash manifest before unlock"
+            )
+    verify_amonet_unlock_assets(amonet_dir, expected_hashes=expected_hashes)
+
+    if confirmation != profile.unlock_confirmation:
+        raise UnlockError(
+            f"locked {profile.board} requires exact confirmation phrase {profile.unlock_confirmation!r}"
+        )
+
+    _invoke_fastbrick(amonet_dir, run=run)
+    if identify is None:
+        identify = lambda: identify_show(expected_board=profile.board)
+    unlocked = _wait_for_unlocked(identity, identify=identify, sleep=sleep)
+    return UnlockResult(identity=unlocked, amonet_invoked=True)
 
 
 def unlock_crown(
@@ -136,21 +179,17 @@ def unlock_crown(
     sleep: Callable[[float], None] = time.sleep,
     expected_hashes: Mapping[str, str] = AMONET_UNLOCK_SHA256,
 ) -> UnlockResult:
-    """Unlock a proven locked Crown, or safely skip an already-unlocked one."""
-    if identity.product != SUPPORTED_PRODUCT:
+    """Compatibility wrapper for Crown callers/tests."""
+    if identity.product != "CROWN":
         raise UnlockError(
-            f"unlock wrapper received unsupported product {identity.product!r}; refusing Amonet"
+            f"unlock wrapper received unsupported product {identity.product!r}; Crown wrapper requires CROWN"
         )
-    if identity.unlocked:
-        return UnlockResult(identity=identity, amonet_invoked=False)
-
-    verify_amonet_unlock_assets(amonet_dir, expected_hashes=expected_hashes)
-
-    if confirmation != CONFIRM_PHRASE:
-        raise UnlockError(
-            f"locked Crown requires exact confirmation phrase {CONFIRM_PHRASE!r}"
-        )
-
-    _invoke_fastbrick(amonet_dir, run=run)
-    unlocked = _wait_for_unlocked(identity, identify=identify, sleep=sleep)
-    return UnlockResult(identity=unlocked, amonet_invoked=True)
+    return unlock_show(
+        identity,
+        amonet_dir,
+        confirmation=confirmation,
+        run=run,
+        identify=identify,
+        sleep=sleep,
+        expected_hashes=expected_hashes,
+    )

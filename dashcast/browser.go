@@ -96,9 +96,9 @@ const kioskScript = `
   const look = () => {
     const main = document.querySelector("home-assistant")?.shadowRoot?.querySelector("home-assistant-main")?.shadowRoot;
     if (!main) return;
-    if (!main.getElementById("jarvis-crown-shell")) {
+    if (!main.getElementById("jarvis-show-shell")) {
       const shell = document.createElement("style");
-      shell.id = "jarvis-crown-shell";
+      shell.id = "jarvis-show-shell";
       shell.textContent = ":host{--header-height:0px!important;--safe-area-inset-top:0px!important} ha-sidebar{display:none!important} #view,.view{padding-left:0!important;margin-left:0!important;padding-top:0!important}";
       main.appendChild(shell);
     }

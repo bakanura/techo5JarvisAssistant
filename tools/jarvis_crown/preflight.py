@@ -16,6 +16,8 @@ import sys
 from typing import Callable
 import zipfile
 
+from jarvis_crown.boards import profile_for_board
+
 MIN_FREE_BYTES = 8 * 1024 * 1024 * 1024
 REQUIRED_TOOLS = {
     "adb": "install Android platform-tools (adb)",
@@ -25,16 +27,17 @@ REQUIRED_TOOLS = {
     "timeout": "install GNU coreutils timeout (required by Amonet fastbrick)",
 }
 SERIAL_GROUPS = {"dialout", "uucp"}
-AMONET_REQUIRED = (
+AMONET_REQUIRED_COMMON = (
     "fastbrick.sh",
     "profile.sh",
     "device.prop",
     "bin/fastbrick.img",
     "bin/twrp.img",
-    "bin/crown-kaeru.bin",
     "bin/preloader.img",
     "bin/lk.bin",
 )
+# Crown compatibility for existing tests/tools.
+AMONET_REQUIRED = AMONET_REQUIRED_COMMON + ("bin/crown-kaeru.bin",)
 
 
 @dataclass(frozen=True)
@@ -101,15 +104,25 @@ def _device_prop(path: Path) -> dict[str, str]:
     return values
 
 
-def _check_amonet(amonet_dir: Path) -> Check:
+def _check_amonet(amonet_dir: Path, board: str = "crown") -> Check:
+    profile = profile_for_board(board)
     root = amonet_dir / "amonet"
-    missing = [name for name in AMONET_REQUIRED if not (root / name).is_file()]
+    required = AMONET_REQUIRED_COMMON + (f"bin/{profile.amonet_kaeru_name}",)
+    missing = [name for name in required if not (root / name).is_file()]
     if missing:
-        return Check("FAIL", "amonet", "local Crown Amonet bundle incomplete: " + ", ".join(missing))
+        return Check(
+            "FAIL",
+            "amonet",
+            f"local {profile.board} Amonet bundle incomplete: " + ", ".join(missing),
+        )
     props = _device_prop(root / "device.prop")
-    if props.get("DEVICE", "").lower() != "crown":
-        return Check("FAIL", "amonet", f"bundle declares DEVICE={props.get('DEVICE', 'unknown')}, not crown")
-    return Check("PASS", "amonet", f"{amonet_dir} (DEVICE=crown)")
+    if props.get("DEVICE", "").lower() != profile.board:
+        return Check(
+            "FAIL",
+            "amonet",
+            f"bundle declares DEVICE={props.get('DEVICE', 'unknown')}, not {profile.board}",
+        )
+    return Check("PASS", "amonet", f"{amonet_dir} (DEVICE={profile.board})")
 
 
 def lineage_board(path: Path) -> str:
@@ -124,18 +137,23 @@ def lineage_board(path: Path) -> str:
     raise ValueError("LineageOS metadata has no pre-device entry")
 
 
-def _check_lineage(path: Path | None) -> Check:
+def _check_lineage(path: Path | None, board: str = "crown") -> Check:
+    profile = profile_for_board(board)
     if path is None:
-        return Check("WARN", "lineage", "not supplied yet; J21 requires the Crown LineageOS ZIP before install")
+        return Check(
+            "WARN",
+            "lineage",
+            f"not supplied yet; vendor staging requires the {profile.board} LineageOS ZIP before install",
+        )
     if not path.is_file():
         return Check("FAIL", "lineage", f"file not found: {path}")
     try:
-        board = lineage_board(path)
+        detected = lineage_board(path)
     except ValueError as exc:
         return Check("FAIL", "lineage", f"{path}: {exc}")
-    if board.lower() != "crown":
-        return Check("FAIL", "lineage", f"ZIP declares pre-device={board}, not crown")
-    return Check("PASS", "lineage", f"{path} (pre-device=crown)")
+    if detected.lower() != profile.board:
+        return Check("FAIL", "lineage", f"ZIP declares pre-device={detected}, not {profile.board}")
+    return Check("PASS", "lineage", f"{path} (pre-device={profile.board})")
 
 
 def _disk_checks(work_dir: Path, backup_dir: Path, min_free_bytes: int) -> list[Check]:
@@ -174,13 +192,16 @@ def run_preflight(
     work_dir: Path,
     backup_dir: Path,
     lineage_zip: Path | None = None,
+    board: str = "crown",
     min_free_bytes: int = MIN_FREE_BYTES,
 ) -> list[Check]:
     """Return host/input readiness checks without opening or querying a device."""
     checks: list[Check] = []
 
+    profile = profile_for_board(board)
+
     if not sys.platform.startswith("linux"):
-        checks.append(Check("FAIL", "host-os", "Jarvis Crown v1 installer supports Linux hosts only"))
+        checks.append(Check("FAIL", "host-os", "Jarvis Show installer supports Linux hosts only"))
     else:
         checks.append(Check("PASS", "host-os", "Linux host"))
 
@@ -222,8 +243,8 @@ def run_preflight(
     else:
         checks.append(Check("PASS", "repo", str(repo_root)))
 
-    checks.append(_check_amonet(amonet_dir))
-    checks.append(_check_lineage(lineage_zip))
+    checks.append(_check_amonet(amonet_dir, profile.board))
+    checks.append(_check_lineage(lineage_zip, profile.board))
     checks.extend(_disk_checks(work_dir, backup_dir, min_free_bytes))
     return checks
 

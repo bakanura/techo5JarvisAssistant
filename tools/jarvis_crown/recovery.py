@@ -13,9 +13,14 @@ import subprocess
 import time
 from typing import Callable, Protocol
 
-from jarvis_crown.device_gate import DeviceIdentity, SUPPORTED_PRODUCT, identify_crown
+from jarvis_crown.boards import profile_for_product
+from jarvis_crown.device_gate import DeviceIdentity, SUPPORTED_PRODUCTS, identify_crown, identify_show
 
 TWRP_SHA256 = "b6b1446436de27cf860ebc170d4e3dffe3068ab90396ec915a123589d0d6f7d8"
+TWRP_SHA256_BY_BOARD: dict[str, str | None] = {
+    "crown": TWRP_SHA256,
+    "checkers": None,  # must be pinned from a trusted amonet-checkers bundle before real use
+}
 SMALL_PARTITIONS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 14, 15)
 BOOT_AREAS = ("boot0", "boot1")
 TWRP_WAIT_ATTEMPTS = 60
@@ -96,26 +101,40 @@ def _adb_shell(serial: str, command: str, *, run: Callable = subprocess.run) -> 
     return result.stdout.strip()
 
 
-def verify_twrp_crown(serial: str, *, run: Callable = subprocess.run) -> None:
+def verify_twrp_board(serial: str, board: str, *, run: Callable = subprocess.run) -> None:
     product = _adb_shell(serial, "getprop ro.product.device", run=run).strip().lower()
-    if product != "crown":
-        raise RecoveryError(f"TWRP device reports ro.product.device={product or 'unknown'}, not crown")
+    if product != board:
+        raise RecoveryError(
+            f"TWRP device reports ro.product.device={product or 'unknown'}, not {board}"
+        )
     ident = _adb_shell(serial, "id", run=run)
     if "uid=0" not in ident:
         raise RecoveryError("TWRP adb shell is not root; refusing partition backup")
     block = _adb_shell(serial, "test -b /dev/block/mmcblk0p9 && echo OK", run=run)
     if block != "OK":
-        raise RecoveryError("expected Crown boot block /dev/block/mmcblk0p9 is unavailable")
+        raise RecoveryError(
+            f"expected {board} boot block /dev/block/mmcblk0p9 is unavailable"
+        )
 
 
-def _pinned_twrp(amonet_dir: Path) -> Path:
+def verify_twrp_crown(serial: str, *, run: Callable = subprocess.run) -> None:
+    """Compatibility wrapper for Crown tests/callers."""
+    verify_twrp_board(serial, "crown", run=run)
+
+
+def _pinned_twrp(amonet_dir: Path, board: str, expected_sha256: str | None = None) -> Path:
     path = amonet_dir / "amonet" / "bin" / "twrp.img"
     if not path.is_file():
         raise RecoveryError(f"pinned TWRP image missing: {path}")
-    actual = _sha256(path)
-    if actual != TWRP_SHA256:
+    expected = expected_sha256 or (TWRP_SHA256 if board == "crown" else TWRP_SHA256_BY_BOARD.get(board))
+    if expected is None:
         raise RecoveryError(
-            f"TWRP image hash mismatch (expected {TWRP_SHA256}, got {actual})"
+            f"{board} TWRP image has not been cryptographically pinned in this checkout"
+        )
+    actual = _sha256(path)
+    if actual != expected:
+        raise RecoveryError(
+            f"TWRP image hash mismatch for {board} (expected {expected}, got {actual})"
         )
     return path
 
@@ -133,24 +152,35 @@ def ensure_twrp(
     *,
     fastboot_run: Callable = subprocess.run,
     adb_run: Callable = subprocess.run,
-    identify: Callable[[], DeviceIdentity] = identify_crown,
+    identify: Callable[[], DeviceIdentity] | None = None,
     sleep: Callable[[float], None] = time.sleep,
     wait_attempts: int = TWRP_WAIT_ATTEMPTS,
+    expected_twrp_sha256: str | None = None,
 ) -> RecoverySession:
-    """Use an existing TWRP when present, otherwise flash only recovery+swdl."""
-    if identity.product != SUPPORTED_PRODUCT or not identity.unlocked:
-        raise RecoveryError("TWRP stage requires a proven unlocked CROWN identity")
+    """Use an existing board-matched TWRP, otherwise flash only recovery+swdl."""
+    try:
+        profile = profile_for_product(identity.product)
+    except ValueError as exc:
+        raise RecoveryError(
+            f"TWRP stage received unsupported product {identity.product!r}"
+        ) from exc
+    if not identity.unlocked:
+        raise RecoveryError(
+            f"TWRP stage requires a proven unlocked {profile.fastboot_product} identity"
+        )
 
     existing = _single_recovery(run=adb_run)
     if existing:
-        verify_twrp_crown(existing, run=adb_run)
+        verify_twrp_board(existing, profile.board, run=adb_run)
         return RecoverySession(adb_serial=existing, twrp_flashed=False)
 
+    if identify is None:
+        identify = lambda: identify_show(expected_board=profile.board)
     current = identify()
-    if current.serial != identity.serial or current.product != SUPPORTED_PRODUCT or not current.unlocked:
+    if current.serial != identity.serial or current.product != identity.product or not current.unlocked:
         raise RecoveryError("fastboot identity changed before TWRP flash; refusing to write")
 
-    image = _pinned_twrp(amonet_dir)
+    image = _pinned_twrp(amonet_dir, profile.board, expected_twrp_sha256)
     commands = (
         ["fastboot", "-s", identity.serial, "flash", "recovery", str(image)],
         ["fastboot", "-s", identity.serial, "flash", "swdl", str(image)],
@@ -167,11 +197,13 @@ def ensure_twrp(
     for attempt in range(wait_attempts):
         serial = _single_recovery(run=adb_run)
         if serial:
-            verify_twrp_crown(serial, run=adb_run)
+            verify_twrp_board(serial, profile.board, run=adb_run)
             return RecoverySession(adb_serial=serial, twrp_flashed=True)
         if attempt + 1 < wait_attempts:
             sleep(TWRP_WAIT_INTERVAL_SECONDS)
-    raise RecoveryError("Crown did not appear in TWRP after recovery+swdl flash; stop before further writes")
+    raise RecoveryError(
+        f"{profile.board} did not appear in TWRP after recovery+swdl flash; stop before further writes"
+    )
 
 
 class SubprocessRecoveryClient:
@@ -253,7 +285,7 @@ def _backup_one(
     return host_hash, actual_size
 
 
-def verify_backup(path: Path) -> BackupResult:
+def verify_backup(path: Path, *, expected_product: str | None = None) -> BackupResult:
     sums_path = path / "SHA256SUMS"
     manifest_path = path / "manifest.json"
     if not sums_path.is_file() or not manifest_path.is_file():
@@ -262,8 +294,13 @@ def verify_backup(path: Path) -> BackupResult:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise RecoveryError(f"backup manifest is invalid: {exc}") from exc
-    if manifest.get("product") != SUPPORTED_PRODUCT or manifest.get("complete") is not True:
-        raise RecoveryError("backup manifest does not certify a complete CROWN backup")
+    product = str(manifest.get("product", "")).upper()
+    if product not in SUPPORTED_PRODUCTS or manifest.get("complete") is not True:
+        raise RecoveryError("backup manifest does not certify a complete supported Jarvis Show backup")
+    if expected_product is not None and product != expected_product.upper():
+        raise RecoveryError(
+            f"backup manifest is for product {product}, expected {expected_product.upper()}"
+        )
 
     entries: dict[str, str] = {}
     for raw in sums_path.read_text(encoding="utf-8").splitlines():
@@ -309,12 +346,12 @@ def backup_recovery_state(
     fastboot_identity: DeviceIdentity,
 ) -> BackupResult:
     """Atomically save and verify recovery-critical partitions before install writes."""
-    if fastboot_identity.product != SUPPORTED_PRODUCT or not fastboot_identity.unlocked:
-        raise RecoveryError("backup requires a proven unlocked CROWN identity")
+    if fastboot_identity.product not in SUPPORTED_PRODUCTS or not fastboot_identity.unlocked:
+        raise RecoveryError("backup requires a proven unlocked supported Jarvis Show identity")
 
     final = backup_root / "partitions"
     if final.exists():
-        return verify_backup(final)
+        return verify_backup(final, expected_product=fastboot_identity.product)
 
     partial = backup_root / "partitions.partial"
     if partial.exists():
@@ -357,7 +394,7 @@ def backup_recovery_state(
         )
         manifest = {
             "complete": True,
-            "product": SUPPORTED_PRODUCT,
+            "product": fastboot_identity.product,
             "fastboot_serial": fastboot_identity.serial,
             "adb_serial": client.serial,
             "files": len(entries),
@@ -369,10 +406,10 @@ def backup_recovery_state(
             json.dumps(manifest, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
-        verify_backup(partial)
+        verify_backup(partial, expected_product=fastboot_identity.product)
         backup_root.mkdir(parents=True, exist_ok=True)
         partial.replace(final)
-        verified = verify_backup(final)
+        verified = verify_backup(final, expected_product=fastboot_identity.product)
         return BackupResult(path=verified.path, files=verified.files, reused=False)
     except Exception:
         # Never leave a partial backup looking reusable.

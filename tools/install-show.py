@@ -361,6 +361,10 @@ def main():
     ap.add_argument('--boot', help='a boot image you built (docs/building.md) instead of the release\'s')
     ap.add_argument('--rootfs', help='a root filesystem you built instead of the release\'s')
     ap.add_argument('--lineage-zip', help='install from TWRP: the LineageOS 18.1 zip for this board, installed only for its drivers')
+    ap.add_argument('--jarvis-show-prestaged', action='store_true', help=argparse.SUPPRESS)
+    ap.add_argument('--jarvis-show-board', choices=('crown', 'checkers'), help=argparse.SUPPRESS)
+    ap.add_argument('--jarvis-show-version', help=argparse.SUPPRESS)
+    # Legacy private flags retained only so an older Crown wrapper fails safely into the same path.
     ap.add_argument('--jarvis-crown-prestaged', action='store_true', help=argparse.SUPPRESS)
     ap.add_argument('--jarvis-crown-version', help=argparse.SUPPRESS)
     ap.add_argument('--wifi', help="a Wi-Fi network to join (its passphrase is asked for); otherwise LineageOS's saved one, or the Show's screen")
@@ -379,9 +383,17 @@ def main():
     step('checks')
     need(a.adb, 'install the Android platform tools (adb and fastboot)')
     need(a.fastboot, 'install the Android platform tools (adb and fastboot)')
-    twrp = bool(a.lineage_zip) or a.jarvis_crown_prestaged
-    if a.jarvis_crown_prestaged and a.lineage_zip:
-        fail('--jarvis-crown-prestaged consumes the J21-staged vendor tree; do not pass --lineage-zip again')
+    if a.jarvis_crown_prestaged:
+        if a.jarvis_show_prestaged:
+            fail('do not mix legacy --jarvis-crown-prestaged with --jarvis-show-prestaged')
+        a.jarvis_show_prestaged = True
+        a.jarvis_show_board = a.jarvis_show_board or 'crown'
+        a.jarvis_show_version = a.jarvis_show_version or a.jarvis_crown_version
+    twrp = bool(a.lineage_zip) or a.jarvis_show_prestaged
+    if a.jarvis_show_prestaged and a.lineage_zip:
+        fail('--jarvis-show-prestaged consumes the already-staged vendor tree; do not pass --lineage-zip again')
+    if a.jarvis_show_prestaged and (not a.jarvis_show_board or not a.jarvis_show_version):
+        fail('--jarvis-show-prestaged requires --jarvis-show-board and --jarvis-show-version')
     if a.lineage_zip and not os.path.exists(a.lineage_zip):
         fail('no file at %s' % a.lineage_zip)
     a.serial = pick_unit(a.serial, a.adb, ('recovery',) if twrp else ('device',), 'Echo Show', consoles=(CONSOLE_TECHO5,))
@@ -403,7 +415,7 @@ def main():
             fail('no file at %s' % f)
     state = adb.state()
     if twrp and state != 'recovery':
-        fail("adb does not see %s in TWRP (state '%s'): the Crown install path requires recovery here"
+        fail("adb does not see %s in TWRP (state '%s'): the pre-staged Show install path requires recovery here"
              % (a.serial, state))
     if not twrp and state != 'device':
         fail("adb does not see %s running LineageOS (state '%s'): turn on USB debugging and accept this computer, "
@@ -412,15 +424,17 @@ def main():
     if dev not in BOARDS:
         fail("%s reports '%s', which is none of: %s"
              % (a.serial, dev, ', '.join('%s (%s)' % (b, n) for b, n in BOARDS.items())))
-    if twrp and not a.jarvis_crown_prestaged:
+    if twrp and not a.jarvis_show_prestaged:
         zdev = lineage_board(a.lineage_zip)
         if zdev != dev:
             fail('%s is a LineageOS build for %s, and this unit is a %s' % (a.lineage_zip, zdev, dev))
         note('%s in TWRP; LineageOS zip for %s' % (dev, zdev))
-    elif a.jarvis_crown_prestaged:
-        if dev != 'crown':
-            fail('--jarvis-crown-prestaged is only valid for crown, got %s' % dev)
-        note('crown in TWRP; J21-staged LineageOS vendor tree will be consumed without formatting/installing again')
+    elif a.jarvis_show_prestaged:
+        if dev != a.jarvis_show_board:
+            fail('--jarvis-show-prestaged was pinned for %s, but TWRP reports %s' % (a.jarvis_show_board, dev))
+        if dev not in ('crown', 'checkers'):
+            fail('--jarvis-show-prestaged supports crown/checkers only, got %s' % dev)
+        note('%s in TWRP; verified LineageOS vendor tree will be consumed without formatting/installing again' % dev)
     else:
         kr = adb.sh('uname -r')
         if kr != KERNEL_RELEASE:
@@ -479,14 +493,14 @@ def main():
 
     # ------------------------------------------------------------------------------------ 3. release
     step('the release')
-    if a.jarvis_crown_prestaged:
-        if not a.rootfs or not a.boot or not a.jarvis_crown_version:
-            fail('Jarvis Crown pre-staged mode requires wrapper-verified --rootfs, --boot and --jarvis-crown-version')
-        version = a.jarvis_crown_version
+    if a.jarvis_show_prestaged:
+        if not a.rootfs or not a.boot or not a.jarvis_show_version:
+            fail('Jarvis Show pre-staged mode requires wrapper-verified --rootfs, --boot and --jarvis-show-version')
+        version = a.jarvis_show_version
         rootfs = os.path.abspath(a.rootfs)
         boot = os.path.abspath(a.boot)
-        note('Jarvis Crown root filesystem: wrapper-verified local input %s' % rootfs)
-        note('Crown boot image: wrapper-verified pinned local input %s' % boot)
+        note('Jarvis Show root filesystem: wrapper-verified local input %s' % rootfs)
+        note('%s boot image: wrapper-verified pinned local input %s' % (dev, boot))
     else:
         rel = Release(REPO, a.release, a.work)
         version = rel.version
@@ -503,14 +517,15 @@ def main():
             boot = boot_image(rel, a.work, dev)
             note('boot image %s checked' % os.path.basename(boot))
     if a.dry_run:
-        print('\nDry run: TECHO5 %s downloaded and checked in %s; nothing written to the unit.' % (version, rel.dir))
+        where = rel.dir if not a.jarvis_show_prestaged else os.path.dirname(rootfs)
+        print('\nDry run: TECHO5 %s checked in %s; nothing written to the unit.' % (version, where))
         return
 
     if twrp:
-        # Jarvis Crown reaches here only after J20/J21 and gives the final destructive confirmation in
-        # its wrapper.  Generic TWRP installs keep upstream's one-question behavior.
-        if a.jarvis_crown_prestaged:
-            note('Jarvis Crown final erase confirmation was handled by the fail-closed wrapper')
+        # Jarvis Show reaches here only after board-specific backup/vendor staging and gives the final
+        # destructive confirmation in its wrapper. Generic TWRP installs keep upstream behavior.
+        if a.jarvis_show_prestaged:
+            note('Jarvis Show final erase confirmation was handled by the fail-closed wrapper')
             step('pre-staged LineageOS vendor tree')
             prepare_lineage_vendor(adb, prestaged=True)
         else:

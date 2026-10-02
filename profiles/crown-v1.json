@@ -1,0 +1,10 @@
+{
+  "product": "jarvis-crown-v1",
+  "platform": "jarvis-show-v1",
+  "board": "crown",
+  "fastboot_product": "CROWN",
+  "model": "Echo Show 8 1st gen / C7H6N3",
+  "display": {"width": 1280, "height": 800},
+  "install_confirmation": "ERASE LINEAGE INSTALL JARVIS CROWN",
+  "unlock_confirmation": "UNLOCK CROWN"
+}

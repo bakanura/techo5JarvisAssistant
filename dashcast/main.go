@@ -27,16 +27,28 @@ import (
 func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
 
+	board := strings.ToLower(strings.TrimSpace(os.Getenv("JARVIS_SHOW_BOARD")))
+	if board == "" && envTrue("JARVIS_CROWN_MODE") {
+		board = "crown" // compatibility with the first Jarvis Crown deployment
+	}
+	if board != "" && board != "crown" && board != "checkers" {
+		slog.Error("JARVIS_SHOW_BOARD must be crown or checkers", "board", board)
+		os.Exit(2)
+	}
+	generation := strings.TrimSpace(os.Getenv("JARVIS_SHOW_UI_GENERATION"))
+	if generation == "" {
+		generation = strings.TrimSpace(os.Getenv("JARVIS_CROWN_UI_GENERATION"))
+	}
 	cfg := config{
 		ha:         strings.TrimRight(os.Getenv("HA_URL"), "/"),
 		token:      strings.TrimSpace(os.Getenv("HA_TOKEN")),
 		key:        strings.TrimSpace(os.Getenv("DASHCAST_KEY")),
 		listen:     os.Getenv("LISTEN"),
 		chrome:     os.Getenv("CHROME"),
-		crown:      envTrue("JARVIS_CROWN_MODE"),
-		generation: strings.TrimSpace(os.Getenv("JARVIS_CROWN_UI_GENERATION")),
+		board:      board,
+		generation: generation,
 	}
-	if cfg.crown && cfg.generation == "" {
+	if cfg.board != "" && cfg.generation == "" {
 		cfg.generation = "1"
 	}
 	if cfg.listen == "" {
@@ -94,7 +106,7 @@ const minKey = 16
 
 type config struct {
 	ha, token, key, listen, chrome string
-	crown                          bool
+	board                          string
 	generation                     string
 }
 

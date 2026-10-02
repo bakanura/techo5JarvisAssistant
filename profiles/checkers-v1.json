@@ -1,0 +1,14 @@
+{
+  "product": "jarvis-checkers-v1",
+  "platform": "jarvis-show-v1",
+  "board": "checkers",
+  "fastboot_product": "CHECKERS",
+  "model": "Echo Show 5 1st gen / H23K37",
+  "display": {"width": 960, "height": 480},
+  "install_confirmation": "ERASE LINEAGE INSTALL JARVIS CHECKERS",
+  "unlock_confirmation": "UNLOCK CHECKERS",
+  "destructive_assets": {
+    "status": "blocked-until-pinned",
+    "reason": "No trusted Checkers Amonet/TWRP/boot byte set was supplied in the project archive."
+  }
+}

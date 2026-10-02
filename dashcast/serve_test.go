@@ -117,3 +117,43 @@ func TestPace(t *testing.T) {
 		t.Error("the same bytes were not the same")
 	}
 }
+
+func TestJarvisShowApplianceProfiles(t *testing.T) {
+	tests := []struct {
+		board string
+		w     int
+		h     int
+	}{
+		{board: "crown", w: 1280, h: 800},
+		{board: "checkers", w: 960, h: 480},
+	}
+	for _, tc := range tests {
+		t.Run(tc.board, func(t *testing.T) {
+			h := hello{Name: "device", W: 13, H: 17, Path: "/wrong", Kiosk: false}
+			if !applyApplianceProfile(&h, tc.board) {
+				t.Fatalf("profile %q rejected", tc.board)
+			}
+			if h.W != tc.w || h.H != tc.h || h.Path != "/jarvis-display" || !h.Kiosk {
+				t.Fatalf("profile %q = %+v, want %dx%d /jarvis-display kiosk", tc.board, h, tc.w, tc.h)
+			}
+		})
+	}
+}
+
+func TestGenericDashcastHelloIsUnchanged(t *testing.T) {
+	h := hello{Name: "generic", W: 1024, H: 600, Path: "/lovelace/test", Kiosk: false}
+	before := h
+	if !applyApplianceProfile(&h, "") {
+		t.Fatal("generic mode rejected")
+	}
+	if h != before {
+		t.Fatalf("generic hello changed: got %+v want %+v", h, before)
+	}
+}
+
+func TestUnknownJarvisShowBoardFailsClosed(t *testing.T) {
+	h := hello{W: 1, H: 1, Path: "/bad"}
+	if applyApplianceProfile(&h, "cronos") {
+		t.Fatal("unsupported board accepted")
+	}
+}

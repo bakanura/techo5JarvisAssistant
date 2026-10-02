@@ -113,7 +113,7 @@ class JarvisCrownInstallTests(unittest.TestCase):
     def test_upstream_or_wrong_board_rootfs_is_rejected(self):
         with tempfile.TemporaryDirectory() as td:
             rootfs = make_rootfs(td, product="techo5", board="crown")
-            with self.assertRaisesRegex(InstallError, "expected 'jarvis-crown-v1'/'crown'"):
+            with self.assertRaisesRegex(InstallError, "legacy Crown rootfs marker"):
                 verify_jarvis_rootfs(rootfs, sha256(rootfs))
 
     def test_final_confirmation_is_exact(self):
@@ -166,11 +166,12 @@ class JarvisCrownInstallTests(unittest.TestCase):
                 confirmation=FINAL_CONFIRM_PHRASE,
             )
             argv = list(plan.argv)
-            self.assertIn("--jarvis-crown-prestaged", argv)
+            self.assertIn("--jarvis-show-prestaged", argv)
             self.assertIn("--amazon-logo", argv)
             self.assertIn("--force", argv)
             self.assertNotIn("--lineage-zip", argv)
-            self.assertEqual(argv[argv.index("--jarvis-crown-version") + 1], "v1-test")
+            self.assertEqual(argv[argv.index("--jarvis-show-version") + 1], "v1-test")
+            self.assertEqual(argv[argv.index("--jarvis-show-board") + 1], "crown")
             self.assertEqual(argv[argv.index("--serial") + 1], "CROWN123")
 
     def test_execute_uses_argv_without_shell_and_propagates_failure(self):

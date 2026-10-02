@@ -62,6 +62,26 @@ type hello struct {
 	Cold bool `json:"cold,omitempty"`
 }
 
+func applyApplianceProfile(h *hello, board string) bool {
+	if board == "" {
+		return true
+	}
+	// Jarvis Show is an appliance, not a generic browser client. The server owns the viewport,
+	// path and browser chrome contract so stale/misconfigured device state cannot reintroduce the
+	// old header/black-bar problems. Board geometry is fixed server-side.
+	switch board {
+	case "crown":
+		h.W, h.H = 1280, 800
+	case "checkers":
+		h.W, h.H = 960, 480
+	default:
+		return false
+	}
+	h.Path = "/jarvis-display"
+	h.Kiosk = true
+	return true
+}
+
 type touchMsg struct {
 	T string `json:"t"` // tap, down, move, up
 	X int    `json:"x"`
@@ -134,13 +154,8 @@ func serve(ctx context.Context, b *browser, g *guard, cfg config, raw net.Conn) 
 	_ = c.SetReadDeadline(time.Time{})
 	out := &sender{c: c}
 
-	if cfg.crown {
-		// Jarvis Crown is an appliance, not a generic browser client. The server owns the viewport,
-		// path and browser chrome contract so stale/misconfigured device state cannot reintroduce the
-		// old header/black-bar problems.
-		h.W, h.H = 1280, 800
-		h.Path = "/jarvis-display"
-		h.Kiosk = true
+	if !applyApplianceProfile(&h, cfg.board) {
+		return
 	}
 
 	if h.W <= 0 || h.H <= 0 || h.W > 4096 || h.H > 4096 {
