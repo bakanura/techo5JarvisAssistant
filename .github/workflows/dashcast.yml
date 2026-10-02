@@ -1,7 +1,7 @@
 name: dashcast image
 
 # Builds dashcast (dashcast/) for amd64 and arm64: on every change to it, to check it still builds,
-# and on a Show release (a vX.Y.Z tag), to publish it as ghcr.io/huskerminion/techo5-dashcast with
+# and on a Show release (a vX.Y.Z tag), to publish it as ghcr.io/bakanura/techo5-jarvis-dashcast with
 # the release's version and as latest, attested like the device binaries (build.yml) so anyone can
 # check the image was built from that tag. Actions are pinned to commits for the reason build.yml
 # gives.
@@ -19,7 +19,7 @@ permissions:
   contents: read
 
 env:
-  IMAGE: ghcr.io/huskerminion/techo5-dashcast
+  IMAGE: ghcr.io/bakanura/techo5-jarvis-dashcast
 
 jobs:
   image:
@@ -55,14 +55,14 @@ jobs:
           platforms: linux/amd64
           load: true
           push: false
-          tags: techo5-dashcast:ci
+          tags: jarvis-show-dashcast:ci
 
       - name: Test inside the image
         working-directory: dashcast
         run: |
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go test -c -o "$RUNNER_TEMP/dashcast.test" .
           chmod 755 "$RUNNER_TEMP/dashcast.test"
-          docker run --rm -e DASHCAST_REQUIRE_BROWSER=1             -v "$RUNNER_TEMP/dashcast.test:/usr/local/bin/dashcast.test:ro"             --entrypoint /usr/local/bin/dashcast.test techo5-dashcast:ci -test.v -test.run TestOpenATabInTheRunningBrowser
+          docker run --rm -e DASHCAST_REQUIRE_BROWSER=1             -v "$RUNNER_TEMP/dashcast.test:/usr/local/bin/dashcast.test:ro"             --entrypoint /usr/local/bin/dashcast.test jarvis-show-dashcast:ci -test.v -test.run TestOpenATabInTheRunningBrowser
 
       - name: Tags
         id: tags

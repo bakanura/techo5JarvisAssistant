@@ -52,6 +52,7 @@ param(
     [string]$PrebuiltArmDot = ''
 )
 $ErrorActionPreference = 'Stop'
+throw "This inherited TECHO5 publisher is disabled in Jarvis Show. Use tools/release-jarvis-show.sh or .github/workflows/release.yml so only Jarvis Show artifacts and the Jarvis signing identity can be published."
 if (($PrebuiltArm -and -not $PrebuiltArmDot) -or ($PrebuiltArmDot -and -not $PrebuiltArm)) {
     throw "PrebuiltArm and PrebuiltArmDot must be given together"
 }

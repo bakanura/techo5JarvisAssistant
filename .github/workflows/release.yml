@@ -1,0 +1,112 @@
+name: Publish Jarvis Show release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (vX.Y.Z or prerelease)'
+        required: true
+        type: string
+      notes:
+        description: 'Release notes'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: jarvis-show-release-${{ github.ref_name || inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: '1.26.x'
+          cache-dependency-path: |
+            go.sum
+            echod/go.sum
+      - name: Resolve release metadata
+        id: meta
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_NOTES: ${{ inputs.notes }}
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            version="$GITHUB_REF_NAME"
+            notes="Jarvis Show $version"
+          else
+            version="$INPUT_VERSION"
+            notes="$INPUT_NOTES"
+          fi
+          [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          printf 'notes<<EOF\n%s\nEOF\n' "$notes" >> "$GITHUB_OUTPUT"
+      - name: Test source before release
+        run: |
+          python3 -m unittest discover -s tests -p 'test_*.py'
+          (cd echod && go test ./...)
+      - name: Install rootfs build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static binfmt-support uidmap
+      - name: Fetch pinned public rootfs inputs
+        run: |
+          python3 tools/fetch-inputs.py --device show
+          mkdir -p "$HOME/apk"
+          cp inputs/apk.static "$HOME/apk/apk.static"
+          chmod 755 "$HOME/apk/apk.static"
+      - name: Build shared Jarvis Show rootfs
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          mkdir -p bin
+          tools/linux/deploy-rootfs.sh --out "bin/jarvis-show-rootfs-$VERSION.tar.gz" --version "$VERSION"
+      - name: Build release daemon
+        working-directory: echod
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          GOOS: linux
+          GOARCH: arm
+          GOARM: '7'
+          CGO_ENABLED: '0'
+        run: |
+          commit=$(git rev-parse --short HEAD)
+          date=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          pkg=github.com/HuskerMinion/techo5/echod/internal/layout
+          go build -trimpath -ldflags "-s -w -X $pkg.Version=$VERSION -X $pkg.GitCommit=$commit -X $pkg.BuildDate=$date" -o ../bin/echod-arm ./cmd/echod
+      - name: Attest release payload provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: |
+            bin/echod-arm
+            bin/jarvis-show-rootfs-${{ steps.meta.outputs.version }}.tar.gz
+      - name: Write release signing seed
+        env:
+          SIGN_SEED: ${{ secrets.JARVIS_SHOW_SIGN_KEY }}
+        run: |
+          [ -n "$SIGN_SEED" ] || { echo 'JARVIS_SHOW_SIGN_KEY secret is not configured' >&2; exit 1; }
+          umask 077
+          printf '%s\n' "$SIGN_SEED" > "$RUNNER_TEMP/jarvis-show-release.seed"
+      - name: Publish signed release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          NOTES: ${{ steps.meta.outputs.notes }}
+          JARVIS_SHOW_RELEASE_REPO: bakanura/techo5JarvisAssistant
+        run: |
+          tools/release-jarvis-show.sh \
+            --version "$VERSION" \
+            --notes "$NOTES" \
+            --binary bin/echod-arm \
+            --rootfs "bin/jarvis-show-rootfs-$VERSION.tar.gz" \
+            --sign-key "$RUNNER_TEMP/jarvis-show-release.seed" \
+            --publish

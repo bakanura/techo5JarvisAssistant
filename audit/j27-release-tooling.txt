@@ -1,0 +1,15 @@
+J27 release tooling audit
+
+PASS: canonical release repo = bakanura/techo5JarvisAssistant
+PASS: Show-only build workflow; inherited Dot/Spot release surface removed from Jarvis CI
+PASS: Dashcast namespace = ghcr.io/bakanura/techo5-jarvis-dashcast
+PASS: rootfs builder emits jarvis-show-v1 marker with crown+checkers and version
+PASS: release manifest signed by Jarvis Show Ed25519 identity
+PASS: release workflow expects signing seed only from GitHub secret
+PASS: daemon + rootfs provenance attestation configured
+PASS: stable/dev publication paths use the same signed manifest format
+PASS: inherited generic release.ps1 explicitly disabled
+PASS: workflow YAML parsed successfully
+PASS: release shell and mkrootfs shell syntax validated
+PASS: no rootfs/release tarball built during J27
+PASS: no GitHub release published during J27
