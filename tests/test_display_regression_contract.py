@@ -119,16 +119,14 @@ const topbar=document.createElement('header'); topbar.className='top-app-bar'; t
 // Chromium can exit after validating the exact production script/CSS.
 window.setInterval=(fn)=>{fn(); return 1;};
 """ + script + """
-setTimeout(()=>{
- const result={
-  shell:!!mr.getElementById('jarvis-show-shell'), huiStyle:!!hr.getElementById('techo5-kiosk'), topStyle:!!tr.getElementById('techo5-kiosk'),
-  sidebar:getComputedStyle(sidebar).display, sidebarWidth:getComputedStyle(sidebar).width,
-  viewPad:getComputedStyle(view).paddingTop, viewHeight:getComputedStyle(view).height,
-  mainHeight:getComputedStyle(main).height, huiHeight:getComputedStyle(hui).height,
-  header:getComputedStyle(header).display, topbar:getComputedStyle(topbar).display
- };
- document.body.textContent='RESULT:'+JSON.stringify(result);
-},100);
+const result={
+ shell:!!mr.getElementById('jarvis-show-shell'), huiStyle:!!hr.getElementById('techo5-kiosk'), topStyle:!!tr.getElementById('techo5-kiosk'),
+ sidebar:getComputedStyle(sidebar).display, sidebarWidth:getComputedStyle(sidebar).width,
+ viewPad:getComputedStyle(view).paddingTop, viewHeight:getComputedStyle(view).height,
+ mainHeight:getComputedStyle(main).height, huiHeight:getComputedStyle(hui).height,
+ header:getComputedStyle(header).display, topbar:getComputedStyle(topbar).display
+};
+document.body.textContent='RESULT:'+JSON.stringify(result);
 </script>""",
                     encoding="utf-8",
                 )
