@@ -1,5 +1,6 @@
 import os
 import pathlib
+import stat
 import subprocess
 import tempfile
 import unittest
@@ -34,6 +35,15 @@ class ReleaseContractTests(unittest.TestCase):
         self.assertIn("actions/attest-build-provenance", source)
         self.assertIn("jarvis-show-rootfs-${{ steps.meta.outputs.version }}.tar.gz", source)
         self.assertIn("tools/release-jarvis-show.sh", source)
+
+    def test_release_workflow_direct_shell_entrypoints_are_executable(self):
+        for rel in (
+            "tools/security-regression.sh",
+            "tools/linux/deploy-rootfs.sh",
+            "tools/release-jarvis-show.sh",
+        ):
+            mode = (ROOT / rel).stat().st_mode
+            self.assertTrue(mode & stat.S_IXUSR, f"{rel} is invoked directly but is not executable")
 
     def test_inherited_generic_publisher_is_disabled(self):
         source = (ROOT / "tools/release.ps1").read_text(encoding="utf-8")
