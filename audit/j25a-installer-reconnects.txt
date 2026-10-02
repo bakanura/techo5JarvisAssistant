@@ -1,0 +1,12 @@
+J25A installer reconnect audit
+
+PASS: expected device reboots are represented by bounded poll loops, not fixed sleeps
+PASS: post-Amonet fastboot budget = 300 s
+PASS: TWRP re-enumeration budget = 300 s
+PASS: post-format TWRP budget = 300 s
+PASS: adb->fastboot budget = 180 s
+PASS: rescue console budget = 420 s
+PASS: first Jarvis boot budget = 600 s
+PASS: fastboot presence probe itself is bounded to 10 s
+PASS: Amonet verify tolerates temporary disappearance but requires same serial/product on return
+PASS: 19 targeted reconnect/recovery/Lineage tests

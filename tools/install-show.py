@@ -55,6 +55,8 @@ from techo5lib import (CONSOLE_TECHO5, Adb, Console, Fastboot, Release, ask_name
                        check_serial_access, confirm, console_hint, default_dir, fail, fetch_json, md5, need,
                        new_api_key, note, pick_unit, run_main, step, valid_api_key, wait_for, wifi_conf,
                        write_private)
+from jarvis_crown.timing import (FASTBOOT_REENUM_TIMEOUT_SECONDS, FIRST_BOOT_TIMEOUT_SECONDS,
+                                  RESCUE_CONSOLE_TIMEOUT_SECONDS, TWRP_DATA_REBOOT_TIMEOUT_SECONDS)  # noqa: E402
 
 REPO = os.environ.get('JARVIS_SHOW_RELEASE_REPO', 'bakanura/techo5JarvisAssistant')
 # The LineageOS kernel commit TECHO5's kernel is rebuilt from: the vendor modules only load on it.
@@ -250,7 +252,7 @@ def install_lineage(adb, zip_path):
     if 'Done' not in out:
         fail('formatting userdata in TWRP failed:\n%s' % out)
     adb.sh('twrp reboot recovery')
-    wait_for('TWRP after formatting userdata', 180, lambda: twrp_data_ready(adb), 3)
+    wait_for('TWRP after formatting userdata', TWRP_DATA_REBOOT_TIMEOUT_SECONDS, lambda: twrp_data_ready(adb), 3)
     note('userdata formatted; /data mounted and writable after TWRP reboot')
     adb.push(zip_path, '/data/lineage.zip')
     with open(zip_path, 'rb') as f:
@@ -613,7 +615,7 @@ def main():
         ])
     step('flash the boot image')
     adb.reboot('bootloader')
-    wait_for('fastboot', 90, fastboot.present, 3)
+    wait_for('fastboot', FASTBOOT_REENUM_TIMEOUT_SECONDS, fastboot.present, 3)
     code, out = fastboot.run('flash', 'boot', boot)
     if code != 0:
         fail('fastboot flash boot failed: ' + out)
@@ -629,7 +631,7 @@ def main():
             fastboot.run('continue')
             nudged[0] = True
         return False
-    wait_for('the rescue console on USB', 300, rescue_up, hint=console.waiting_hint)
+    wait_for('the rescue console on USB', RESCUE_CONSOLE_TIMEOUT_SECONDS, rescue_up, hint=console.waiting_hint)
     note('rescue console on %s' % console.port)
 
     # ------------------------------------------------------------------------------------ 6. store
@@ -701,7 +703,7 @@ def main():
             fastboot.run('continue')
             nudged[0] = True
         return False
-    wait_for('slot a with the daemon running', 300, slot_up, hint=console.waiting_hint)
+    wait_for('slot a with the daemon running', FIRST_BOOT_TIMEOUT_SECONDS, slot_up, hint=console.waiting_hint)
     o = console.run('ip -4 addr show wlan0 | sed -n "s/.*inet \\([0-9.]*\\).*/\\1/p"; cat /etc/techo5-release', 8) or ''
     for line in o.split('\n'):
         note(line)

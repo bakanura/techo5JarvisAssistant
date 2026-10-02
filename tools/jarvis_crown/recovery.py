@@ -15,6 +15,7 @@ from typing import Callable, Protocol
 
 from jarvis_crown.boards import profile_for_product
 from jarvis_crown.device_gate import DeviceIdentity, SUPPORTED_PRODUCTS, identify_crown, identify_show
+from jarvis_crown.timing import (COMMAND_TIMEOUT_SECONDS, POLL_SECONDS, TWRP_REENUM_TIMEOUT_SECONDS)
 
 TWRP_SHA256 = "b6b1446436de27cf860ebc170d4e3dffe3068ab90396ec915a123589d0d6f7d8"
 TWRP_SHA256_BY_BOARD: dict[str, str | None] = {
@@ -23,9 +24,8 @@ TWRP_SHA256_BY_BOARD: dict[str, str | None] = {
 }
 SMALL_PARTITIONS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 14, 15)
 BOOT_AREAS = ("boot0", "boot1")
-TWRP_WAIT_ATTEMPTS = 60
-TWRP_WAIT_INTERVAL_SECONDS = 2.0
-COMMAND_TIMEOUT_SECONDS = 15
+TWRP_WAIT_INTERVAL_SECONDS = POLL_SECONDS
+TWRP_WAIT_ATTEMPTS = int(TWRP_REENUM_TIMEOUT_SECONDS / TWRP_WAIT_INTERVAL_SECONDS)
 
 
 class RecoveryError(RuntimeError):

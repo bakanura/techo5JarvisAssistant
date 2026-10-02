@@ -11,11 +11,12 @@ from typing import Callable, Mapping
 
 from jarvis_crown.boards import profile_for_board, profile_for_product
 from jarvis_crown.device_gate import DeviceGateError, DeviceIdentity, identify_crown, identify_show
+from jarvis_crown.timing import POLL_SECONDS, POST_AMONET_FASTBOOT_TIMEOUT_SECONDS
 
 CONFIRM_PHRASE = "UNLOCK CROWN"  # Crown compatibility alias
-FASTBRICK_TIMEOUT_SECONDS = 300
-VERIFY_ATTEMPTS = 45
-VERIFY_INTERVAL_SECONDS = 2.0
+FASTBRICK_TIMEOUT_SECONDS = 600
+VERIFY_INTERVAL_SECONDS = POLL_SECONDS
+VERIFY_ATTEMPTS = int(POST_AMONET_FASTBOOT_TIMEOUT_SECONDS / VERIFY_INTERVAL_SECONDS)
 
 # Pinned from the user's known-good amonet-crown-v2.0.1 archive.
 AMONET_UNLOCK_SHA256: dict[str, str] = {
