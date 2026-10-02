@@ -1,0 +1,64 @@
+J35 — SECURITY REGRESSION + DEPLOYMENT POLICY
+=============================================
+
+RESULT: PASS for source/static validation; runtime Go gate is CI-only in this sandbox because the
+checked-out source requires Go >=1.26 and the local toolchain is Go 1.23.2.
+
+Release blockers implemented
+----------------------------
+1. `tools/security-regression.sh` is a dedicated release security gate.
+2. `.github/workflows/build.yml` runs that gate before ordinary CI/build work.
+3. `.github/workflows/release.yml` runs that gate before public rootfs inputs are fetched or a release
+   artifact is built.
+4. `tools/validate-jarvis-show.sh` runs the same security contract locally (or `--static-only`).
+5. `tests/test_security_contract.py` prevents removal of the important auth/trust regression tests and
+   verifies that CI/release keeps the gate ahead of build/fetch.
+6. `docs/iot-firewall-policy.md` defines the default-deny deployment boundary.
+
+Security regression coverage
+----------------------------
+Host/installer/update tests cover:
+- unsupported/wrong product refusal and read-only identity gate;
+- Amonet hash mismatch and serial-swap refusal;
+- recovery-backup hash mismatch and fail-closed behavior;
+- one-command flow ordering;
+- release signature/product/board/supply-chain contract;
+- A/B failed-trial fallback and never-overwrite-running-slot behavior.
+
+Go 1.26 CI runtime coverage includes:
+- ESPHome API adoption/key state;
+- signed/replay-protected announcements and rejection of plaintext/wrong-house traffic;
+- encrypted/authenticated intercom and wrong-house refusal;
+- Drop-In/DND/privacy paths through the phone package;
+- SSH/security state;
+- Sendspin exact-source-IP admission and unpaired refusal;
+- physically authorized private web pages and hardened HTTP headers;
+- signed/product/board-bound updater behavior and channel/update tests;
+- Dashcast wrong-key and oversized-handshake refusal.
+
+Firewall baseline
+-----------------
+- IoT -> trusted LAN is default-deny.
+- WAN -> Jarvis Show is deny-all; no port forwarding.
+- HA -> Show TCP 6053 only.
+- Music Assistant -> Show TCP 8928 only when paired/enabled.
+- Show -> Dashcast TCP 9555 when streamed dashboard is used.
+- Show -> HA TCP 8123/configured port.
+- Show -> router DNS/NTP/DHCP.
+- SSH 22, routed web 8181, SIP and Direct Brain are opt-in exact-host rules only.
+- Native house peer traffic uses TCP 8181 on the same IoT subnet and is authenticated independently.
+  Wi-Fi client/AP isolation must therefore remain off if native peer intercom/announcements are used.
+
+Local validation on 2026-10-02
+------------------------------
+PASS: 11/11 security-contract/source tests
+PASS: 61/61 focused installer/OTA security tests
+PASS: 111/111 full Python/static Jarvis tests
+PASS: profile JSON
+PASS: shell syntax
+PASS: workflow YAML
+PASS: git diff --check
+BLOCKED: runtime Go security packages locally because repo requires Go >=1.26; GitHub CI explicitly
+         installs Go 1.26.x before executing `tools/security-regression.sh`.
+
+No rootfs, boot image or release tarball was built or published by J35.

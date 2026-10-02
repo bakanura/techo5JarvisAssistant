@@ -5,6 +5,13 @@ STATIC_ONLY=
 [ "${1:-}" = "--static-only" ] && STATIC_ONLY=1
 cd "$ROOT"
 
+echo '=== SECURITY REGRESSION GATE ==='
+if [ -n "$STATIC_ONLY" ]; then
+  tools/security-regression.sh --static-only
+else
+  tools/security-regression.sh
+fi
+
 echo '=== PYTHON INSTALLER / OTA TESTS ==='
 python3 -m unittest discover -s tests -p 'test_*.py'
 

@@ -50,6 +50,8 @@ jobs:
           [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]
           echo "version=$version" >> "$GITHUB_OUTPUT"
           printf 'notes<<EOF\n%s\nEOF\n' "$notes" >> "$GITHUB_OUTPUT"
+      - name: Security regression gate
+        run: tools/security-regression.sh
       - name: Test source before release
         run: |
           python3 -m unittest discover -s tests -p 'test_*.py'

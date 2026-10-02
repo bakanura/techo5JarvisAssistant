@@ -24,6 +24,8 @@ jobs:
             go.sum
             echod/go.sum
             dashcast/go.sum
+      - name: Security regression gate
+        run: tools/security-regression.sh
       - name: Python installer tests
         run: python3 -m unittest discover -s tests -p 'test_*.py'
       - name: Go tests

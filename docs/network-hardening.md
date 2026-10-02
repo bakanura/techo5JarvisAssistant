@@ -38,9 +38,11 @@ the setup page closes.
 
 ## Router policy
 
-J35 will publish the final OpenWrt rules. Until then, do not port-forward any Jarvis Show service and
-keep the devices on the IoT network with only explicitly required flows to HA, Music Assistant,
-Dashcast, DNS/NTP and configured local backends.
+The release-blocking deployment policy is now published in [iot-firewall-policy.md](iot-firewall-policy.md).
+It is default-deny and direction-aware: only HA, Music Assistant and an optional administration host
+may initiate the documented device-side services, while Show devices may reach only the explicitly
+configured HA/Dashcast/router/Direct-Brain/SIP endpoints they actually use. No Jarvis Show service is
+ever port-forwarded from WAN.
 
 ## Reviewed listeners and peer surfaces
 
