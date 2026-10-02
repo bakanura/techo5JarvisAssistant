@@ -64,7 +64,7 @@ func TestAReminderArrivingIsNotAnAnnouncement(t *testing.T) {
 		for k, v := range headers {
 			r.Header.Set(k, v)
 		}
-		r.Header.Set(header, "bluebird")
+		r.Header.Set(authHeader, sign("bluebird", http.MethodPost, "/announce", headers, body, receiveNow()))
 		w := httptest.NewRecorder()
 		f.receive(w, r)
 		return w.Code

@@ -26,6 +26,8 @@ jobs:
             dashcast/go.sum
       - name: Security regression gate
         run: tools/security-regression.sh
+      - name: Fetch pinned historical test fixtures
+        run: python3 tools/fetch-test-fixtures.py
       - name: Python installer tests
         run: python3 -m unittest discover -s tests -p 'test_*.py'
       - name: Go tests

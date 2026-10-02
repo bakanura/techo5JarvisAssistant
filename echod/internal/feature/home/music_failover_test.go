@@ -126,7 +126,7 @@ func setupMusicFailoverTest(t *testing.T) (*Feature, *musicHAFake) {
 	t.Cleanup(srv.Close)
 
 	config.Use(filepath.Join(t.TempDir(), "state.json"))
-	config.Started(config.Device{Name: "Living Room"})
+	config.Started(config.Device{Name: "Living Room Jarvis"})
 	if err := config.Set().Home().Radio(config.Radio{Speaker: "media_player.living_room_speaker"}); err != nil {
 		t.Fatal(err)
 	}

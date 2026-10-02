@@ -15,7 +15,7 @@ import (
 
 	"github.com/HuskerMinion/techo5/echod/internal/config"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/camera"
-	"github.com/HuskerMinion/techo5/echod/internal/hardware/speaker"
+	hwspeaker "github.com/HuskerMinion/techo5/echod/internal/hardware/speaker"
 	"github.com/HuskerMinion/techo5/echod/internal/layout"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/hass"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/triggers"
@@ -162,7 +162,7 @@ func (f *Feature) ShowDoorbell(entity string, d time.Duration, sound bool) {
 	audible := doorbellAudible()
 	f.showCamera(entity, d, sound && audible, true)
 	if audible {
-		speaker.Sound().Chime(speaker.ToneDoorbell)
+		hwspeaker.Sound().Chime(hwspeaker.ToneDoorbell)
 	}
 }
 

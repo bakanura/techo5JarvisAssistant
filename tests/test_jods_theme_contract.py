@@ -14,7 +14,6 @@ class JodsThemeContractTests(unittest.TestCase):
         cls.splash = (ROOT / "echod/internal/feature/display/splash.go").read_text(encoding="utf-8")
         cls.welcome = (ROOT / "echod/internal/feature/display/render_welcome.go").read_text(encoding="utf-8")
         cls.settings = (ROOT / "echod/internal/feature/display/settings.go").read_text(encoding="utf-8")
-        cls.jobs = (ROOT.parent / "JOBS.md").read_text(encoding="utf-8")
         cls.acceptance = (ROOT / "docs/final-acceptance.md").read_text(encoding="utf-8")
 
     def test_fresh_jarvis_defaults_to_white_jade(self):
@@ -63,13 +62,14 @@ class JodsThemeContractTests(unittest.TestCase):
         self.assertIn('st.name = "Jarvis Show"', self.settings)
 
     def test_live_display_and_klar_checks_are_post_install_e2e(self):
-        self.assertIn("- [x] **J47 — JODS visual-system port / White Jade default**", self.jobs)
-        phase = self.jobs.index("## Phase K — Final post-install real-device E2E acceptance")
-        self.assertGreater(self.jobs.index("J38 — Installed-firmware display E2E acceptance"), phase)
-        self.assertGreater(self.jobs.index("J39 — Installed-firmware HA/Klar voice/web E2E acceptance"), phase)
+        self.assertIn(
+            "J38/J39 are intentionally deferred to the post-install real-device gate below",
+            self.acceptance,
+        )
         gate_c = self.acceptance.index("## Gate C — first real device per board")
         self.assertGreater(self.acceptance.index("J38 installed-firmware display E2E"), gate_c)
         self.assertGreater(self.acceptance.index("J39 installed-firmware HA/Klar E2E"), gate_c)
+        self.assertGreater(self.acceptance.index("tools/live-acceptance.py verify"), gate_c)
         gate_a = self.acceptance[:gate_c]
         self.assertNotIn("tools/live-acceptance.py verify", gate_a)
 
