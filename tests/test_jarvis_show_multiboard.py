@@ -195,6 +195,8 @@ class MultiBoardTests(unittest.TestCase):
                 return cp(argv, stdout="uid=0(root) gid=0(root)\n")
             if command.startswith("test -b /dev/block/mmcblk0p9"):
                 return cp(argv, stdout="OK\n")
+            if command.startswith("tmp=/tmp/jarvis-boot-prefix."):
+                return cp(argv, stdout="PLAIN\n")
             raise AssertionError(argv)
         fastboot = mock.Mock()
         session = recovery.ensure_twrp(identity, pathlib.Path("/unused"), adb_run=adb, fastboot_run=fastboot)
@@ -221,6 +223,8 @@ class MultiBoardTests(unittest.TestCase):
                     return cp(argv, stdout="uid=0(root) gid=0(root)\n")
                 if argv[-1].startswith("test -b /dev/block/mmcblk0p9"):
                     return cp(argv, stdout="OK\n")
+                if argv[-1].startswith("tmp=/tmp/jarvis-boot-prefix."):
+                    return cp(argv, stdout="PLAIN\n")
                 raise AssertionError(argv)
             with self.assertRaisesRegex(recovery.RecoveryError, "not been cryptographically pinned"):
                 recovery.ensure_twrp(identity, amonet, adb_run=lambda a, **k: cp(a, stdout="List of devices attached\n"), identify=lambda: identity, sleep=lambda _: None, wait_attempts=1)

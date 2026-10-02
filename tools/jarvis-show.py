@@ -156,7 +156,10 @@ def main() -> int:
             return 1
 
         def confirm_unlock(p):
+            build = identity.lk_build_desc if identity is not None else None
             print(f"WARN: unlocking {p.model} runs the board-specific Amonet exploit.")
+            print(f"WARN: detected LK build: {build or 'UNREADABLE'}")
+            print("WARN: bootloader exploits inherently carry brick risk; keep mains power connected and do not interrupt writes.")
             return input(f"Type {p.unlock_confirmation} to continue: ").strip()
 
         def confirm_install(p):
@@ -222,6 +225,8 @@ def main() -> int:
         return 0
 
     print(f"WARN: the next stage intentionally runs Amonet for {profile.board}.")
+    print(f"WARN: detected LK build: {identity.lk_build_desc or 'UNREADABLE'}")
+    print("WARN: bootloader exploits inherently carry brick risk; keep mains power connected and do not interrupt writes.")
     confirmation = input(f"Type {profile.unlock_confirmation} to continue: ").strip()
     try:
         result = unlock_show(

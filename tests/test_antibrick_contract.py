@@ -1,0 +1,97 @@
+import pathlib
+import sys
+import unittest
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools"))
+
+from jarvis_crown.boards import KNOWN_UNSUPPORTED_PRODUCTS, PROFILES  # noqa: E402
+from jarvis_crown.install import BOOT_SHA256_BY_BOARD, make_install_plan  # noqa: E402,F401
+from jarvis_crown.recovery import TWRP_SHA256_BY_BOARD  # noqa: E402
+from jarvis_crown.unlock import AMONET_UNLOCK_SHA256  # noqa: E402
+
+
+class AntiBrickContractTests(unittest.TestCase):
+    def test_only_first_gen_crown_and_checkers_are_product_targets(self):
+        self.assertEqual(set(PROFILES), {"crown", "checkers"})
+        self.assertEqual(PROFILES["crown"].fastboot_product, "CROWN")
+        self.assertEqual(PROFILES["checkers"].fastboot_product, "CHECKERS")
+        self.assertIn("CRONOS", KNOWN_UNSUPPORTED_PRODUCTS)
+
+    def test_checkers_real_flash_remains_blocked_without_trusted_assets(self):
+        self.assertIsNone(BOOT_SHA256_BY_BOARD["checkers"])
+        self.assertIsNone(TWRP_SHA256_BY_BOARD["checkers"])
+        unlock_source = (ROOT / "tools/jarvis_crown/unlock.py").read_text(encoding="utf-8")
+        self.assertIn("Amonet bundle has not been cryptographically pinned", unlock_source)
+
+    def test_crown_destructive_assets_are_cryptographically_pinned(self):
+        self.assertEqual(len(AMONET_UNLOCK_SHA256), 6)
+        for digest in AMONET_UNLOCK_SHA256.values():
+            self.assertRegex(digest, r"^[0-9a-f]{64}$")
+        self.assertRegex(BOOT_SHA256_BY_BOARD["crown"] or "", r"^[0-9a-f]{64}$")
+        self.assertRegex(TWRP_SHA256_BY_BOARD["crown"] or "", r"^[0-9a-f]{64}$")
+
+    def test_jarvis_hidden_prestaged_mode_cannot_enable_expdb_logo_patch(self):
+        source = (ROOT / "tools/install-show.py").read_text(encoding="utf-8")
+        self.assertIn("if a.jarvis_show_prestaged and not a.amazon_logo:", source)
+        self.assertIn("Jarvis Show never modifies expdb/kaeru", source)
+        install_source = (ROOT / "tools/jarvis_crown/install.py").read_text(encoding="utf-8")
+        self.assertIn('"--amazon-logo"', install_source)
+
+    def test_jarvis_owned_recovery_never_uses_fastboot_boot(self):
+        owned = "\n".join(
+            (ROOT / path).read_text(encoding="utf-8")
+            for path in (
+                "tools/jarvis_crown/recovery.py",
+                "tools/jarvis_crown/flow.py",
+                "tools/jarvis_crown/install.py",
+                "tools/jarvis-show.py",
+            )
+        )
+        self.assertNotIn("fastboot boot", owned)
+        self.assertNotIn('"boot", str(image)', owned)
+
+
+    def test_twrp_gate_refuses_legacy_amonet1_boot_layout(self):
+        source = (ROOT / "tools/jarvis_crown/recovery.py").read_text(encoding="utf-8")
+        self.assertIn("grep -qa microloader", source)
+        self.assertIn("legacy Amonet 1.x boot microloader detected", source)
+        self.assertIn("cannot prove a modern/plain boot layout", source)
+
+    def test_twrp_handoff_write_targets_are_only_recovery_and_swdl(self):
+        source = (ROOT / "tools/jarvis_crown/recovery.py").read_text(encoding="utf-8")
+        self.assertIn('"flash", "recovery", str(image)', source)
+        self.assertIn('"flash", "swdl", str(image)', source)
+        for protected in ("lk", "preloader", "tee1", "tee2", "expdb", "persist", "metadata"):
+            self.assertNotIn(f'"flash", "{protected}"', source)
+
+    def test_normal_product_boot_write_is_boot_partition_only(self):
+        source = (ROOT / "tools/install-show.py").read_text(encoding="utf-8")
+        self.assertIn("fastboot.run('flash', 'boot', boot)", source)
+        for protected in ("lk", "preloader", "tee1", "tee2", "persist", "metadata"):
+            self.assertNotIn(f"fastboot.run('flash', '{protected}'", source)
+
+    def test_slot_store_is_exactly_system_p12_and_requires_erase_flag(self):
+        source = (ROOT / "tools/install-show.py").read_text(encoding="utf-8")
+        self.assertIn("slotctl mkstore /dev/mmcblk0p12 --i-know-this-erases-it", source)
+        slotctl = (ROOT / "tools/linux/slotctl").read_text(encoding="utf-8")
+        self.assertIn('"$t" != "$(booted)"', slotctl)
+        self.assertIn('set_state $t "trial $TRIES"', slotctl)
+        self.assertIn('set_state $a bad', slotctl)
+        self.assertIn('falling back to $o', slotctl)
+
+    def test_ordinary_ota_cannot_write_boot_or_raw_partitions(self):
+        source = (ROOT / "echod/internal/update/slots_linux.go").read_text(encoding="utf-8")
+        self.assertIn('exec.CommandContext(ctx, slotctl, "install", to)', source)
+        for forbidden in ("fastboot", "mmcblk0", "dd if=", "dd of=", "expdb", "preloader", "tee1", "tee2"):
+            self.assertNotIn(forbidden, source)
+
+    def test_upstream_slot_store_refuses_reformat_of_existing_store(self):
+        source = (ROOT / "tools/install-show.py").read_text(encoding="utf-8")
+        self.assertIn("this unit already has a slot store", source)
+        self.assertIn("Erasing it would take this unit", source)
+        self.assertIn("vendor tree with it", source)
+
+
+if __name__ == "__main__":
+    unittest.main()

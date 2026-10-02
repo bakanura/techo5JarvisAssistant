@@ -69,6 +69,8 @@ class RecoveryTests(unittest.TestCase):
                 return cp(argv, stdout="uid=0(root) gid=0(root)\n")
             if command.startswith("test -b /dev/block/mmcblk0p9"):
                 return cp(argv, stdout="OK\n")
+            if command.startswith("tmp=/tmp/jarvis-boot-prefix."):
+                return cp(argv, stdout="PLAIN\n")
             raise AssertionError(argv)
         return run
 
@@ -120,6 +122,32 @@ class RecoveryTests(unittest.TestCase):
             joined = " ".join(" ".join(c) for c in calls)
             for forbidden in (" lk ", " expdb ", " preloader ", " tee1 ", " tee2 ", " boot ", " system ", " userdata "):
                 self.assertNotIn(forbidden, joined)
+
+    def test_legacy_amonet1_microloader_is_rejected_in_twrp(self):
+        base = self.adb_runner()
+
+        def adb(argv, **kwargs):
+            if argv and isinstance(argv[-1], str) and argv[-1].startswith("tmp=/tmp/jarvis-boot-prefix."):
+                return cp(argv, stdout="AMONET1\n")
+            return base(argv, **kwargs)
+
+        with self.assertRaisesRegex(recovery.RecoveryError, "legacy Amonet 1.x boot microloader"):
+            recovery.ensure_twrp(
+                self.identity(), pathlib.Path("/unused"), adb_run=adb,
+            )
+
+    def test_unreadable_boot_layout_is_rejected_in_twrp(self):
+        base = self.adb_runner()
+
+        def adb(argv, **kwargs):
+            if argv and isinstance(argv[-1], str) and argv[-1].startswith("tmp=/tmp/jarvis-boot-prefix."):
+                return cp(argv, stdout="READ-FAIL\n")
+            return base(argv, **kwargs)
+
+        with self.assertRaisesRegex(recovery.RecoveryError, "cannot prove a modern/plain boot layout"):
+            recovery.ensure_twrp(
+                self.identity(), pathlib.Path("/unused"), adb_run=adb,
+            )
 
     def test_locked_identity_never_reaches_twrp_write(self):
         fastboot = mock.Mock()

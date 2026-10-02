@@ -271,6 +271,11 @@ class FlowAcceptanceTests(unittest.TestCase):
         self.assertIn("printf 'jarvis-%s-v1\\\\n'", source)
         self.assertNotIn("if a.jarvis_crown_prestaged:\n        prov +=", source)
 
+    def test_jarvis_prestaged_path_requires_amazon_logo_safety_flag(self):
+        source = (ROOT / "tools" / "install-show.py").read_text(encoding="utf-8")
+        self.assertIn("if a.jarvis_show_prestaged and not a.amazon_logo:", source)
+        self.assertIn("Jarvis Show never modifies expdb/kaeru", source)
+
     def test_auto_detected_serial_cannot_be_swapped_before_flow_identity(self):
         with tempfile.TemporaryDirectory() as td_s:
             h = FlowHarness(board="crown", locked=False)

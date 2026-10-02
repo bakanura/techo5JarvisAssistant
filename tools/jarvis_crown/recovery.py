@@ -116,6 +116,30 @@ def verify_twrp_board(serial: str, board: str, *, run: Callable = subprocess.run
             f"expected {board} boot block /dev/block/mmcblk0p9 is unavailable"
         )
 
+    # Amonet 1.x and 2.x use mutually incompatible boot layouts. 1.x put a
+    # microloader header in the first KiB of boot; a plain Jarvis/Lineage boot
+    # image must never be flashed until that retired layout is gone. This is
+    # especially important for an already-unlocked unit, where Jarvis skips
+    # its own pinned Amonet 2.x stage.
+    layout = _adb_shell(
+        serial,
+        "tmp=/tmp/jarvis-boot-prefix.$$; "
+        "if dd if=/dev/block/mmcblk0p9 of=$tmp bs=512 count=2 2>/dev/null; then "
+        "if grep -qa microloader $tmp; then echo AMONET1; else echo PLAIN; fi; "
+        "else echo READ-FAIL; fi; rm -f $tmp",
+        run=run,
+    ).strip()
+    if layout == "AMONET1":
+        raise RecoveryError(
+            "legacy Amonet 1.x boot microloader detected; its boot layout is incompatible "
+            "with Jarvis Show. Upgrade to Amonet 2.0.1+ and a plain Lineage boot image first"
+        )
+    if layout != "PLAIN":
+        raise RecoveryError(
+            f"cannot prove a modern/plain boot layout (probe returned {layout!r}); "
+            "refusing any later Jarvis boot write"
+        )
+
 
 def verify_twrp_crown(serial: str, *, run: Callable = subprocess.run) -> None:
     """Compatibility wrapper for Crown tests/callers."""

@@ -59,6 +59,18 @@ class UnlockTests(unittest.TestCase):
                 )
             run.assert_not_called()
 
+    def test_locked_device_without_lk_build_is_refused_before_amonet(self):
+        with tempfile.TemporaryDirectory() as td:
+            amonet, hashes = self.bundle(td)
+            run = mock.Mock()
+            identity = DeviceIdentity(serial="ABC123", product="CROWN", unlocked=False, lk_build_desc=None)
+            with self.assertRaisesRegex(unlock.UnlockError, "no readable lk_build_desc"):
+                unlock.unlock_crown(
+                    identity, amonet,
+                    confirmation=unlock.CONFIRM_PHRASE, run=run, expected_hashes=hashes,
+                )
+            run.assert_not_called()
+
     def test_hash_mismatch_blocks_execution(self):
         with tempfile.TemporaryDirectory() as td:
             amonet, hashes = self.bundle(td)

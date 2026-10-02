@@ -405,6 +405,8 @@ def main():
         fail('--jarvis-show-prestaged consumes the already-staged vendor tree; do not pass --lineage-zip again')
     if a.jarvis_show_prestaged and (not a.jarvis_show_board or not a.jarvis_show_version):
         fail('--jarvis-show-prestaged requires --jarvis-show-board and --jarvis-show-version')
+    if a.jarvis_show_prestaged and not a.amazon_logo:
+        fail('--jarvis-show-prestaged requires --amazon-logo; Jarvis Show never modifies expdb/kaeru')
     if a.lineage_zip and not os.path.exists(a.lineage_zip):
         fail('no file at %s' % a.lineage_zip)
     a.serial = pick_unit(a.serial, a.adb, ('recovery',) if twrp else ('device',), 'Echo Show', consoles=(CONSOLE_TECHO5,))

@@ -128,9 +128,10 @@ def identify_show(*, expected_board: str | None = None, run: Callable = subproce
     try:
         lk_build_desc = _getvar(serial, "lk_build_desc", run=run)
     except DeviceGateError:
-        # Amonet can select its default Crown payload without this metadata.
-        # Missing LK description is diagnostic only; product + unlock_status are
-        # the release-blocking identity fields.
+        # Already-unlocked units can continue to the TWRP layout gate without
+        # LK metadata. Locked units are refused by unlock_show(): we require the
+        # bootloader build to be readable before invoking the destructive Amonet
+        # exploit, even though the pinned Crown bundle has a default payload.
         lk_build_desc = None
 
     return DeviceIdentity(

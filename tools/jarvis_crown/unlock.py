@@ -148,6 +148,13 @@ def unlock_show(
     if identity.unlocked:
         return UnlockResult(identity=identity, amonet_invoked=False)
 
+    if not identity.lk_build_desc or not identity.lk_build_desc.strip():
+        raise UnlockError(
+            f"locked {profile.board} has no readable lk_build_desc; upstream warns that some "
+            "firmware builds may be too new to unlock, so Jarvis Show refuses to run Amonet "
+            "without a recorded bootloader build"
+        )
+
     if expected_hashes is None:
         if profile.board == "crown":
             expected_hashes = AMONET_UNLOCK_SHA256
