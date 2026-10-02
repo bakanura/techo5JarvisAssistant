@@ -33,21 +33,49 @@ jobs:
           go test ./...
           (cd echod && go test ./...)
           (cd dashcast && go test ./...)
+      - name: Resolve build version
+        id: meta
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="$GITHUB_REF_NAME"
+          else
+            version="v0.0.0-dev.${GITHUB_RUN_NUMBER}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Install rootfs build prerequisites
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static binfmt-support uidmap
+      - name: Fetch pinned public rootfs inputs
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          python3 tools/fetch-inputs.py --device show
+          mkdir -p "$HOME/apk"
+          cp inputs/apk.static "$HOME/apk/apk.static"
+          chmod 755 "$HOME/apk/apk.static"
+      - name: Build shared Jarvis Show rootfs
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          mkdir -p bin
+          tools/linux/deploy-rootfs.sh --out "bin/jarvis-show-rootfs-$VERSION.tar.gz" --version "$VERSION"
       - name: Build Show daemon
         if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         working-directory: echod
         env:
+          VERSION: ${{ steps.meta.outputs.version }}
           GOOS: linux
           GOARCH: arm
           GOARM: '7'
           CGO_ENABLED: '0'
         run: |
-          version="${GITHUB_REF_NAME:-v0.0.0-dev}"
-          [[ "$version" == v* ]] || version=v0.0.0-dev
           commit=$(git rev-parse --short HEAD)
           date=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           pkg=github.com/HuskerMinion/techo5/echod/internal/layout
-          go build -trimpath -ldflags "-s -w -X $pkg.Version=$version -X $pkg.GitCommit=$commit -X $pkg.BuildDate=$date" -o ../bin/echod-arm ./cmd/echod
+          go build -trimpath -ldflags "-s -w -X $pkg.Version=$VERSION -X $pkg.GitCommit=$commit -X $pkg.BuildDate=$date" -o ../bin/echod-arm ./cmd/echod
       - name: Attest Show daemon
         if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
@@ -58,4 +86,10 @@ jobs:
         with:
           name: jarvis-show-${{ github.ref_name }}
           path: bin/echod-arm
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          name: jarvis-show-rootfs-${{ steps.meta.outputs.version }}
+          path: bin/jarvis-show-rootfs-${{ steps.meta.outputs.version }}.tar.gz
           if-no-files-found: error

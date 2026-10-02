@@ -45,6 +45,15 @@ class ReleaseContractTests(unittest.TestCase):
             mode = (ROOT / rel).stat().st_mode
             self.assertTrue(mode & stat.S_IXUSR, f"{rel} is invoked directly but is not executable")
 
+    def test_manual_ci_build_produces_unsigned_rc_rootfs_without_publishing(self):
+        source = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
+        self.assertIn("if: github.event_name == 'workflow_dispatch'", source)
+        self.assertIn("python3 tools/fetch-inputs.py --device show", source)
+        self.assertIn('tools/linux/deploy-rootfs.sh --out "bin/jarvis-show-rootfs-$VERSION.tar.gz"', source)
+        self.assertIn("jarvis-show-rootfs-${{ steps.meta.outputs.version }}", source)
+        self.assertNotIn("release-jarvis-show.sh", source)
+        self.assertNotIn("JARVIS_SHOW_SIGN_KEY", source)
+
     def test_inherited_generic_publisher_is_disabled(self):
         source = (ROOT / "tools/release.ps1").read_text(encoding="utf-8")
         self.assertIn("inherited TECHO5 publisher is disabled in Jarvis Show", source)
