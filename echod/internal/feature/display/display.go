@@ -1570,6 +1570,13 @@ func (d *Display) frame() time.Duration {
 	volume, volAt := d.volume, d.volAt
 	d.mu.Unlock()
 
+	// Apply the configured palette before any page can draw. Fresh devices show the welcome page
+	// before ordinary idle rendering, so doing this later would briefly (or indefinitely, until the
+	// welcome is dismissed) expose the old compiled-in TECHO5 palette instead of Jarvis White Jade.
+	t := current()
+	applyTheme(t)
+	d.syncThemeSelect(t.name)
+
 	now := time.Now()
 	d.popupTick(now)
 	ring := d.ringing(now)
@@ -1620,10 +1627,6 @@ func (d *Display) frame() time.Duration {
 		}
 		return time.Hour
 	}
-	t := current()
-	applyTheme(t)
-	d.syncThemeSelect(t.name)
-
 	d.mu.Lock()
 	booting, started := d.booting, d.started
 	if booting && now.Sub(started) >= splashMin && voice.Get().Ready() {

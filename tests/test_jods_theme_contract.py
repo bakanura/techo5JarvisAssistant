@@ -10,6 +10,7 @@ class JodsThemeContractTests(unittest.TestCase):
         cls.palette = (ROOT / "echod/internal/lib/palette/palette.go").read_text(encoding="utf-8")
         cls.screen = (ROOT / "echod/internal/config/screen.go").read_text(encoding="utf-8")
         cls.setup = (ROOT / "echod/internal/feature/setup/tabs.go").read_text(encoding="utf-8")
+        cls.display = (ROOT / "echod/internal/feature/display/display.go").read_text(encoding="utf-8")
         cls.jobs = (ROOT.parent / "JOBS.md").read_text(encoding="utf-8")
         cls.acceptance = (ROOT / "docs/final-acceptance.md").read_text(encoding="utf-8")
 
@@ -39,6 +40,10 @@ class JodsThemeContractTests(unittest.TestCase):
             'var(--accent-soft)',
         ):
             self.assertIn(token, self.setup)
+
+    def test_theme_is_applied_before_first_run_welcome_draws(self):
+        frame = self.display[self.display.index("func (d *Display) frame() time.Duration") :]
+        self.assertLess(frame.index("applyTheme(t)"), frame.index("if !config.Get().Screen.Welcomed"))
 
     def test_live_display_and_klar_checks_are_post_install_e2e(self):
         self.assertIn("- [x] **J47 — JODS visual-system port / White Jade default**", self.jobs)

@@ -406,8 +406,9 @@ Rule: complete and validate one job before starting the next. Do not build a rel
   - Native Crown/Checkers UI exposes the canonical JODS palette family: White Jade, Leaf Jade, Sakura Jade and Ember Jade while retaining legacy TECHO5 themes as optional compatibility choices.
   - Browser Setup uses the same JODS visual language: light layered canvas, soft translucent cards, large radii, restrained shadows, pill actions, soft accent states and JODS typography/spacing conventions.
   - Keep Jarvis branding; reuse the JODS design system, not JODS product naming/logos.
-  - Added source-contract/regression coverage for the canonical JODS palettes, White Jade default, Setup design language and post-install J38/J39 placement.
-  - Validation: 11/11 security-contract tests PASS; 65/65 security-sensitive installer/OTA tests PASS; 188/188 Python/static tests PASS with one unrelated Chromium skip; profile/workflow/shell/diff checks PASS.
+  - The configured palette is applied before the first-run welcome/splash path can render, preventing the compiled-in legacy TECHO5 colors from leaking onto a fresh device before the normal idle frame.
+  - Added source-contract/regression coverage for the canonical JODS palettes, White Jade default, Setup design language, first-run theme ordering and post-install J38/J39 placement.
+  - Validation: 11/11 security-contract tests PASS; 65/65 security-sensitive installer/OTA tests PASS; 189/189 Python/static tests PASS with one unrelated Chromium skip; profile/workflow/shell/diff checks PASS.
 
 ## Phase K — Final post-install real-device E2E acceptance
 
