@@ -286,6 +286,7 @@ def _backup_one(
 
 
 def verify_backup(path: Path, *, expected_product: str | None = None) -> BackupResult:
+    path = Path(path)
     sums_path = path / "SHA256SUMS"
     manifest_path = path / "manifest.json"
     if not sums_path.is_file() or not manifest_path.is_file():

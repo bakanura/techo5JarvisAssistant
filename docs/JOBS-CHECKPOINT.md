@@ -195,11 +195,15 @@ Rule: complete and validate one job before starting the next. Do not build a rel
   - 55 Python installer tests pass across the Crown compatibility suite plus new Checkers/shared-rootfs cases. Dashcast Go tests are written but cannot execute here because the archive requires Go >=1.26 and the local toolchain is 1.23.2.
   - No rootfs/release tarball was built.
 
-- [ ] **J23 — One-command installer acceptance tests**
-  - Synthetic wrong-device tests.
-  - Already-unlocked path.
-  - Missing/bad Lineage path.
-  - No actual flash during CI tests.
+- [x] **J23 — One-command installer acceptance tests**
+  - `tools/jarvis-show.py install --board crown|checkers` now orchestrates preflight → read-only board identity → optional Amonet unlock → TWRP → verified recovery backup → local boot/rootfs/backup validation → exact destructive confirmation → Lineage vendor staging → pre-staged slot-store install.
+  - All boot/rootfs/backup inputs are validated before the first userdata format; a bad local install input never reaches Lineage staging.
+  - Added a hidden, board-bound `install-show.py --jarvis-show-stage-lineage-only` mode that requires J20's complete backup, installs/verifies only the Lineage vendor tree, and returns before release lookup, boot flash or slot-store conversion.
+  - The same exact product-specific erase phrase gates the first userdata write and the final pre-staged install plan.
+  - Tests cover wrong-board identity, locked/unlocked Crown, locked Checkers with synthetic pins, failed preflight/backup/rootfs plan/confirmation/Lineage stage, and board-specific stage-only early return.
+  - 68 Python Jarvis installer tests pass; all destructive device interactions in J23 acceptance are mocked. No real device I/O occurred.
+  - Checkers real flashing remains fail-closed until trusted Amonet/TWRP/boot digests are pinned.
+  - No rootfs/release tarball was built.
 
 ## Phase F — OTA and releases
 

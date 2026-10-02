@@ -362,6 +362,7 @@ def main():
     ap.add_argument('--rootfs', help='a root filesystem you built instead of the release\'s')
     ap.add_argument('--lineage-zip', help='install from TWRP: the LineageOS 18.1 zip for this board, installed only for its drivers')
     ap.add_argument('--jarvis-show-prestaged', action='store_true', help=argparse.SUPPRESS)
+    ap.add_argument('--jarvis-show-stage-lineage-only', action='store_true', help=argparse.SUPPRESS)
     ap.add_argument('--jarvis-show-board', choices=('crown', 'checkers'), help=argparse.SUPPRESS)
     ap.add_argument('--jarvis-show-version', help=argparse.SUPPRESS)
     # Legacy private flags retained only so an older Crown wrapper fails safely into the same path.
@@ -389,7 +390,14 @@ def main():
         a.jarvis_show_prestaged = True
         a.jarvis_show_board = a.jarvis_show_board or 'crown'
         a.jarvis_show_version = a.jarvis_show_version or a.jarvis_crown_version
-    twrp = bool(a.lineage_zip) or a.jarvis_show_prestaged
+    if a.jarvis_show_stage_lineage_only:
+        if a.jarvis_show_prestaged:
+            fail('--jarvis-show-stage-lineage-only cannot be mixed with --jarvis-show-prestaged')
+        if not a.lineage_zip or not a.jarvis_show_board:
+            fail('--jarvis-show-stage-lineage-only requires --lineage-zip and --jarvis-show-board')
+        if a.rootfs or a.boot or a.jarvis_show_version:
+            fail('--jarvis-show-stage-lineage-only accepts no rootfs/boot/version inputs')
+    twrp = bool(a.lineage_zip) or a.jarvis_show_prestaged or a.jarvis_show_stage_lineage_only
     if a.jarvis_show_prestaged and a.lineage_zip:
         fail('--jarvis-show-prestaged consumes the already-staged vendor tree; do not pass --lineage-zip again')
     if a.jarvis_show_prestaged and (not a.jarvis_show_board or not a.jarvis_show_version):
@@ -428,6 +436,8 @@ def main():
         zdev = lineage_board(a.lineage_zip)
         if zdev != dev:
             fail('%s is a LineageOS build for %s, and this unit is a %s' % (a.lineage_zip, zdev, dev))
+        if a.jarvis_show_stage_lineage_only and dev != a.jarvis_show_board:
+            fail('--jarvis-show-stage-lineage-only was pinned for %s, but TWRP reports %s' % (a.jarvis_show_board, dev))
         note('%s in TWRP; LineageOS zip for %s' % (dev, zdev))
     elif a.jarvis_show_prestaged:
         if dev != a.jarvis_show_board:
@@ -440,6 +450,20 @@ def main():
         if kr != KERNEL_RELEASE:
             fail('%s runs kernel %s, not %s: install the LineageOS 18.1 build the getting started guide links' % (a.serial, kr, KERNEL_RELEASE))
         note('%s, LineageOS kernel %s' % (dev, kr))
+
+    if a.jarvis_show_stage_lineage_only:
+        # J23 enters this hidden mode only after J20 has made and host-verified a complete board-bound
+        # backup. Recheck that proof in this process immediately before formatting userdata.
+        try:
+            from jarvis_crown.recovery import verify_backup
+            verify_backup(os.path.join(a.backups, a.serial, 'partitions'), expected_product=dev.upper())
+        except Exception as e:
+            fail('Jarvis Show recovery backup is not complete/valid before Lineage staging: %s' % e)
+        step('LineageOS, for its drivers')
+        prepare_lineage_vendor(adb, lineage_zip=a.lineage_zip)
+        print('\nDone. LineageOS vendor tree for %s is staged and ABI-verified; boot/system slot-store conversion has not run.' % dev)
+        return
+
     wifi = None
     if a.wifi:
         if a.wifi_passphrase_file:
@@ -651,8 +675,8 @@ def main():
             note(line)
     prov = ("mkdir -p /data/misc/techo5 && printf '%%s\\n' %s > /data/misc/techo5/name && "
             "(umask 077; printf '%%s\\n' %s > /data/misc/techo5/psk)" % (quote(a.name), quote(psk)))
-    if a.jarvis_crown_prestaged:
-        prov += " && printf 'jarvis-crown-v1\\n' > /data/misc/techo5/profile"
+    if a.jarvis_show_prestaged:
+        prov += " && printf 'jarvis-%s-v1\\n' > /data/misc/techo5/profile" % a.jarvis_show_board
     if pub:
         prov += (" && mkdir -p -m 700 /data/misc/techo5/ssh && (umask 077; printf '%%s\\n' %s > /data/misc/techo5/ssh/authorized_keys)"
                  " && { [ -e /data/misc/techo5/state.json ] || printf '{\"security\":{\"ssh\":true}}\\n' > /data/misc/techo5/state.json; }"
