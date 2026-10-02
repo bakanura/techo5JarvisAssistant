@@ -33,3 +33,11 @@ Therefore release acceptance has two separate gates:
 1. Direct Brain firmware tests verify information/search behavior and HA-unavailable fallback.
 2. The deployed HA/Klar pipeline must independently pass the same Taco/general-question regression
    set. A failure there remains an HA/Klar configuration/integration bug, not a firmware success.
+
+## Recording deployed HA/Klar evidence
+
+Capture the deployed HA-owned transcript/log for `Was ist ein Taco?` and for an explicit Taco
+recipe/web-search request. Record them with `tools/live-acceptance.py j39` only after confirming the
+turn was HA-owned, the general question received an informational answer, the explicit recipe request
+was web-grounded, and neither request was misrouted to device control. The helper fingerprints the
+evidence files but does not store their contents or infer semantic success.

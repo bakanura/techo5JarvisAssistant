@@ -46,3 +46,13 @@ Required physical observations:
 
 The HA custom-card geometry itself lives on the HA server, not in this firmware repository. Therefore
 it cannot truthfully be marked physically accepted from repository tests alone.
+
+## Recording live evidence
+
+After each board has been checked physically, record the screenshot/photo and explicit observations with
+`tools/live-acceptance.py j38`. The helper stores only the evidence path, size and SHA-256 plus the
+operator confirmations; it does not inspect an image and cannot invent a visual PASS. The state file
+defaults to `~/.local/state/jarvis-show/live-acceptance.json` with mode `0600`.
+
+Example flags mirror every physical observation above; both `crown` and `checkers` must be recorded
+before `tools/live-acceptance.py verify` can pass.

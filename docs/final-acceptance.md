@@ -10,6 +10,7 @@ not a claim that the product is accepted today.
 - [ ] Git worktree is clean and the release commit is identified.
 - [ ] J31–J35 security hardening is complete.
 - [ ] J36–J40 known deployment regressions are closed.
+- [ ] `tools/live-acceptance.py verify` passes against the operator's local evidence record for J38/J39.
 - [ ] J41 current-upstream anti-brick review is complete for Crown and Checkers.
 - [ ] J42–J45 Music Assistant failover/group/full-screen music acceptance is complete.
   - [ ] preferred speaker offline at Play start routes to that room's Jarvis Show;
