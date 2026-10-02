@@ -337,21 +337,6 @@ Rule: complete and validate one job before starting the next. Do not build a rel
   - Post-install guidance names both on-screen and USB recovery paths; no zeroconf dependency remains.
   - Validation: 6/6 focused Wi-Fi recovery tests and 123/123 full Python/static tests PASS; shell syntax and `git diff --check` PASS.
 
-- [ ] **J38 — Live-display regression acceptance**
-  - CODE GATE COMPLETE: Dashcast remains the single browser-chrome owner, fixed to Crown 1280x800 / Checkers 960x480, `/jarvis-display`, kiosk, generation-bound warm tabs and one-shot cold reload.
-  - Hardened kiosk geometry now forces HA shell/views to full `100vh` while zeroing safe-area/header/top/left offsets and completely removing sidebar width, closing the historical hidden-header-but-reserved-space black-bar class.
-  - Added exact kiosk-JS syntax/contract tests and a headless-browser DOM acceptance test. Local sandbox Chromium cannot complete even a trivial headless smoke test, so that one test skips locally; Dashcast image CI retains the real-browser requirement.
-  - 129/129 full Python/static tests PASS (1 local-browser skip); `git diff --check` PASS.
-  - PHYSICAL GATE STILL OPEN: require a fresh cold-session screenshot/photo on real Crown and Checkers, confirming no black bar/header/sidebar and that external HA WIND/weather/room/clock custom-card geometry is unchanged, before marking J38 complete.
-
-- [ ] **J39 — Voice/web fallback regression acceptance**
-  - FIRMWARE GATE COMPLETE: Direct Brain explicitly treats food/recipe/definition/fact/person/place/web questions as information unless an actual device action was requested.
-  - Explicit search/look-up/source/recipe requests must use `web_search` when SearXNG is configured, followed by `read_page` for grounding.
-  - Added a deterministic fake-LLM + fake-SearXNG runtime regression that drives the real OpenAI-compatible tool loop through `web_search` -> `read_page` -> grounded Taco-recipe answer, plus a no-tool `Was ist ein Taco?` information path.
-  - Automatic mode remains HA-first and only falls back to Direct between turns when HA is unavailable; firmware never silently reinterprets a completed HA/Klar decision.
-  - Validation: 4/4 focused static contract tests and 133/133 full Python/static tests PASS (1 unrelated local-Chromium skip). The Go runtime test is source/gofmt clean but cannot run locally because this repo requires Go 1.26 and the sandbox has 1.23.2 with required modules unavailable; CI must execute it under Go 1.26.
-  - EXTERNAL GATE STILL OPEN: the deployed HA/Klar pipeline must independently pass `Was ist ein Taco?` and explicit Taco-recipe/web-search tests while HA owns the turn. Do not mark J39 complete until that server-side regression passes.
-
 - [x] **J40 — Known-bug closure pass**
   - Added `docs/known-bug-closure.md`, classifying every recorded original `livingRoomEcho8` failure as FIXED, OPEN GATE, or EXTERNAL with an explicit owner and closure path.
   - Historical Setup/Wi-Fi/TWRP/cross-board/rootfs/wake/warm-tab/security defects are closed in source; HA custom-card geometry, Klar personality, and network NTP remain explicitly external responsibilities rather than duplicated firmware behavior.
@@ -414,3 +399,29 @@ Rule: complete and validate one job before starting the next. Do not build a rel
   - Runtime security regression now includes the mute package; added Go policy/status tests plus six J46 source-contract tests and final-release acceptance checks.
   - Validation: 11/11 security-contract tests PASS; 65/65 security-sensitive installer/OTA tests PASS; 180/180 Python/static tests PASS with one unrelated Chromium skip; profile/workflow/shell/diff checks PASS. Full Go runtime execution remains blocked locally by Go 1.23.2 vs required Go 1.26.x; a temporary lowered-directive attempt could not fetch the missing `go-esphome-device` module in this sandbox.
   - Checkpoint commit: `0e63128` (`jarvis show: harden microphone remote unmute`).
+
+- [x] **J47 — JODS visual-system port / White Jade default**
+  - Replace the upstream-looking fresh-device theme with the JODS design language used by the user's other appliance/admin surfaces.
+  - Fresh Jarvis Show installs default to **White Jade**; existing saved theme choices remain respected across upgrades.
+  - Native Crown/Checkers UI exposes the canonical JODS palette family: White Jade, Leaf Jade, Sakura Jade and Ember Jade while retaining legacy TECHO5 themes as optional compatibility choices.
+  - Browser Setup uses the same JODS visual language: light layered canvas, soft translucent cards, large radii, restrained shadows, pill actions, soft accent states and JODS typography/spacing conventions.
+  - Keep Jarvis branding; reuse the JODS design system, not JODS product naming/logos.
+  - Added source-contract/regression coverage for the canonical JODS palettes, White Jade default, Setup design language and post-install J38/J39 placement.
+  - Validation: 11/11 security-contract tests PASS; 65/65 security-sensitive installer/OTA tests PASS; 188/188 Python/static tests PASS with one unrelated Chromium skip; profile/workflow/shell/diff checks PASS.
+
+## Phase K — Final post-install real-device E2E acceptance
+
+These are deliberately **after installation of the updated firmware**. They are not pre-install paper
+gates and must not be marked complete from static tests, screenshots of old firmware, or mocked HA.
+
+- [ ] **J38 — Installed-firmware display E2E acceptance**
+  - CODE GATE COMPLETE: Dashcast remains the single browser-chrome owner, fixed to Crown 1280x800 / Checkers 960x480, `/jarvis-display`, kiosk, generation-bound warm tabs and one-shot cold reload.
+  - After installing the candidate firmware, cold-load the dashboard on a real Crown and Checkers.
+  - Confirm no black bar/header/sidebar, correct native viewport, edge touch behavior, no stale warm-tab geometry, and unchanged external HA WIND/weather/room/clock custom-card geometry.
+  - Record fresh evidence with `tools/live-acceptance.py`; evidence from the currently installed older firmware does not count.
+
+- [ ] **J39 — Installed-firmware HA/Klar voice/web E2E acceptance**
+  - FIRMWARE GATE COMPLETE: Direct Brain separates information questions from device actions and explicit web/search requests use the SearXNG/read-page path when configured.
+  - After installing the candidate firmware, keep HA/Automatic Brain ownership active and test `Was ist ein Taco?` plus an explicit Taco recipe/web-search request against the deployed HA/Klar pipeline.
+  - The general question must remain informational; the explicit web request must use the intended search path; neither may misroute into arbitrary device actions.
+  - Record the deployed HA-owned transcript/log with `tools/live-acceptance.py`; mocked/fake-LLM evidence does not count.

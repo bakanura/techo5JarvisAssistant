@@ -12,8 +12,18 @@ type Preset struct {
 	Ground, Accent, Text, Dim, Rules uint32
 }
 
-// Presets are the themes offered, in the order the screen lists them; the first is the default.
+// Presets are the themes offered, in the order the screen lists them. Jarvis Show leads with the
+// four JODS visual-system palettes so the native framebuffer and the browser Setup surface share
+// the same design language. The older TECHO5 palettes remain available for people upgrading with
+// an existing preference.
 var Presets = []Preset{
+	// JODS canonical palettes. These five native-display roles are the solid equivalents of the
+	// richer JODS shell tokens (canvas, accent, primary text, muted text, soft borders).
+	{"White Jade", 0xeeeff2, 0x86909d, 0x20242a, 0x7c8794, 0xd8dade},
+	{"Leaf Jade", 0xedf6f1, 0x3d9a61, 0x1f3127, 0x698474, 0xd2e1d8},
+	{"Sakura Jade", 0xf8edf3, 0xd66f99, 0x302128, 0x8b7480, 0xe5d9df},
+	{"Ember Jade", 0xf7ece7, 0xea9468, 0x34180f, 0x8d5a48, 0xead9d2},
+
 	{"Walnut", 0x1c1511, 0xe9a23b, 0xe8dcc8, 0x8a7d6c, 0x3a2c22},
 	{"Slate", 0x141920, 0x5cb8ff, 0xe4eaf0, 0x7c8896, 0x27303b},
 	{"Midnight", 0x080a10, 0x2ed9b8, 0xdde6e8, 0x6c7a80, 0x181e2a},

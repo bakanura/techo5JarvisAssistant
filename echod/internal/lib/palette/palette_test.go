@@ -21,7 +21,12 @@ func TestColorsFromSettingsAreColorsOrNothing(t *testing.T) {
 
 func TestLightThemesAreKnownToBeLight(t *testing.T) {
 	for _, p := range Presets {
-		want := p.Name == "Paper" || p.Name == "Linen"
+		want := p.Name == "White Jade" ||
+			p.Name == "Leaf Jade" ||
+			p.Name == "Sakura Jade" ||
+			p.Name == "Ember Jade" ||
+			p.Name == "Paper" ||
+			p.Name == "Linen"
 		if p.Light() != want {
 			t.Errorf("%s: Light() = %v", p.Name, p.Light())
 		}

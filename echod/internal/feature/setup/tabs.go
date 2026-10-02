@@ -50,41 +50,55 @@ func head(w http.ResponseWriter) {
 	}
 	fmt.Fprintf(w, `<!doctype html><html lang="en"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>TECHO5 setup</title>
+<title>Jarvis Show setup</title>
 <style>
  :root{--bg:%s;--accent:%s;--text:%s;--dim:%s;--line:%s;--ok:%s;--bad:%s;color-scheme:%s;
-  --field:color-mix(in srgb,var(--text) 6%%,var(--bg));--drawer:color-mix(in srgb,var(--text) 3%%,var(--bg));
-  --dimtext:color-mix(in srgb,var(--dim) 70%%,var(--text))}
+  --font-ui:"Segoe UI","Noto Sans",system-ui,sans-serif;
+  --font-display:"Aptos","Segoe UI","Noto Sans",system-ui,sans-serif;
+  --canvas:var(--bg);--shell:color-mix(in srgb,#fff 72%%,var(--bg));
+  --card:color-mix(in srgb,#fff 86%%,var(--bg));--card-strong:color-mix(in srgb,#fff 94%%,var(--bg));
+  --field:color-mix(in srgb,#fff 58%%,var(--bg));--drawer:color-mix(in srgb,#fff 72%%,var(--bg));
+  --accent-soft:color-mix(in srgb,var(--accent) 16%%,transparent);
+  --accent-soft-strong:color-mix(in srgb,var(--accent) 24%%,transparent);
+  --dimtext:color-mix(in srgb,var(--dim) 70%%,var(--text));
+  --card-radius:18px;--control-radius:12px;
+  --shadow:0 18px 38px color-mix(in srgb,var(--text) 12%%,transparent);
+  --shadow-soft:0 10px 24px color-mix(in srgb,var(--text) 8%%,transparent)}
  *{box-sizing:border-box}
- body{font:16px/1.5 system-ui,sans-serif;margin:0;background:var(--bg);color:var(--text)}
- .wrap{max-width:60rem;margin:0 auto;padding:1.5rem 1rem 3rem}
- h1{font-size:1.4rem;margin:0 0 .2rem} h2{font-size:1.2rem;margin:0 0 .8rem} p.sub{color:var(--dimtext);margin:0 0 1.2rem}
- fieldset{border:1px solid var(--line);border-radius:10px;margin:0 0 1rem;padding:1rem;min-width:0}
- legend{padding:0 .4rem;color:var(--accent)}
+ body{font:16px/1.5 var(--font-ui);margin:0;min-height:100vh;color:var(--text);background:
+  radial-gradient(circle at top right,color-mix(in srgb,#fff 72%%,transparent),transparent 30%%),
+  radial-gradient(circle at 12%% 28%%,var(--accent-soft),transparent 30%%),
+  linear-gradient(180deg,var(--canvas),color-mix(in srgb,var(--canvas) 70%%,var(--shell) 30%%))}
+ .wrap{max-width:72rem;margin:0 auto;padding:2rem 1.25rem 3rem}
+ h1,h2,legend{font-family:var(--font-display);letter-spacing:-.015em}
+ h1{font-size:1.65rem;margin:0 0 .15rem} h2{font-size:1.2rem;margin:0 0 .8rem} p.sub{color:var(--dimtext);margin:0 0 1.4rem}
+ fieldset{border:1px solid color-mix(in srgb,var(--line) 78%%,transparent);border-radius:var(--card-radius);margin:0 0 1rem;padding:1.15rem;min-width:0;background:var(--card);box-shadow:var(--shadow-soft);backdrop-filter:blur(12px)}
+ legend{padding:0 .5rem;color:color-mix(in srgb,var(--accent) 76%%,var(--text));font-weight:650}
  label{display:block;margin:.6rem 0 .2rem;color:var(--dimtext)}
- select,input,textarea{font:inherit;width:100%%;padding:.5rem;border-radius:8px;border:1px solid var(--line);background:var(--field);color:inherit}
+ select,input,textarea{font:inherit;width:100%%;min-height:42px;padding:.58rem .72rem;border-radius:var(--control-radius);border:1px solid color-mix(in srgb,var(--line) 82%%,transparent);background:var(--field);color:inherit;box-shadow:inset 0 1px 0 color-mix(in srgb,#fff 48%%,transparent)}
+ select:focus,input:focus,textarea:focus{outline:2px solid var(--accent-soft-strong);outline-offset:1px;border-color:var(--accent)}
  input[type=checkbox],input[type=radio]{width:auto;margin-right:.4rem}
- button{font:inherit;padding:.55rem 1.1rem;border:0;border-radius:999px;background:var(--accent);color:var(--bg);font-weight:600;cursor:pointer}
+ button{font:inherit;padding:.6rem 1.15rem;border:1px solid color-mix(in srgb,var(--accent) 78%%,var(--text));border-radius:999px;background:linear-gradient(135deg,var(--accent),color-mix(in srgb,var(--accent) 66%%,var(--text)));color:#fff;font-weight:650;cursor:pointer;box-shadow:0 8px 18px var(--accent-soft)}
  a{color:var(--accent)}
  .note{color:var(--dimtext);font-size:.9rem} .ok{color:var(--ok)} .bad{color:var(--bad)}
- button.quiet{background:var(--field);color:var(--text);border:1px solid var(--line);font-weight:500;padding:.35rem .9rem}
+ button.quiet{background:var(--card-strong);color:var(--text);border:1px solid var(--line);font-weight:550;padding:.4rem .9rem;box-shadow:none}
  .playing{color:var(--ok);display:flex;align-items:center;gap:.7rem;flex-wrap:wrap}
- .banner{border:1px solid color-mix(in srgb,var(--ok) 50%%,var(--bg));background:color-mix(in srgb,var(--ok) 10%%,var(--bg));border-radius:10px;padding:.5rem .8rem;margin:0 0 1rem}
+ .banner{border:1px solid color-mix(in srgb,var(--ok) 42%%,var(--bg));background:linear-gradient(135deg,color-mix(in srgb,var(--ok) 12%%,var(--card)),var(--card));border-radius:14px;padding:.65rem .85rem;margin:0 0 1rem;box-shadow:var(--shadow-soft)}
  .banner.bad{border-color:color-mix(in srgb,var(--bad) 50%%,var(--bg));background:color-mix(in srgb,var(--bad) 10%%,var(--bg))}
  .layout{display:grid;grid-template-columns:14rem minmax(0,1fr);gap:1.5rem;align-items:start}
  .layout>*{min-width:0}
- nav.rail{display:flex;flex-direction:column;gap:.25rem;position:sticky;top:1rem}
- nav.rail a{display:block;padding:.6rem .8rem;border-radius:10px;color:var(--text);text-decoration:none;border:1px solid transparent}
+ nav.rail{display:flex;flex-direction:column;gap:.3rem;position:sticky;top:1rem;padding:.55rem;border:1px solid color-mix(in srgb,var(--line) 72%%,transparent);border-radius:var(--card-radius);background:color-mix(in srgb,var(--card) 90%%,transparent);box-shadow:var(--shadow-soft);backdrop-filter:blur(12px)}
+ nav.rail a{display:block;padding:.65rem .8rem;border-radius:12px;color:var(--text);text-decoration:none;border:1px solid transparent}
  nav.rail a small{display:block;color:var(--dimtext);font-size:.8rem;line-height:1.3}
- nav.rail a:hover{background:var(--field)}
- nav.rail a.on{background:var(--field);border-color:var(--line);color:var(--accent)}
+ nav.rail a:hover{background:var(--accent-soft)}
+ nav.rail a.on{background:linear-gradient(135deg,var(--accent-soft),color-mix(in srgb,var(--card) 88%%,var(--accent) 12%%));border-color:color-mix(in srgb,var(--accent) 30%%,var(--line));color:color-mix(in srgb,var(--accent) 72%%,var(--text));font-weight:650}
  @media (max-width:44rem){
   .layout{grid-template-columns:minmax(0,1fr);gap:1rem}
   nav.rail{flex-direction:row;overflow-x:auto;position:static;padding-bottom:.3rem;border-bottom:1px solid var(--line)}
   nav.rail a{white-space:nowrap;padding:.45rem .8rem}
   nav.rail a small{display:none}
  }
- details{border:1px solid var(--line);border-radius:10px;margin:0 0 .6rem;background:var(--drawer)}
+ details{border:1px solid color-mix(in srgb,var(--line) 78%%,transparent);border-radius:14px;margin:0 0 .65rem;background:var(--drawer);box-shadow:0 4px 12px color-mix(in srgb,var(--text) 5%%,transparent)}
  details>summary{list-style:none;cursor:pointer;padding:.7rem .9rem;display:flex;gap:.7rem;align-items:center;flex-wrap:wrap}
  details>summary::-webkit-details-marker{display:none}
  details>summary::after{content:"›";margin-left:auto;color:var(--dimtext)}

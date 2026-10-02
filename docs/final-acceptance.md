@@ -9,8 +9,7 @@ not a claim that the product is accepted today.
 - [ ] Python installer/recovery/release-contract suites pass.
 - [ ] Git worktree is clean and the release commit is identified.
 - [ ] J31–J35 security hardening is complete.
-- [ ] J36–J40 known deployment regressions are closed.
-- [ ] `tools/live-acceptance.py verify` passes against the operator's local evidence record for J38/J39.
+- [ ] J36/J37/J40 code-side deployment regressions are closed; J38/J39 are intentionally deferred to the post-install real-device gate below.
 - [ ] J41 current-upstream anti-brick review is complete for Crown and Checkers.
 - [ ] J42–J45 Music Assistant failover/group/full-screen music acceptance is complete.
   - [ ] preferred speaker offline at Play start routes to that room's Jarvis Show;
@@ -60,14 +59,17 @@ For each board separately:
 - [ ] correct screen geometry: Crown 1280×800, Checkers 960×480;
 - [ ] Wi-Fi, Bluetooth, microphones, speaker, touch and display pass;
 - [ ] wake word, Assist, Direct fallback and local Stop pass;
-- [ ] Jarvis dashboard loads without header/sidebar/black-bar regression;
+- [ ] **J38 installed-firmware display E2E:** after a cold dashboard reload, the real device has no header/sidebar/black-bar regression, keeps its native viewport and edge-touch behavior, does not resurrect stale warm-tab geometry, and leaves the established HA WIND/weather/room/clock card geometry unchanged;
+- [ ] Jarvis dashboard loads normally after the J38 cold-session checks;
+- [ ] **J39 installed-firmware HA/Klar E2E:** while HA owns the turn, `Was ist ein Taco?` remains informational and an explicit Taco recipe/web-search request follows the intended web/search path rather than becoming a device action;
 - [ ] alarms/timers/reminders survive HA outage as designed;
 - [ ] DND/privacy/intercom/Drop In/SIP behavior passes;
 - [ ] physical mute, touchscreen software mute, HA mute, and trusted/untrusted HA unmute behavior pass;
 - [ ] Setup page and first-boot Wi-Fi provisioning pass;
 - [ ] music fallback/group/full-screen Now Playing passes;
 - [ ] device remains stable for the A/B health-commit window;
-- [ ] active slot becomes `good` rather than remaining `trial`.
+- [ ] active slot becomes `good` rather than remaining `trial`;
+- [ ] `tools/live-acceptance.py verify` passes using J38/J39 evidence captured from this installed candidate firmware, not an older deployment.
 
 ## Gate D — OTA acceptance
 

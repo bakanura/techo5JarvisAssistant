@@ -46,7 +46,7 @@ var (
 	colMuted      = color.RGBA{229, 72, 77, 255}
 	colTimer      = color.RGBA{255, 176, 32, 255}
 
-	// colAccent is the Show's Ember accent, for the AM/PM beside the time as the Show sets it.
+	// colAccent is the Show's accent, for the AM/PM beside the time as the Show sets it.
 	colAccent = color.RGBA{0xf0, 0x5a, 0x3c, 255}
 )
 
