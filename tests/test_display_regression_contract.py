@@ -91,7 +91,10 @@ class DisplayRegressionContractTests(unittest.TestCase):
         # real-browser requirement.
         with tempfile.TemporaryDirectory() as td:
             smoke = Path(td) / "smoke.html"
-            smoke.write_text("<!doctype html><body>ok", encoding="utf-8")
+            smoke.write_text(
+                "<!doctype html><body>before<script>document.body.textContent='JARVIS-CHROMIUM-JS-OK';</script>",
+                encoding="utf-8",
+            )
             try:
                 probe = subprocess.run([chrome, "--headless", "--no-sandbox", "--disable-gpu", "--dump-dom", smoke.as_uri()],
                                        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5)
@@ -99,6 +102,9 @@ class DisplayRegressionContractTests(unittest.TestCase):
                 self.skipTest("local Chromium cannot complete a headless smoke test")
             if probe.returncode != 0:
                 self.skipTest("local Chromium headless smoke test failed")
+            probe_dom = html.unescape(probe.stdout)
+            if not re.search(r"<body[^>]*>\s*JARVIS-CHROMIUM-JS-OK\s*</body>", probe_dom):
+                self.skipTest("local Chromium dump-dom does not execute JavaScript")
         script = kiosk_script()
         for width, height in ((1280, 800), (960, 480)):
             with self.subTest(width=width, height=height), tempfile.TemporaryDirectory() as td:
