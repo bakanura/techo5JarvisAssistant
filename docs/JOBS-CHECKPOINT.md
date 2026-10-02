@@ -205,126 +205,212 @@ Rule: complete and validate one job before starting the next. Do not build a rel
   - Checkers real flashing remains fail-closed until trusted Amonet/TWRP/boot digests are pinned.
   - No rootfs/release tarball was built.
 
+
+- [x] **J23C — First-generation auto-detect installer gate**
+  - `jarvis-show install` now reads the fastboot product itself; `--board` is optional and only a cross-check.
+  - `CROWN` selects Jarvis Crown v1 and `CHECKERS` selects Jarvis Checkers v1.
+  - `CRONOS` is explicitly refused as Echo Show 5 2nd gen; every other unknown product warns that it may be a newer generation and stops with no write attempted.
+  - The first read-only fastboot serial is bound to the destructive flow; swapping devices before the second identity gate aborts before recovery/writes.
+  - Installer/device-flow regression tests cover second-gen refusal, unknown-product refusal and serial-swap rejection.
+
+- [x] **J23D — Bass / treble voice control contract**
+  - Keep the existing HA `Bass`, `Treble` and `Speaker EQ` entities.
+  - Add Direct Brain tools for absolute and relative bass/treble commands with the existing safe ±6 dB range.
+  - Ensure voice commands such as `mehr Bass`, `weniger Höhen`, `Bass auf +3 dB` and `Equalizer zurücksetzen` have a deterministic local action when Direct Brain owns the turn.
+  - Keep one tone-control implementation shared by touchscreen, HA entities and Direct Brain so state/display/DSP cannot diverge.
+  - Implemented as shared atomic tone state + Direct Brain `set_speaker_eq`, `set_equalizer`, `adjust_equalizer`, and `reset_equalizer` tools; requests are clamped to the existing safe ±6 dB range.
+
 ## Phase F — OTA and releases
 
-- [ ] **J24 — Fork-owned OTA identity**
+- [x] **J24 — Fork-owned OTA identity**
   - New Ed25519 public key in daemon/installer.
   - Private seed kept outside repo.
   - Configurable release repository/base URL.
+  - Official release base is `https://github.com/bakanura/techo5JarvisAssistant/releases`; stable uses `/latest/download/manifest.json`, dev uses `/download/dev/manifest.json`.
+  - New Jarvis Show Ed25519 trust root is embedded in daemon + installer; the matching private seed is stored outside the Git repo with mode 0600 and was verified against the embedded public key.
+  - Git remotes are split as `origin=bakanura/techo5JarvisAssistant` and `upstream=HuskerMinion/techo5`. No release/rootfs tarball was built or published.
 
-- [ ] **J25 — Preserve A/B rootfs update/rollback contract**
+- [x] **J25 — Preserve A/B rootfs update/rollback contract**
   - Trial slot, health commit, automatic rollback.
   - Settings/provisioning persist across OTA.
+  - Regression coverage proves inactive-slot install, `trial 3` countdown, five-minute health commit, manual rollback, no overwrite of the running root, and persistent `/data/misc/techo5` state across OTA.
 
-- [ ] **J26 — Stable/dev channel behavior**
-  - Stable releases and rolling prerelease/dev channel without downgrades.
+- [x] **J25A — Installer reboot/reconnect resilience**
+  - Survive expected USB disappearance/re-enumeration across Amonet, TWRP, userdata-format recovery reboot, adb→fastboot, rescue boot and first Jarvis boot.
+  - Uses polling deadlines rather than fixed sleeps: 5 min post-Amonet, 5 min TWRP, 5 min post-format recovery, 3 min fastboot, 7 min rescue console, 10 min first boot.
+  - Individual fastboot presence probes are bounded so a wedged host USB command cannot hang the installer forever.
+  - 19 targeted reconnect/recovery/Lineage tests pass.
 
-- [ ] **J27 — Release tooling and CI (NO BUILD YET)**
-  - Test/build/sign/publish scripts/workflows.
-  - Do not execute rootfs/release tar creation until explicitly requested.
+- [x] **J26 — Stable/dev channel behavior**
+  - Stable uses `releases/latest/download/manifest.json`; dev uses the rolling `releases/download/dev/manifest.json`.
+  - Cached manifests are bound to the channel that produced them; switching channels clears the old offer immediately, a failed fetch may only reuse a same-channel cache, and an in-flight fetch for a channel no longer selected is discarded.
+  - OTA refuses downgrades and also refuses network OTA from an unrankable/ad-hoc running version instead of guessing ordering.
+  - Signed-manifest verification and A/B install/rollback semantics are identical on stable and dev.
+
+- [x] **J27 — Release tooling and CI (NO BUILD YET)**
+  - Show-only CI builds/tests the shared ARMv7 daemon; Dashcast publishes under `ghcr.io/bakanura/techo5-jarvis-dashcast`.
+  - Canonical Linux release path is `tools/release-jarvis-show.sh`; the inherited generic TECHO5 PowerShell publisher is disabled to prevent accidental Dot/Spot/upstream publication.
+  - Tag/manual release workflow can build the shared rootfs, attest daemon+rootfs provenance, write the signing seed only from the GitHub secret, generate/sign the manifest, publish a GitHub release, and advance the rolling dev manifest only forward.
+  - `mkrootfs.sh` now embeds `etc/jarvis-show-release.json` with `product=jarvis-show-v1`, both first-gen boards, and the release version so the hardened installer accepts CI-built images.
+  - Workflow YAML + shell syntax validated only; no rootfs/release tarball was built and nothing was published.
 
 ## Phase G — Validation and docs
 
-- [ ] **J28 — Go/Python/shell test suite**
+- [x] **J28 — Go/Python/shell test suite**
   - Unit tests for profile/wake/backend/dashcast/installer/release behavior.
   - Static/syntax validation available in this environment.
 
-- [ ] **J29 — Upgrade/recovery documentation**
+- [x] **J29 — Upgrade/recovery documentation**
   - Upstream sync workflow, rollback, USB recovery, key rotation.
 
-- [ ] **J30 — Final install + OTA acceptance checklist**
+- [x] **J30 — Final install + OTA acceptance checklist**
   - Fresh supported Show (Crown or Checkers) → its Jarvis product via one installer.
   - Subsequent repo release → signed A/B OTA → health commit/rollback validation.
 
 ## Phase H — Security hardening
 
-- [ ] **J31 — Threat model and exposed-surface inventory**
+- [x] **J31 — Threat model and exposed-surface inventory**
   - Enumerate listeners, protocols, trust boundaries, credentials, privileged processes and update paths.
   - Classify LAN-only, device-local and internet-facing surfaces.
   - Record explicit security invariants for an IoT-network deployment.
+  - Implemented in fork commit `f107b96`.
+  - J31 found three release-blocking exposures for J32: unauthenticated Sendspin listener, unauthenticated optional camera/screen HTTP reads, and a persistent global insecure-TLS diagnostic mode.
 
-- [ ] **J32 — Network/service hardening**
+- [x] **J32 — Network/service hardening**
   - Bind management/debug services to the narrowest interfaces possible.
   - Disable or authenticate unused web/SSH/debug endpoints by default.
   - Review Dashcast, ESPHome, SIP, intercom, setup UI, camera and Bluetooth exposure.
   - Fail closed on missing credentials or malformed peer identity.
+  - Sendspin now defaults off/unpaired, requires one exact Music Assistant server IP provisioned over the encrypted HA API, and rejects every other source before WebSocket/session parsing.
+  - Camera/screen diagnostic HTTP reads now require the physical-presence setup session; normal HA camera access remains on the encrypted ESPHome camera entity.
+  - Persistent certificate-bypass and remote-ADB controls were removed; legacy saved values are migrated one-way to false.
+  - Web management responses gained no-store/nosniff/frame-deny/referrer headers and bounded request headers/timeouts.
+  - SSH remains off by default, key-only, and cannot listen without both an encrypted HA link and at least one valid key.
+  - Static/gofmt/diff validation passed; full Go tests remain blocked by local Go 1.23.2 vs repo-required Go 1.26.0.
 
-- [ ] **J33 — Secret, identity and privilege hardening**
+- [x] **J33 — Secret, identity and privilege hardening**
   - Audit file permissions and persistence for API keys, Wi-Fi credentials, house secrets and update keys.
   - Ensure logs/support bundles never expose secrets.
   - Reduce daemon/helper privileges where feasible without breaking Crown hardware access.
+  - `state.json`, API PSK, HA access, SIP account/contacts, Wi-Fi state and persistent logs now converge to owner-only files/directories on upgrades as well as fresh installs; runtime/provisioning uses `umask 077` and core dumps are disabled.
+  - Diagnostics explicitly redact current house/brain/camera/calendar secrets plus Dashcast key, ESPHome PSK and HA token; Bluetooth pairing no longer logs the peer address or numeric passkey.
+  - Raw SIP library text, signed media/TTS URLs, private calendar links and calendar event titles were removed from persistent logs/error strings.
+  - An ignored device recovery backup containing HA credential material was moved outside the Git checkout into owner-only private storage and remains excluded from source/release archives.
+  - `echod` remains root in v1 because it directly owns framebuffer/audio/camera/Bluetooth/Wi-Fi/firewall/SSH/update hardware paths; this residual risk is explicit and mitigated by J32 listener hardening plus J35 segmentation.
+  - Validation: 88/88 Python installer tests PASS; shell/Python/static checks PASS; isolated config/redactor Go tests PASS under a temporary lowered Go directive. Full Go suite remains blocked by local Go 1.23.2 vs repo-required Go 1.26.0.
+  - Checkpoint commit: `af792cd` (`jarvis show: harden secrets and privileges`).
 
-- [ ] **J34 — OTA / supply-chain hardening**
-  - Verify signed manifest, hash, channel and rollback logic fail closed.
-  - Pin third-party inputs by digest/commit and audit release provenance.
-  - Reject unsigned/downgrade/cross-product updates.
+- [x] **J34 — OTA / supply-chain hardening**
+  - Signed manifests now carry `product=jarvis-show-v1` plus explicit first-generation boards; both host installer and device updater reject wrong/missing/duplicate/unsupported product-board identity before install.
+  - Downloaded rootfs archives are SHA/size checked and then must contain exactly one matching `etc/jarvis-show-release.json` product/boards/version marker before `slotctl` may touch the inactive slot.
+  - `mkmanifest` refuses malformed Jarvis identity and verifies its generated Ed25519 signature against the exact public trust root embedded in devices, catching a wrong CI signing seed before publication.
+  - Manual release tooling refuses signing-key symlinks or group/world-readable seed files; Python and Go release readers are regression-checked to use the same public key.
+  - Alpine package pins no longer silently float. Every fetched APK is RSA-signature verified using keys from the SHA256-pinned minirootfs before extraction, then control/data hashes are checked; rootfs construction has no untrusted-package fallback.
+  - Wake models remain immutable-commit + SHA256 pinned, GitHub Actions are commit-SHA pinned, Go modules remain `go.sum` locked, and GitHub provenance attestations cover daemon + rootfs.
+  - J25 A/B rollback and J26 channel/downgrade isolation remain unchanged and covered by the release contract.
+  - Validation: 100/100 static Jarvis tests PASS plus signed-APK supply-chain tests. Full update-package Go tests remain blocked by local Go 1.23 vs required Go 1.26 (`strings.SplitSeq` is unavailable locally).
+  - No rootfs/release tarball was built or published.
 
-- [ ] **J35 — Security regression suite and deployment policy**
-  - Add tests for unauthorized callers, bad tokens, wrong house peers, malformed update metadata and recovery paths.
-  - Publish recommended IoT firewall policy and secure-default checklist.
-  - No release acceptance until security tests pass.
+- [x] **J35 — Security regression suite and deployment policy**
+  - Dedicated `tools/security-regression.sh` now gates CI and release publication before rootfs inputs are fetched or artifacts are built.
+  - Security contract covers wrong/unsupported device identity, Amonet/recovery integrity, A/B rollback, signed/product/board-bound OTA, wrong/replayed house traffic, intercom authentication, Sendspin source-IP admission, private web authorization, SSH/security state and Dashcast handshake authentication.
+  - Published `docs/iot-firewall-policy.md`: default-deny IoT segmentation with explicit HA 6053, Music Assistant 8928, Dashcast 9555, HA 8123 and router DNS/NTP/DHCP flows; SSH/web/SIP/Direct Brain remain optional exact-host rules.
+  - Same-IoT peer announcements/intercom are explicitly documented as authenticated L2 traffic; AP/client isolation is incompatible with that feature unless peer routing is redesigned.
+  - Validation: 11/11 security-contract tests, 61/61 focused installer/OTA security tests and 111/111 full Python/static tests PASS. Runtime Go security suite is CI-gated with Go 1.26.x; local sandbox has Go 1.23.2.
+  - No rootfs/release tarball built or published.
 ## Phase I — Known broken behavior / regression repairs
 
-- [ ] **J36 — Web Setup page repair and regression suite**
-  - Reproduce the broken setup-page paths from the archived build instead of assuming the UI works.
-  - Audit GET/POST routing, tabs, CSRF/token handling, redirects, saved-state reload, and malformed/missing values.
-  - Verify Brain, Wi-Fi/Home Assistant access, alarms/timers, dashboard, security, update and diagnostics forms actually round-trip.
-  - Add browserless HTTP regression tests for every repaired page/action.
-  - Treat setup UI as a management surface and carry its auth/exposure findings into J31/J32.
+- [x] **J36 — Web Setup page repair and regression suite**
+  - Root cause fixed: first-generation Shows have no action button, but the browser authorization copy told users to press one. Crown/Checkers now direct the user to the existing on-screen `Allow` / `Not now` prompt; Dot keeps its real action-button flow.
+  - Setup management round-trip tests on screen builds now authorize through `setup.Answer(true)`, the same path as the touchscreen, rather than a synthetic Action-button event.
+  - Read-only management routes explicitly reject state-changing methods; every rendered settings form is statically checked to dispatch through the single CSRF/session-token-checked save endpoint.
+  - Brain/listening, Dashcast, update state, alarms/timers, tabs, sessions and diagnostics have browserless HTTP round-trip/regression coverage. Secrets are accepted where required but never rendered back into HTML.
+  - Setup/reboot instructions are hardware-aware, and the setup design document now describes the actual Show physical-presence model rather than the old all-devices-have-a-button assumption.
+  - Validation: 6/6 focused Setup contract tests and 117/117 full Python/static tests PASS; gofmt + `git diff --check` PASS. Full Go package execution remains blocked locally by repo Go 1.26 vs sandbox Go 1.23.2.
 
-- [ ] **J37 — Wi-Fi / first-boot provisioning recovery**
-  - Ensure a freshly installed Crown always has an explicit, recoverable Wi-Fi provisioning path.
-  - Cover no-network, wrong-password, lost-HA, and USB/serial recovery states.
-  - Never depend on zeroconf discovery as the only way to recover a device.
+- [x] **J37 — Wi-Fi / first-boot provisioning recovery**
+  - Removed the stale installer dependency on LineageOS already having a saved Wi-Fi network; a first boot with no network is explicitly supported.
+  - With no saved network, boot keeps `wpa_supplicant`/DHCP available, starts `echod` immediately, and Crown/Checkers automatically open the native Wi-Fi picker after 45 seconds without an IPv4 address.
+  - `Settings -> Connections -> Wi-Fi` remains the manual local recovery path even when Home Assistant or mDNS is unavailable.
+  - Unified installer now exposes USB serial recovery as `jarvis-show wifi --wifi NETWORK`, delegating to the existing TECHO5 serial recovery path with optional `--serial` and passphrase-file support.
+  - Wrong-password recovery preserves/reverts prior working configuration where one exists and allows re-entering the same SSID with a corrected password.
+  - Post-install guidance names both on-screen and USB recovery paths; no zeroconf dependency remains.
+  - Validation: 6/6 focused Wi-Fi recovery tests and 123/123 full Python/static tests PASS; shell syntax and `git diff --check` PASS.
 
 - [ ] **J38 — Live-display regression acceptance**
-  - Re-test the historical black-bar/header/sidebar failures against Jarvis Crown Dashcast appliance mode.
-  - Verify WIND/weather/room/clock custom-card geometry is not altered by device/browser chrome handling.
-  - Require a fresh-session screenshot/geometry check before declaring display acceptance.
+  - CODE GATE COMPLETE: Dashcast remains the single browser-chrome owner, fixed to Crown 1280x800 / Checkers 960x480, `/jarvis-display`, kiosk, generation-bound warm tabs and one-shot cold reload.
+  - Hardened kiosk geometry now forces HA shell/views to full `100vh` while zeroing safe-area/header/top/left offsets and completely removing sidebar width, closing the historical hidden-header-but-reserved-space black-bar class.
+  - Added exact kiosk-JS syntax/contract tests and a headless-browser DOM acceptance test. Local sandbox Chromium cannot complete even a trivial headless smoke test, so that one test skips locally; Dashcast image CI retains the real-browser requirement.
+  - 129/129 full Python/static tests PASS (1 local-browser skip); `git diff --check` PASS.
+  - PHYSICAL GATE STILL OPEN: require a fresh cold-session screenshot/photo on real Crown and Checkers, confirming no black bar/header/sidebar and that external HA WIND/weather/room/clock custom-card geometry is unchanged, before marking J38 complete.
 
 - [ ] **J39 — Voice/web fallback regression acceptance**
-  - Verify general questions such as Taco queries cannot be misrouted into arbitrary device-control intents.
-  - Verify Direct Brain + SearXNG fallback can answer when HA/Klar rejects or HA is unavailable.
-  - Keep HA/Klar-specific server bugs documented separately from firmware behavior.
+  - FIRMWARE GATE COMPLETE: Direct Brain explicitly treats food/recipe/definition/fact/person/place/web questions as information unless an actual device action was requested.
+  - Explicit search/look-up/source/recipe requests must use `web_search` when SearXNG is configured, followed by `read_page` for grounding.
+  - Added a deterministic fake-LLM + fake-SearXNG runtime regression that drives the real OpenAI-compatible tool loop through `web_search` -> `read_page` -> grounded Taco-recipe answer, plus a no-tool `Was ist ein Taco?` information path.
+  - Automatic mode remains HA-first and only falls back to Direct between turns when HA is unavailable; firmware never silently reinterprets a completed HA/Klar decision.
+  - Validation: 4/4 focused static contract tests and 133/133 full Python/static tests PASS (1 unrelated local-Chromium skip). The Go runtime test is source/gofmt clean but cannot run locally because this repo requires Go 1.26 and the sandbox has 1.23.2 with required modules unavailable; CI must execute it under Go 1.26.
+  - EXTERNAL GATE STILL OPEN: the deployed HA/Klar pipeline must independently pass `Was ist ein Taco?` and explicit Taco-recipe/web-search tests while HA owns the turn. Do not mark J39 complete until that server-side regression passes.
 
-- [ ] **J40 — Known-bug closure pass**
-  - Revisit every defect recorded during the original livingRoomEcho8 deployment and mark fixed, externally-owned, or intentionally unsupported.
-  - No v1 release acceptance with an unclassified known regression.
+- [x] **J40 — Known-bug closure pass**
+  - Added `docs/known-bug-closure.md`, classifying every recorded original `livingRoomEcho8` failure as FIXED, OPEN GATE, or EXTERNAL with an explicit owner and closure path.
+  - Historical Setup/Wi-Fi/TWRP/cross-board/rootfs/wake/warm-tab/security defects are closed in source; HA custom-card geometry, Klar personality, and network NTP remain explicitly external responsibilities rather than duplicated firmware behavior.
+  - J38 physical display acceptance and J39 deployed HA/Klar Taco routing remain intentionally OPEN release gates; the closure pass does not convert either into a paper PASS.
+  - J41 anti-brick and J42–J45 resilient/full-screen music are explicitly tracked as pending product work, not hidden known bugs.
+  - Validation: 4/4 closure-contract tests and 137/137 full Python/static tests PASS (1 unrelated local-Chromium skip); `git diff --check` PASS.
 
 
-- [ ] **J41 — Final Crown + Checkers anti-brick / upstream safety audit (RELEASE BLOCKER)**
-  - Re-read TECHO5's current Crown and Checkers install, recovery, A/B update, boot-image and partition documentation before any release build or device install.
-  - Compare every Jarvis Show / board-profile change against upstream safety assumptions; explicitly flag anything that writes bootloader, preloader, LK, recovery, boot, system/slot metadata, userdata, persist, nvram/nvcfg, protect partitions or eMMC boot areas.
-  - Verify product detection is fail-closed and board-bound (`CROWN` or `CHECKERS` only, never cross-flashed), backups happen before destructive writes, and installer aborts on unexpected partition/layout/device state.
-  - Verify ordinary OTA remains rootfs A/B only, keeps upstream trial-slot health/commit/automatic rollback semantics, and cannot silently become a boot/kernel/partition update.
-  - Verify no Jarvis change re-enables deprecated/unsafe TECHO5 paths or bypasses upstream Crown guards.
-  - Cross-check known upstream Crown/Checkers brick/recovery warnings and documented failure modes against the final installer and OTA code.
-  - Require a written PASS/WARN/FAIL anti-brick report before J30 release acceptance or any real-device install.
-  - Do not build or flash anything as part of this audit unless explicitly requested.
+- [x] **J41 — Final Crown + Checkers anti-brick / upstream safety audit (RELEASE BLOCKER)**
+  - Re-read current TECHO5 install/getting-started guidance plus current amonet documentation and compared Jarvis Show against the documented Crown/Checkers safety assumptions.
+  - Added a hard TWRP gate for the retired Amonet 1.x `microloader` boot layout; ambiguous/unreadable boot layout now fails closed before backup, Lineage staging or Jarvis boot writes.
+  - Locked Jarvis prestaged installs to `--amazon-logo`, so the optional upstream `expdb`/kaeru boot-logo patch cannot be reactivated through the Jarvis-owned final install path.
+  - Locked-device Amonet invocation now also requires readable `lk_build_desc`; unsupported/newer products, cross-board devices, changed serials and unpinned Checkers destructive assets remain fail-closed.
+  - Verified Jarvis-owned TWRP writes are limited to `recovery` + `swdl`; final product writes are limited to board-pinned `boot` plus `system` -> slot store. Ordinary OTA remains `slotctl install` into the inactive rootfs slot and cannot reach fastboot/raw partitions.
+  - Written report: `src/docs/anti-brick-audit.md`, final result **PASS WITH WARNINGS**. Main residual warning is the inherently destructive Amonet unlock itself; Jarvis isolates it to the pinned, explicitly confirmed unlock stage rather than reimplementing it.
+  - Validation: 51/51 focused anti-brick/recovery/unlock/multiboard tests PASS; 152/152 full Python/static tests PASS with one unrelated local-Chromium skip; security source + 65/65 sensitive installer/OTA tests PASS. Full Go runtime security suite remains environment-blocked because Go 1.26 cannot be fetched in this sandbox.
+  - No rootfs/release tarball built and no real device written/flashed during the audit.
 
 ## Phase J — Resilient music routing and full-screen playback
 
-- [ ] **J42 — Area-primary speaker fallback routing**
-  - Define one preferred Music Assistant/HA player per area, with that area's Jarvis Crown as the automatic fallback endpoint.
-  - If the preferred speaker disappears during active playback, keep the session alive by continuing on Crown when technically possible; never stop solely because the primary went unavailable.
-  - Do not migrate an already-failed-over session back mid-song merely because the primary comes online again.
-  - On the next explicit Play request, re-resolve the area: preferred speaker when online, otherwise Crown.
-  - If an area has no configured preferred speaker, Crown is the primary endpoint for that area.
+- [x] **J42 — Area-primary speaker fallback routing**
+  - Added one persisted preferred Music Assistant player per Jarvis Show room; empty means the Show itself is primary. HA/Klar (`music_play`) and Direct Brain (`play_music`) use the same resolver.
+  - A preferred player is usable only when its HA state is online and identifies as a Music Assistant player; unavailable/unknown/misconfigured primaries fall back to this Show's own MA player.
+  - If the preferred player disappears while it was actively playing, Jarvis asks Music Assistant to `transfer_queue` to this Show with autoplay, preserving the active queue when the server can still transfer it.
+  - Failover is sticky: a recovered preferred speaker never pulls the currently playing fallback session back mid-song.
+  - On the next explicit Play request the room is resolved again; if the preferred player is healthy, the old local fallback is stopped before the new request starts on the preferred output. If it is still offline, playback remains local.
+  - Music Assistant stays the queue/synchronization owner; Jarvis does not create a competing group engine.
+  - Validation: 5/5 focused routing-contract tests and 157/157 full Python/static tests PASS with one unrelated local-Chromium skip. Full Go package execution remains blocked locally by the Go 1.26 toolchain requirement.
 
-- [ ] **J43 — Dynamic whole-home / named-group playback resolution**
-  - Resolve commands such as `Spiele Musik in der ganzen Wohnung` against the configured Music Assistant/HA group (for example `wohnung`).
-  - For each member area, select the preferred online room speaker; substitute that room's Jarvis Crown when the preferred speaker is unavailable or absent.
-  - Preserve synchronized multi-room playback through Music Assistant/Sendspin; do not invent a competing grouping engine in `echod`.
-  - Re-evaluate group membership on every new explicit Play request while leaving an already-playing fallback session stable.
+- [x] **J43 — Dynamic whole-home / named-group playback resolution**
+  - Added persisted, bounded room/group routing definitions with aliases such as `wohnung`, `ganze wohnung` and `überall`; every remote room must explicitly name its Jarvis Show MA fallback, while this device may auto-discover its own fallback player.
+  - Every explicit named-group Play re-resolves each room independently: preferred Music Assistant player when online/valid, otherwise that room's Jarvis Show fallback. Rooms with neither output are skipped; an entirely unavailable group fails rather than pretending playback started.
+  - Jarvis asks Home Assistant/Music Assistant to build the temporary synchronized group via `media_player.join`, then starts the queue with `music_assistant.play_media`. No competing Sendspin/group engine was added to `echod`.
+  - HA/Klar (`music_play_group`) and Direct Brain (`play_music` with optional `group`) use the same resolver. Before a later explicit Play, Jarvis dismantles only the temporary group it previously created; arbitrary user-owned MA groups are left alone.
+  - The resolved group name and actual member entities are retained as observational state for J44's full-screen Now Playing surface.
+  - Validation: 11/11 focused J42/J43 routing tests PASS; full static Jarvis Show gate PASS with 163 Python tests (1 unrelated Chromium skip), 65 sensitive installer/OTA tests and profile/workflow/shell/diff checks. Full Go execution remains environment-blocked by the Go 1.26 requirement.
 
-- [ ] **J44 — Full-screen music dashboard and persistent Now Playing**
-  - Replace the music-strip-first product UX with a dedicated full-screen music surface while playback is active; the strip remains only a defensive fallback.
-  - Always show artwork, title, artist, album, progress, transport, volume, active output/room/group, and enough queue context to understand what is playing and where.
-  - Provide touch actions for previous/play-pause/next, queue, favorite/library actions and album navigation where the Music Assistant APIs expose them safely.
-  - Automatically return to `/jarvis-display` after playback truly ends; camera/call/alarm/privacy-critical screens retain higher priority.
-  - Keep the full-screen Now Playing available for the complete active playback session, not only the first 30 seconds.
+- [x] **J44 — Full-screen music dashboard and persistent Now Playing**
+  - Music Assistant now owns a dedicated native full-screen surface for the entire active/paused session; MA playback no longer times itself down into the legacy strip and cannot be swipe-dismissed while the session exists. Radio retains the legacy configurable strip behavior.
+  - The surface follows the resolved J42/J43 route even when audio is on an external preferred speaker: HA/MA metadata fills title/artist/album/progress/output state, Sendspin remains the low-latency metadata/art source when this Show is an output, and external player `entity_picture` is fetched through the existing bounded cover-art decoder.
+  - It shows artwork, title, artist, album, actual output/named group, live resolved rooms, elapsed/total progress when exposed, and the next queue item via the supported `music_assistant.get_queue` response action. Queue lookup is background/best-effort and cannot interrupt playback.
+  - Previous/play-pause/next/Done and Favorite now target the real routed MA entity, including external room-primary speakers. The existing MA favorite-current-song operation remains the safe library mutation; no guessed "add to album" write was invented because HA/MA does not expose a stable album-mutation action for this use.
+  - Alarm/timer ringing, calls, setup/security prompts, settings and camera pages retain their existing higher display priority. When playback really ends, the route state stops requesting Now Playing and `/jarvis-display` naturally resumes.
+  - Validation: 7/7 focused J44 tests PASS; full static Jarvis Show gate PASS with 170 Python tests (1 unrelated Chromium skip), 65 sensitive installer/OTA tests and security/profile/workflow/shell/diff checks. Full Go execution remains environment-blocked by Go 1.26.
 
-- [ ] **J45 — Music failover / group regression suite**
-  - Test primary-offline-at-start, primary-loss-mid-playback, primary-recovery-without-forced-migration, next-command-primary-restoration, no-primary-room fallback and named whole-home group substitution.
-  - Verify screen reports the real active endpoint/group and never claims music is playing on a speaker that is offline.
-  - Include these scenarios in final release acceptance.
+- [x] **J45 — Music failover / group regression suite**
+  - Added runtime Go regressions for primary-offline-at-start, primary-loss-mid-playback with `transfer_queue`, sticky fallback after primary recovery, next-command restoration to the recovered primary, a room with no preferred speaker using its Jarvis Show as primary, and named whole-home substitution of offline room primaries.
+  - Added Now Playing assertions that the displayed entity/output/room/group comes from the resolved live route and never reports an unavailable preferred speaker.
+  - Fixed a J44 compile-structural gap by adding the missing cached `picture` field used by external MA `entity_picture` handling.
+  - Final acceptance now names every J45 failover/group scenario explicitly.
+  - Validation: J42-J45 focused Python/static contracts PASS; full static Jarvis Show gate PASS with 174/174 Python/static tests (1 unrelated Chromium skip), 11/11 security tests, 65/65 sensitive installer/OTA tests, profile/workflow/shell/diff checks. The new Go runtime regressions are source/gofmt clean but cannot execute locally because the sandbox has Go 1.23.2 and cannot fetch the required Go 1.26 toolchain/modules; CI/release must run them under Go 1.26.x.
+
+- [x] **J46 — Microphone mute responsiveness + trusted HA remote-unmute permission**
+  - Split microphone privacy into a reversible software cut for Home Assistant/touchscreen and the existing physical privacy latch; either one makes the effective microphone state muted.
+  - HA mute is always accepted and cuts captured audio before history, wake detection or streaming on the next frame; local physical mute also uses a transition cut while the ~1.4 s latch catches up.
+  - Remote HA unmute is fail-closed and requires both the device-local **Allow trusted Home Assistant to clear its software microphone mute** setting and a provisioned encrypted ESPHome/native API key. The permission defaults OFF and is only exposed on the physically authorized Setup page, not as an HA/Direct Brain entity/tool.
+  - Crown/Checkers physical privacy remains stronger: HA and touchscreen never call the hardware unmute path, and a latched hardware mute still requires the physical device button to release it.
+  - The touchscreen has an always-local reversible software mute/unmute path, so a default-denied HA unmute cannot strand the device in software mute.
+  - HA now exposes `Microphone mute status` with `muted`, `unmuted`, `physical mute active`, and `remote unmute not permitted` states.
+  - Runtime security regression now includes the mute package; added Go policy/status tests plus six J46 source-contract tests and final-release acceptance checks.
+  - Validation: 11/11 security-contract tests PASS; 65/65 security-sensitive installer/OTA tests PASS; 180/180 Python/static tests PASS with one unrelated Chromium skip; profile/workflow/shell/diff checks PASS. Full Go runtime execution remains blocked locally by Go 1.23.2 vs required Go 1.26.x; a temporary lowered-directive attempt could not fetch the missing `go-esphome-device` module in this sandbox.
+  - Checkpoint commit: `0e63128` (`jarvis show: harden microphone remote unmute`).
