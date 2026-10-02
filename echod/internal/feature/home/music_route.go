@@ -23,6 +23,8 @@ type musicRouteState struct {
 	primaryWasPlaying bool
 	fallbackActive    bool
 	activeOutput      string
+	activeGroup       string
+	activeMembers     []string
 }
 
 var musicRoute musicRouteState
@@ -71,6 +73,9 @@ func (f *Feature) PlayMusic(mediaID string) (string, error) {
 	if mediaID == "" {
 		return "", errors.New("music request is empty")
 	}
+	if err := releaseActiveMusicGroup(); err != nil {
+		return "", err
+	}
 	target, local, fallback, err := musicOutput()
 	if err != nil {
 		return "", err
@@ -95,6 +100,8 @@ func (f *Feature) PlayMusic(mediaID string) (string, error) {
 	musicRoute.fallbackActive = fallback
 	musicRoute.primaryWasPlaying = !fallback && target != local
 	musicRoute.activeOutput = target
+	musicRoute.activeGroup = ""
+	musicRoute.activeMembers = nil
 	musicRoute.Unlock()
 	return target, nil
 }
@@ -177,6 +184,16 @@ func (f *Feature) MusicOutput() (preferred, active string, fallback bool) {
 	preferred = strings.TrimSpace(config.Get().Home.MusicPrimary)
 	musicRoute.Lock()
 	active, fallback = musicRoute.activeOutput, musicRoute.fallbackActive
+	musicRoute.Unlock()
+	return
+}
+
+// MusicGroupOutput reports the currently explicit named-group route for the full-screen music UI.
+// It is observational only and never changes routing.
+func (f *Feature) MusicGroupOutput() (group string, members []string) {
+	musicRoute.Lock()
+	group = musicRoute.activeGroup
+	members = append([]string(nil), musicRoute.activeMembers...)
 	musicRoute.Unlock()
 	return
 }

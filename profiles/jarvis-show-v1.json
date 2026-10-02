@@ -1,10 +1,16 @@
 {
   "product": "jarvis-show-v1",
   "version": 1,
-  "boards": ["crown", "checkers"],
+  "boards": [
+    "crown",
+    "checkers"
+  ],
   "assistant": {
     "wake_word": "hey_jarvis",
-    "wake_fallbacks": ["okay_nabu", "alexa"],
+    "wake_fallbacks": [
+      "okay_nabu",
+      "alexa"
+    ],
     "wake_slots": 1,
     "brain_mode": "automatic",
     "follow_up_seconds": 6,
@@ -24,5 +30,11 @@
     "sip_transport": "tls",
     "sip_media": "srtp",
     "drop_in_default": false
+  },
+  "music": {
+    "routing": "music-assistant",
+    "room_primary_fallback": true,
+    "named_groups": true,
+    "group_membership": "resolve-on-explicit-play"
   }
 }

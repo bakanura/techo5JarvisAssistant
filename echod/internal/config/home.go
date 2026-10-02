@@ -68,6 +68,17 @@ type Home struct {
 	// The value is the Music Assistant media_player entity, not the underlying duplicate HA player.
 	MusicPrimary string `json:"music_primary,omitempty"`
 
+	// MusicRoom names the room this Jarvis Show belongs to for named/group music routing. The
+	// configured room may omit its Fallback player because this device can discover its own MA
+	// player; remote rooms must name their Jarvis Show fallback explicitly.
+	MusicRoom string `json:"music_room,omitempty"`
+
+	// MusicRooms and MusicGroups define dynamic Music Assistant routing. They do not create a
+	// second grouping engine: each explicit group Play resolves one live output per room, then asks
+	// Home Assistant/Music Assistant to build the temporary sync group.
+	MusicRooms  []MusicRoomRoute `json:"music_rooms,omitempty"`
+	MusicGroups []MusicGroup     `json:"music_groups,omitempty"`
+
 	// RadarSource is where the rain map's radar comes from: RadarNWS (the U.S. National Weather
 	// Service's national composite, lower 48 only), RadarRainViewer (worldwide), or empty for
 	// automatic, which is the NWS when home is in the lower 48 and RainViewer anywhere else.
@@ -82,6 +93,24 @@ type Home struct {
 	// outside's noise unasked is a device people turn off — and the home_show_camera_sound action
 	// can ask for it, or refuse it, for one view whatever this says.
 	CameraSound bool `json:"camera_sound,omitempty"`
+}
+
+// MusicRoomRoute is one room's output policy for named/group playback. Primary is the preferred
+// Music Assistant player. Fallback is that room's Jarvis Show MA player; it may be empty only for
+// this device's own MusicRoom, where the local player is discovered at runtime.
+type MusicRoomRoute struct {
+	Name     string `json:"name"`
+	Primary  string `json:"primary,omitempty"`
+	Fallback string `json:"fallback,omitempty"`
+}
+
+// MusicGroup is a human-facing named set of rooms such as "wohnung". Aliases let the assistant
+// map natural phrases such as "ganze wohnung" or "überall" to the same group without cloning
+// its routing definition.
+type MusicGroup struct {
+	Name    string   `json:"name"`
+	Aliases []string `json:"aliases,omitempty"`
+	Rooms   []string `json:"rooms"`
 }
 
 // Slideshow is how the idle screen's photo slideshow is wired: a Home Assistant media source to
@@ -256,6 +285,14 @@ func (w HomeWriter) DoNotDisturb(v bool) error {
 
 func (w HomeWriter) MusicPrimary(v string) error {
 	return w.st.Update(func(c *Config) { c.Home.MusicPrimary = v })
+}
+
+func (w HomeWriter) MusicRouting(room string, rooms []MusicRoomRoute, groups []MusicGroup) error {
+	return w.st.Update(func(c *Config) {
+		c.Home.MusicRoom = room
+		c.Home.MusicRooms = slices.Clone(rooms)
+		c.Home.MusicGroups = slices.Clone(groups)
+	})
 }
 
 func (w HomeWriter) WeatherSources(ids []string) error {

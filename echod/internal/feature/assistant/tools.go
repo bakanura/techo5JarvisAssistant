@@ -232,10 +232,20 @@ func deviceTools() []tool {
 				return fmt.Sprintf("%d alarms matched; ask which one, nothing was deleted", len(found)), nil
 			}},
 
-		{llm.Tool{Name: "play_music", Description: "Play music through this room. The room's preferred Music Assistant speaker is used when online; this Jarvis Show is the automatic fallback. Use the requested track, artist, album, playlist, radio name, or provider URI as media_id.",
-			Parameters: object(map[string]any{"media_id": str("Track, artist, album, playlist, radio name, or Music Assistant/provider URI to play.")}, "media_id")},
+		{llm.Tool{Name: "play_music", Description: "Play music through this room or a configured named speaker group. Without group, this room's preferred Music Assistant speaker is used when online and this Jarvis Show is the automatic fallback. For requests like 'ganze Wohnung' or 'überall', pass the configured group name or alias (for example 'wohnung'). Use the requested track, artist, album, playlist, radio name, or provider URI as media_id.",
+			Parameters: object(map[string]any{
+				"media_id": str("Track, artist, album, playlist, radio name, or Music Assistant/provider URI to play."),
+				"group":    str("Optional configured named group or alias, such as wohnung, ganze wohnung, or überall."),
+			}, "media_id")},
 			func(a map[string]any) (string, error) {
 				id := argString(a, "media_id")
+				if group := argString(a, "group"); group != "" {
+					resolved, members, err := home.Get().PlayMusicGroup(group, id)
+					if err != nil {
+						return "", err
+					}
+					return fmt.Sprintf("playing through %s on %d outputs", resolved, len(members)), nil
+				}
 				target, err := home.Get().PlayMusic(id)
 				if err != nil {
 					return "", err

@@ -7,6 +7,7 @@ package home
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"image"
 	"log/slog"
@@ -440,6 +441,7 @@ func (f *Feature) Actions() []*esphome.Action {
 			}
 			musicRoute.Lock()
 			musicRoute.primaryWasPlaying, musicRoute.fallbackActive, musicRoute.activeOutput = false, false, ""
+			musicRoute.activeGroup, musicRoute.activeMembers = "", nil
 			musicRoute.Unlock()
 			return nil, nil
 		},
@@ -449,6 +451,39 @@ func (f *Feature) Actions() []*esphome.Action {
 		Args: []esphome.Arg{{Name: "media_id", Type: esphome.ArgString}},
 		Run: func(c esphome.Call) (any, error) {
 			return f.PlayMusic(c.String("media_id"))
+		},
+	})
+	actions = append(actions, &esphome.Action{
+		Name: "music_routing",
+		Args: []esphome.Arg{{Name: "config", Type: esphome.ArgString}},
+		Run: func(c esphome.Call) (any, error) {
+			var payload struct {
+				LocalRoom string                  `json:"local_room"`
+				Rooms     []config.MusicRoomRoute `json:"rooms"`
+				Groups    []config.MusicGroup     `json:"groups"`
+			}
+			if err := json.Unmarshal([]byte(c.String("config")), &payload); err != nil {
+				return nil, fmt.Errorf("music_routing: invalid JSON: %w", err)
+			}
+			localRoom, rooms, groups, err := validateMusicRouting(payload.LocalRoom, payload.Rooms, payload.Groups)
+			if err != nil {
+				return nil, err
+			}
+			if err := config.Set().Home().MusicRouting(localRoom, rooms, groups); err != nil {
+				return nil, err
+			}
+			return nil, nil
+		},
+	})
+	actions = append(actions, &esphome.Action{
+		Name: "music_play_group",
+		Args: []esphome.Arg{{Name: "group", Type: esphome.ArgString}, {Name: "media_id", Type: esphome.ArgString}},
+		Run: func(c esphome.Call) (any, error) {
+			group, members, err := f.PlayMusicGroup(c.String("group"), c.String("media_id"))
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"group": group, "members": members}, nil
 		},
 	})
 
