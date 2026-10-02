@@ -1,27 +1,28 @@
 # Jarvis Crown v1 installer
 
-The Jarvis Crown installer is deliberately built in fail-closed stages.  At J17 only the host-only
-preflight exists.  It **does not invoke adb or fastboot at all**, so running it cannot change an Echo.
+The Jarvis Crown installer is deliberately split into fail-closed gates.  J17 implements only the
+host/input preflight.  It **never invokes adb or fastboot**, so it cannot query, reboot or modify an
+Echo Show.
 
 ```sh
-python3 tools/jarvis_crown.py preflight \
-  --amonet /path/to/amonet-crown-v2.0.1/amonet \
+python3 tools/jarvis-crown.py preflight \
+  --amonet-dir /path/to/amonet-crown-v2.0.1 \
   --lineage-zip /path/to/lineage-18.1-...-UNOFFICIAL-crown.zip
 ```
 
 The preflight requires:
 
-- a Linux host;
-- Python 3.10 or newer;
+- Linux and Python 3.10+;
 - `adb`, `fastboot`, `git`, `bash`, and GNU `timeout` in `PATH`;
-- usable USB-serial permissions (`dialout`/`uucp`, unless running as root);
+- USB serial access through `dialout`/`uucp` for an unprivileged install;
 - ModemManager not running;
-- at least 8 GiB free on each distinct filesystem used for installer work/backups, with a writable parent path;
-- a complete local Amonet package whose `device.prop` says `DEVICE=crown`;
-- when a LineageOS ZIP is supplied, metadata whose `pre-device` is exactly `crown`.
+- writable work and backup directories;
+- at least 8 GiB free on every distinct filesystem used for work/backups;
+- a complete local Amonet package whose `amonet/device.prop` says `DEVICE=crown`;
+- when supplied, a LineageOS ZIP whose metadata says `pre-device=crown`.
 
-The Amonet directory is deliberately a local input rather than a redistributable Jarvis Crown asset;
-see the third-party asset policy.  Later installer stages must not weaken or bypass this preflight.
+The Amonet package stays a local/user-supplied dependency rather than a Jarvis Crown release asset.
+Later installer stages must not weaken or bypass this gate.
 
-J18 adds the independent live-device `CROWN` gate.  Passing this host preflight therefore never means
-that a connected device is accepted for flashing.
+J18 adds an independent live-device CROWN identity gate. Passing J17 therefore never means a connected
+device is accepted for flashing.

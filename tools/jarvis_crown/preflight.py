@@ -1,27 +1,40 @@
 #!/usr/bin/env python3
 """Host-only preflight for the Jarvis Crown installer.
 
-This module deliberately performs no adb/fastboot/device I/O.  It only validates
-that the host is safe and ready before later installer phases are allowed to
-look at a Crown.
+This module deliberately performs no adb/fastboot/device I/O. It only validates
+that the host and local installation inputs are safe enough for later stages to
+begin device discovery.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-import grp
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 from typing import Callable
+import zipfile
 
 MIN_FREE_BYTES = 8 * 1024 * 1024 * 1024
 REQUIRED_TOOLS = {
     "adb": "install Android platform-tools (adb)",
     "fastboot": "install Android platform-tools (fastboot)",
+    "git": "install Git",
+    "bash": "install bash (required by Amonet fastbrick)",
+    "timeout": "install GNU coreutils timeout (required by Amonet fastbrick)",
 }
 SERIAL_GROUPS = {"dialout", "uucp"}
+AMONET_REQUIRED = (
+    "fastbrick.sh",
+    "profile.sh",
+    "device.prop",
+    "bin/fastbrick.img",
+    "bin/twrp.img",
+    "bin/crown-kaeru.bin",
+    "bin/preloader.img",
+    "bin/lk.bin",
+)
 
 
 @dataclass(frozen=True)
@@ -36,6 +49,8 @@ class Check:
 
 
 def _group_names() -> set[str]:
+    import grp
+
     names: set[str] = set()
     if not hasattr(os, "getgroups"):
         return names
@@ -71,15 +86,97 @@ def _writable_dir(path: Path) -> tuple[bool, str]:
     return True, "writable"
 
 
+def _device_prop(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return values
+    for raw in lines:
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip().strip('"').strip("'")
+    return values
+
+
+def _check_amonet(amonet_dir: Path) -> Check:
+    root = amonet_dir / "amonet"
+    missing = [name for name in AMONET_REQUIRED if not (root / name).is_file()]
+    if missing:
+        return Check("FAIL", "amonet", "local Crown Amonet bundle incomplete: " + ", ".join(missing))
+    props = _device_prop(root / "device.prop")
+    if props.get("DEVICE", "").lower() != "crown":
+        return Check("FAIL", "amonet", f"bundle declares DEVICE={props.get('DEVICE', 'unknown')}, not crown")
+    return Check("PASS", "amonet", f"{amonet_dir} (DEVICE=crown)")
+
+
+def lineage_board(path: Path) -> str:
+    try:
+        with zipfile.ZipFile(path) as archive:
+            metadata = archive.read("META-INF/com/android/metadata").decode("utf-8", "replace")
+    except (OSError, KeyError, zipfile.BadZipFile) as exc:
+        raise ValueError(f"not a usable LineageOS zip: {exc}") from exc
+    for line in metadata.splitlines():
+        if line.startswith("pre-device="):
+            return line.split("=", 1)[1].strip()
+    raise ValueError("LineageOS metadata has no pre-device entry")
+
+
+def _check_lineage(path: Path | None) -> Check:
+    if path is None:
+        return Check("WARN", "lineage", "not supplied yet; J21 requires the Crown LineageOS ZIP before install")
+    if not path.is_file():
+        return Check("FAIL", "lineage", f"file not found: {path}")
+    try:
+        board = lineage_board(path)
+    except ValueError as exc:
+        return Check("FAIL", "lineage", f"{path}: {exc}")
+    if board.lower() != "crown":
+        return Check("FAIL", "lineage", f"ZIP declares pre-device={board}, not crown")
+    return Check("PASS", "lineage", f"{path} (pre-device=crown)")
+
+
+def _disk_checks(work_dir: Path, backup_dir: Path, min_free_bytes: int) -> list[Check]:
+    checks: list[Check] = []
+    seen_devices: set[int] = set()
+    for label, path in (("work-dir", work_dir), ("backup-dir", backup_dir)):
+        ok, detail = _writable_dir(path)
+        checks.append(Check("PASS" if ok else "FAIL", label, f"{path}: {detail}"))
+        if not ok:
+            continue
+        try:
+            stat = path.stat()
+            free = shutil.disk_usage(path).free
+        except OSError as exc:
+            checks.append(Check("FAIL", f"disk-space-{label}", f"cannot inspect free space: {exc}"))
+            continue
+        if stat.st_dev in seen_devices:
+            continue
+        seen_devices.add(stat.st_dev)
+        gib = free / (1024 ** 3)
+        if free < min_free_bytes:
+            checks.append(Check(
+                "FAIL",
+                f"disk-space-{label}",
+                f"{gib:.1f} GiB free; at least {min_free_bytes / (1024 ** 3):.0f} GiB required",
+            ))
+        else:
+            checks.append(Check("PASS", f"disk-space-{label}", f"{gib:.1f} GiB free"))
+    return checks
+
+
 def run_preflight(
     *,
     repo_root: Path,
     amonet_dir: Path,
     work_dir: Path,
     backup_dir: Path,
+    lineage_zip: Path | None = None,
     min_free_bytes: int = MIN_FREE_BYTES,
 ) -> list[Check]:
-    """Return all host readiness checks without opening or querying a device."""
+    """Return host/input readiness checks without opening or querying a device."""
     checks: list[Check] = []
 
     if not sys.platform.startswith("linux"):
@@ -94,13 +191,14 @@ def run_preflight(
 
     for exe, hint in REQUIRED_TOOLS.items():
         found = shutil.which(exe)
-        if found:
-            checks.append(Check("PASS", f"tool-{exe}", found))
-        else:
-            checks.append(Check("FAIL", f"tool-{exe}", hint))
+        checks.append(Check("PASS" if found else "FAIL", f"tool-{exe}", found or hint))
 
     if os.geteuid() == 0:
-        checks.append(Check("WARN", "host-root", "running installer as root is unnecessary; prefer an unprivileged user with serial access"))
+        checks.append(Check(
+            "WARN",
+            "host-root",
+            "running as root is supported for recovery, but normal installs should use an unprivileged serial-enabled user",
+        ))
         checks.append(Check("PASS", "serial-permission", "root can open the USB serial device"))
     else:
         groups = _group_names()
@@ -124,31 +222,9 @@ def run_preflight(
     else:
         checks.append(Check("PASS", "repo", str(repo_root)))
 
-    required_amonet = (
-        amonet_dir / "amonet",
-        amonet_dir / "amonet" / "bootrom-step.sh",
-    )
-    missing = [str(p) for p in required_amonet if not p.exists()]
-    if missing:
-        checks.append(Check("FAIL", "amonet", "local Crown Amonet bundle incomplete: " + ", ".join(missing)))
-    else:
-        checks.append(Check("PASS", "amonet", str(amonet_dir)))
-
-    for label, path in (("work-dir", work_dir), ("backup-dir", backup_dir)):
-        ok, detail = _writable_dir(path)
-        checks.append(Check("PASS" if ok else "FAIL", label, f"{path}: {detail}"))
-
-    try:
-        free = shutil.disk_usage(work_dir).free
-    except OSError as exc:
-        checks.append(Check("FAIL", "disk-space", f"cannot inspect free space: {exc}"))
-    else:
-        gib = free / (1024 ** 3)
-        if free < min_free_bytes:
-            checks.append(Check("FAIL", "disk-space", f"{gib:.1f} GiB free; at least {min_free_bytes / (1024 ** 3):.0f} GiB required"))
-        else:
-            checks.append(Check("PASS", "disk-space", f"{gib:.1f} GiB free"))
-
+    checks.append(_check_amonet(amonet_dir))
+    checks.append(_check_lineage(lineage_zip))
+    checks.extend(_disk_checks(work_dir, backup_dir, min_free_bytes))
     return checks
 
 

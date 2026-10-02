@@ -17,7 +17,8 @@ from jarvis_crown.preflight import preflight_ok, print_checks, run_preflight  # 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="jarvis-crown")
     parser.add_argument("command", choices=["preflight"], nargs="?", default="preflight")
-    parser.add_argument("--amonet-dir", type=Path)
+    parser.add_argument("--amonet-dir", type=Path, help="local amonet-crown-v2.0.1 package directory")
+    parser.add_argument("--lineage-zip", type=Path, help="optional Crown LineageOS ZIP to validate host-side")
     parser.add_argument("--work-dir", type=Path)
     parser.add_argument("--backup-dir", type=Path)
     return parser.parse_args()
@@ -30,6 +31,7 @@ def main() -> int:
     checks = run_preflight(
         repo_root=root,
         amonet_dir=(args.amonet_dir or (project / "third_party" / "amonet-crown-v2.0.1")).resolve(),
+        lineage_zip=args.lineage_zip.resolve() if args.lineage_zip else None,
         work_dir=(args.work_dir or (project / "work")).resolve(),
         backup_dir=(args.backup_dir or (project / "backups")).resolve(),
     )

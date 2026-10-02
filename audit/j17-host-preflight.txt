@@ -1,10 +1,11 @@
 J17 — Crown installer host preflight
 
-PASS: Linux/Python/tool/serial/ModemManager/disk/Amonet/Lineage host checks implemented.
-PASS: preflight does not invoke adb or fastboot; it only verifies executables are present.
-PASS: local Amonet must be structurally complete and device.prop must declare DEVICE=crown.
+PASS: canonical entry point is tools/jarvis-crown.py preflight.
+PASS: no adb/fastboot subprocess is invoked by preflight; executables are presence-checked only.
+PASS: Linux/Python 3.10+, adb/fastboot/git/bash/timeout, serial permissions, ModemManager, writable work/backup storage and >=8 GiB free-space checks.
+PASS: local Amonet package must be complete and amonet/device.prop must declare DEVICE=crown.
 PASS: optional Lineage ZIP is parsed host-side and must declare pre-device=crown.
-PASS: 8 GiB free-space floor and writable workspace/backup filesystem check.
-PASS: Python regression tests cover incomplete/wrong-board Amonet, wrong-board Lineage, missing fastboot, and low disk.
-PASS: live container rehearsal failed closed because adb/fastboot are absent and printed that no device command was executed.
+PASS: seven pure-Python regression tests cover pass path, missing fastboot, missing/wrong-board Amonet, low disk, Crown Lineage metadata and wrong-board Lineage.
+PASS: container rehearsal failed closed because adb/fastboot are absent and explicitly confirmed no device was queried or modified.
+PASS: duplicate preflight entry point removed; one canonical safety gate remains for J18+.
 PASS: no rootfs/release tarball built and no device touched.
