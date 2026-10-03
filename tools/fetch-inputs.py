@@ -137,10 +137,13 @@ def apk_segments(data):
 
 def alpine_key(archive, name):
     """One Alpine package-signing public key from the already SHA-pinned minirootfs."""
-    wanted = 'etc/apk/keys/' + name
+    # /etc carries only the target architecture's active keys. The same pinned alpine-keys
+    # package keeps the other architectures' public keys under /usr/share, including the x86_64
+    # key needed to authenticate the host's apk.static bootstrap. Read regular files only.
+    wanted = {'etc/apk/keys/' + name, 'usr/share/apk/keys/' + name}
     with tarfile.open(archive, 'r:*') as t:
         for member in t.getmembers():
-            if member.name.lstrip('./') != wanted or not member.isfile():
+            if member.name.lstrip('./') not in wanted or not member.isfile():
                 continue
             f = t.extractfile(member)
             return None if f is None else f.read()

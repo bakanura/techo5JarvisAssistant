@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import io
 import pathlib
+import shutil
 import subprocess
 import tarfile
 import tempfile
@@ -32,13 +33,13 @@ def gzip_tar(entries):
 
 class SupplyChainTests(unittest.TestCase):
     def setUp(self):
-        if not pathlib.Path("/usr/bin/openssl").exists():
+        if shutil.which("openssl") is None:
             self.skipTest("openssl is required for the release-input signature test")
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.dir = pathlib.Path(self.tmp.name)
 
-    def make_signed_apk(self, *, trust_public_key=True):
+    def make_signed_apk(self, *, trust_public_key=True, key_dir="etc/apk/keys"):
         private_key = self.dir / "private.pem"
         public_key = self.dir / "alpine-test.rsa.pub"
         subprocess.run(
@@ -75,7 +76,7 @@ class SupplyChainTests(unittest.TestCase):
         keyring = self.dir / "alpine-minirootfs.tar.gz"
         key_entries = []
         if trust_public_key:
-            key_entries.append(("etc/apk/keys/alpine-test.rsa.pub", public_key.read_bytes()))
+            key_entries.append((key_dir + "/alpine-test.rsa.pub", public_key.read_bytes()))
         keyring.write_bytes(gzip_tar(key_entries))
 
         checksum = "Q1" + base64.b64encode(hashlib.sha1(control_stream).digest()).decode()
@@ -87,6 +88,24 @@ class SupplyChainTests(unittest.TestCase):
         self.addCleanup(setattr, fetch_inputs, "_alpine_keys_archive", old)
         fetch_inputs._alpine_keys_archive = str(keyring)
         self.assertIsNone(fetch_inputs.apk_mismatch(str(apk), checksum))
+
+    def test_host_apk_is_accepted_from_pinned_shared_keys(self):
+        apk, keyring, checksum = self.make_signed_apk(key_dir="usr/share/apk/keys")
+        old = fetch_inputs._alpine_keys_archive
+        self.addCleanup(setattr, fetch_inputs, "_alpine_keys_archive", old)
+        fetch_inputs._alpine_keys_archive = str(keyring)
+        self.assertIsNone(fetch_inputs.apk_mismatch(str(apk), checksum))
+
+    def test_shared_key_still_requires_valid_apk_signature(self):
+        apk, keyring, _ = self.make_signed_apk(key_dir="usr/share/apk/keys")
+        old = fetch_inputs._alpine_keys_archive
+        self.addCleanup(setattr, fetch_inputs, "_alpine_keys_archive", old)
+        fetch_inputs._alpine_keys_archive = str(keyring)
+        segments = fetch_inputs.apk_segments(apk.read_bytes())
+        forged = gzip_tar([(".PKGINFO", b"pkgname = forged\n")])
+        apk.write_bytes(segments[0] + forged + segments[2])
+        checksum = "Q1" + base64.b64encode(hashlib.sha1(forged).digest()).decode()
+        self.assertIn("signature", fetch_inputs.apk_mismatch(str(apk), checksum))
 
     def test_tampered_apk_payload_is_rejected(self):
         apk, keyring, checksum = self.make_signed_apk()
