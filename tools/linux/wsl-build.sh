@@ -19,12 +19,24 @@ rm -rf "$W"
 mkdir -p "$W"
 cp -r "$STAGE" "$W/in"
 find "$W/in" -type f -name '*.sh' -exec sed -i 's/\r$//' {} +
-# --map-auto maps the whole subuid range (files owned by service users come out right); it needs
-# newuidmap from the uidmap package. Without it only root is mapped, which apk tolerates for
-# the packages here.
-map=--map-auto
-command -v newuidmap >/dev/null || map=
-unshare -Ur $map sh "$W/in/tools/mkrootfs.sh" -i "$W/in" -o "$W/rootfs.tar.gz" -w "$W" \
+# Root-only mappings cannot preserve Alpine's service users/groups (including shadow's gid 42).
+for helper in newuidmap newgidmap; do
+	command -v "$helper" >/dev/null || { echo "wsl-build: $helper is required; install uidmap" >&2; exit 1; }
+done
+unshare -Ur --map-auto sh -c '
+	echo "Rootfs build UID/GID mappings:" >&2
+	cat /proc/self/uid_map /proc/self/gid_map >&2
+	probe=$(mktemp "$1/ownership-check.XXXXXX") || exit 1
+	trap '\''rm -f "$probe"'\'' EXIT
+	chown 0:42 "$probe" && chown 65534:65534 "$probe" || {
+		echo "wsl-build: namespace cannot preserve Alpine ownership; configure subordinate UID/GID ranges" >&2
+		exit 1
+	}
+	rm -f "$probe"
+	trap - EXIT
+	shift
+	exec sh "$@"
+' sh "$W" "$W/in/tools/mkrootfs.sh" -i "$W/in" -o "$W/rootfs.tar.gz" -w "$W" \
 	-V "$VERSION" -z "$TZNAME" -a armv7 -A "$APK"
 # The path the caller copies from: a Windows path under WSL, a plain one on Linux.
 wslpath -w "$W/rootfs.tar.gz" 2>/dev/null || echo "$W/rootfs.tar.gz"

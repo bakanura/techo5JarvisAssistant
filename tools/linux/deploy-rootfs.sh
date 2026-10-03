@@ -130,7 +130,7 @@ fi
 
 if [ "$host_build" = linux ]; then
 	echo "== building the rootfs here"
-	bash "$ROOT/tools/linux/wsl-build.sh" "$STAGE" "$VERSION" "$TZ_NAME" >/dev/null
+	bash "$ROOT/tools/linux/wsl-build.sh" "$STAGE" "$VERSION" "$TZ_NAME"
 	tarball=$HOME/techo5-build/rootfs.tar.gz
 	[ -s "$tarball" ] || { echo "the build failed" >&2; exit 1; }
 	if [ -n "$KEEP" ]; then
