@@ -133,7 +133,7 @@ const view=document.createElement('div'); view.id='view'; view.style.paddingTop=
 const panel=document.createElement('ha-panel-lovelace'); view.appendChild(panel); const pr=panel.attachShadow({mode:'open'});
 const hui=document.createElement('hui-root'); pr.appendChild(hui); const hr=hui.attachShadow({mode:'open'});
 const header=document.createElement('div'); header.className='header'; header.textContent='HEADER'; hr.appendChild(header);
-const top=document.createElement('ha-top-app-bar-fixed'); pr.appendChild(top); const tr=top.attachShadow({mode:'open'});
+const topFixed=document.createElement('ha-top-app-bar-fixed'); pr.appendChild(topFixed); const tr=topFixed.attachShadow({mode:'open'});
 const topbar=document.createElement('header'); topbar.className='top-app-bar'; topbar.textContent='TOP'; tr.appendChild(topbar);
 // Production refreshes every second forever. The test executes that callback once so headless
 // Chromium can exit after validating the exact production script/CSS.
