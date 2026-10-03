@@ -112,6 +112,20 @@ class DisplayRegressionContractTests(unittest.TestCase):
                 page.write_text(
                     """<!doctype html><meta charset=utf-8><style>html,body{margin:0;width:100%;height:100%}</style>
 <body><home-assistant></home-assistant><script>
+const reportJarvisRuntimeError=(value)=>{
+ const node=document.createElement('pre');
+ node.id='jarvis-runtime-error';
+ node.textContent=String(value);
+ document.body.replaceChildren(node);
+};
+window.addEventListener('error',(event)=>{
+ reportJarvisRuntimeError(event.error && event.error.stack ? event.error.stack : event.message);
+});
+window.addEventListener('unhandledrejection',(event)=>{
+ const reason=event.reason;
+ reportJarvisRuntimeError(reason && reason.stack ? reason.stack : reason);
+});
+</script><script>
 const ha=document.querySelector('home-assistant'); const har=ha.attachShadow({mode:'open'});
 const main=document.createElement('home-assistant-main'); har.appendChild(main); const mr=main.attachShadow({mode:'open'});
 const sidebar=document.createElement('ha-sidebar'); sidebar.style.width='256px'; mr.appendChild(sidebar);
@@ -124,7 +138,6 @@ const topbar=document.createElement('header'); topbar.className='top-app-bar'; t
 // Production refreshes every second forever. The test executes that callback once so headless
 // Chromium can exit after validating the exact production script/CSS.
 window.setInterval=(fn)=>{fn(); return 1;};
-try {
 """ + script + """
 const result={
  shell:!!mr.getElementById('jarvis-show-shell'), huiStyle:!!hr.getElementById('techo5-kiosk'), topStyle:!!tr.getElementById('techo5-kiosk'),
@@ -134,9 +147,6 @@ const result={
  header:getComputedStyle(header).display, topbar:getComputedStyle(topbar).display
 };
 document.body.textContent='RESULT:'+JSON.stringify(result);
-} catch (error) {
- document.body.textContent='JARVIS-JS-ERROR:'+(error && error.stack ? error.stack : String(error));
-}
 </script>""",
                     encoding="utf-8",
                 )
@@ -147,7 +157,7 @@ document.body.textContent='RESULT:'+JSON.stringify(result);
                 )
                 self.assertEqual(proc.returncode, 0, proc.stderr[-1000:])
                 dumped = html.unescape(proc.stdout)
-                runtime_error = re.search(r"JARVIS-JS-ERROR:(.*?)</body>", dumped, re.S)
+                runtime_error = re.search(r'<pre id="jarvis-runtime-error">(.*?)</pre>', dumped, re.S)
                 self.assertIsNone(
                     runtime_error,
                     runtime_error.group(1).strip() if runtime_error else "",
