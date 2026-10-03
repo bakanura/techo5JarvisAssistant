@@ -96,7 +96,7 @@ class DisplayRegressionContractTests(unittest.TestCase):
                 encoding="utf-8",
             )
             try:
-                probe = subprocess.run([chrome, "--headless", "--no-sandbox", "--disable-gpu", "--dump-dom", smoke.as_uri()],
+                probe = subprocess.run([chrome, "--headless", "--no-sandbox", "--disable-gpu", f"--user-data-dir={td}/profile", "--dump-dom", smoke.as_uri()],
                                        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5)
             except subprocess.TimeoutExpired:
                 self.skipTest("local Chromium cannot complete a headless smoke test")
@@ -109,14 +109,13 @@ class DisplayRegressionContractTests(unittest.TestCase):
         for width, height in ((1280, 800), (960, 480)):
             with self.subTest(width=width, height=height), tempfile.TemporaryDirectory() as td:
                 page = Path(td) / "ha.html"
-                page.write_text(
-                    """<!doctype html><meta charset=utf-8><style>html,body{margin:0;width:100%;height:100%}</style>
+                fixture = """<!doctype html><meta charset=utf-8><style>html,body{margin:0;width:100%;height:100%}</style>
 <body><home-assistant></home-assistant><script>
 const reportJarvisRuntimeError=(value)=>{
  const node=document.createElement('pre');
  node.id='jarvis-runtime-error';
  node.textContent=String(value);
- document.body.replaceChildren(node);
+ parent.document.body.replaceChildren(node);
 };
 window.addEventListener('error',(event)=>{
  reportJarvisRuntimeError(event.error && event.error.stack ? event.error.stack : event.message);
@@ -140,19 +139,26 @@ const topbar=document.createElement('header'); topbar.className='top-app-bar'; t
 window.setInterval=(fn)=>{fn(); return 1;};
 """ + script + """
 const result={
+ viewportWidth:innerWidth, viewportHeight:innerHeight,
  shell:!!mr.getElementById('jarvis-show-shell'), huiStyle:!!hr.getElementById('techo5-kiosk'), topStyle:!!tr.getElementById('techo5-kiosk'),
  sidebar:getComputedStyle(sidebar).display, sidebarWidth:getComputedStyle(sidebar).width,
  viewPad:getComputedStyle(view).paddingTop, viewHeight:getComputedStyle(view).height,
  mainHeight:getComputedStyle(main).height, huiHeight:getComputedStyle(hui).height,
  header:getComputedStyle(header).display, topbar:getComputedStyle(topbar).display
 };
-document.body.textContent='RESULT:'+JSON.stringify(result);
-</script>""",
+parent.document.body.textContent='RESULT:'+JSON.stringify(result);
+</script>"""
+                # Unified headless Chrome's --window-size includes browser chrome, so it does not
+                # set the page viewport. A fixed-size frame gives the exact native CSS viewport
+                # independently of the host window, like Dashcast's device-metrics override.
+                page.write_text(
+                    f'<!doctype html><body><iframe style="border:0;width:{width}px;height:{height}px" '
+                    f'srcdoc="{html.escape(fixture, quote=True)}"></iframe>',
                     encoding="utf-8",
                 )
                 proc = subprocess.run(
                     [chrome, "--headless", "--no-sandbox", "--disable-gpu", f"--window-size={width},{height}",
-                     "--virtual-time-budget=1500", "--dump-dom", page.as_uri()],
+                     f"--user-data-dir={td}/profile", "--virtual-time-budget=1500", "--dump-dom", page.as_uri()],
                     text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30,
                 )
                 self.assertEqual(proc.returncode, 0, proc.stderr[-1000:])
@@ -165,6 +171,8 @@ document.body.textContent='RESULT:'+JSON.stringify(result);
                 match = re.search(r"RESULT:(\{.*?\})", dumped)
                 self.assertIsNotNone(match, proc.stdout[-2000:])
                 result = json.loads(match.group(1))
+                self.assertEqual(result["viewportWidth"], width)
+                self.assertEqual(result["viewportHeight"], height)
                 self.assertTrue(result["shell"])
                 self.assertTrue(result["huiStyle"])
                 self.assertTrue(result["topStyle"])
