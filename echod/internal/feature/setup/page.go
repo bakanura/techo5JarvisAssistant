@@ -404,12 +404,16 @@ func privacySection(w http.ResponseWriter, token string) {
 	  the device for 15 minutes (General), which sets a new key.</p></fieldset>`)
 	fmt.Fprint(w, `<fieldset><legend>Microphone remote unmute</legend><form method="post" action="/setup/save">`)
 	hidden(w, token, "remote-unmute", "privacy")
+	checked := ""
+	if mic.AllowRemoteUnmute {
+		checked = " checked"
+	}
 	fmt.Fprintf(w, `<p><label><input type="checkbox" name="allow" value="yes"%s style="width:auto">
 	 Allow trusted Home Assistant to clear its software microphone mute</label></p>
 	 <p class="note">Off by default. Unmute is accepted only over the encrypted native Home Assistant
 	 API. This permission cannot release the physical privacy latch: when the red hardware mute is active,
 	 only the button on the device can make the microphones live again.</p>
-	 <p><button type="submit">Save microphone permission</button></p></form></fieldset>`, checked(mic.AllowRemoteUnmute))
+	 <p><button type="submit">Save microphone permission</button></p></form></fieldset>`, checked)
 }
 
 // wifiSection is the networks: what the device is on, what it remembers, and how to add another.
