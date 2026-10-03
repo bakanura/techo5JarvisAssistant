@@ -1,17 +1,37 @@
 package remind
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
 
 	"github.com/HuskerMinion/techo5/echod/internal/component"
 	"github.com/HuskerMinion/techo5/echod/internal/config"
+	"github.com/HuskerMinion/techo5/echod/internal/lib/hass"
 )
 
 // Home Assistant 2026.9 refuses preannounce sent as the text "false", so the label went unspoken; it
 // goes as a template now, which renders to a real false (#58).
 func TestSayingALabelSendsPreannounceAsATemplate(t *testing.T) {
 	config.Use(filepath.Join(t.TempDir(), "state.json"))
+	// Say uses HA only when access is configured. Keep that route and its entity lookup local.
+	oldPath := hass.Path
+	hass.Path = filepath.Join(t.TempDir(), "hass.json")
+	t.Cleanup(func() { hass.Path = oldPath })
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/states" || r.Header.Get("Authorization") != "Bearer fixture-token" {
+			t.Errorf("unexpected Home Assistant entity lookup: %s", r.URL.Path)
+			http.Error(w, "unexpected request", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	t.Cleanup(server.Close)
+	if err := hass.Get().Set(server.URL, "fixture-token"); err != nil {
+		t.Fatal(err)
+	}
 	var got []component.Call
 	stop := component.CallService.Listen(func(c component.Call) { got = append(got, c) })
 	defer stop()

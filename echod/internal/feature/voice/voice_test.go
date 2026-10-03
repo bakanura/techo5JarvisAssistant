@@ -16,14 +16,17 @@ import (
 // is configured for config.DefaultWakeID; without that model it falls back to the shipped model, and
 // without either to whatever is installed.
 func TestWakeWordsPreselectsTheDefault(t *testing.T) {
+	config.Use(filepath.Join(t.TempDir(), "state.json"))
 	for name, tc := range map[string]struct {
 		installed []string
 		want      string
 	}{
-		"the configured word is installed": {[]string{"hey_jarvis", config.DefaultWakeID, wake.DefaultModel}, config.DefaultWakeID},
-		"the configured word sorts last":   {[]string{wake.DefaultModel, "hey_jarvis", config.DefaultWakeID}, config.DefaultWakeID},
-		"only the shipped model":           {[]string{"hey_jarvis", wake.DefaultModel}, wake.DefaultModel},
-		"neither is installed":             {[]string{"hey_jarvis"}, "hey_jarvis"},
+		"the configured word is installed": {[]string{"custom_wake", config.DefaultWakeID, wake.DefaultModel}, config.DefaultWakeID},
+		"the configured word sorts last":   {[]string{wake.DefaultModel, "custom_wake", config.DefaultWakeID}, config.DefaultWakeID},
+		"only the shipped model":           {[]string{"custom_wake", wake.DefaultModel}, wake.DefaultModel},
+		"nabu precedes recovery alexa":     {[]string{"alexa", wake.DefaultModel}, wake.DefaultModel},
+		"only the recovery model":          {[]string{"custom_wake", "alexa"}, "alexa"},
+		"neither is installed":             {[]string{"custom_wake"}, "custom_wake"},
 		"nothing installed":                {nil, ""},
 	} {
 		models := make([]wake.Model, 0, len(tc.installed))

@@ -16,6 +16,9 @@ import (
 // tap on the strip's song has brought the page back.
 func TestWhenTheMusicGoesInTheStrip(t *testing.T) {
 	config.Use(filepath.Join(t.TempDir(), "state.json"))
+	if err := config.Set().Screen().MusicStrip(0); err != nil {
+		t.Fatal(err)
+	}
 	d := &Display{}
 	now := time.Unix(1_790_000_000, 0)
 	song := home.Radio{Title: "Africa", Now: "Music Assistant"}

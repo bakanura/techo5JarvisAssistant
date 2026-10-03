@@ -11,6 +11,7 @@ import (
 // on the screen rather than listening again; anything else may still be followed up.
 func TestPageAskedSkipsListeningAgain(t *testing.T) {
 	config.Use(filepath.Join(t.TempDir(), "state.json"))
+	c := &conversation{be: ha{}}
 	for heard, want := range map[string]bool{
 		"go home":                     true,
 		"show the weather":            true,
@@ -18,7 +19,7 @@ func TestPageAskedSkipsListeningAgain(t *testing.T) {
 		"show the front door camera":  true,
 		"set a timer for ten minutes": false,
 	} {
-		if got := pageAsked(heard); got != want {
+		if got := c.pageAsked(heard); got != want {
 			t.Errorf("with Home Assistant, %q: %v, want %v", heard, got, want)
 		}
 	}
@@ -26,11 +27,12 @@ func TestPageAskedSkipsListeningAgain(t *testing.T) {
 	if err := config.Set().Brain().Set(config.Brain{Mode: config.BrainDirect, STT: "x:1", TTS: "x:1", LLM: "http://x"}); err != nil {
 		t.Fatal(err)
 	}
-	if !pageAsked("go home") {
+	c.be = &direct{}
+	if !c.pageAsked("go home") {
 		t.Error("going home is followed up in direct mode")
 	}
 	// Direct mode leaves the weather to the assistant, which says itself when it shows a page.
-	if pageAsked("what's the weather tomorrow") {
+	if c.pageAsked("what's the weather tomorrow") {
 		t.Error("a weather question is kept from a follow-up in direct mode")
 	}
 }

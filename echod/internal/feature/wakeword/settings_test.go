@@ -19,6 +19,10 @@ func TestQuietHoursTakeTheToneAway(t *testing.T) {
 	if err := config.Set().Wake(0).Tone(config.ToneChirp); err != nil {
 		t.Fatal(err)
 	}
+	// Exercise quiet hours with both tones enabled; Jarvis follow-ups are silent by default.
+	if err := config.Set().Wake(0).FollowUpTone(""); err != nil {
+		t.Fatal(err)
+	}
 	if !Tones(0, false) || !Tones(0, true) {
 		t.Fatal("a slot with a tone set makes no sound outside quiet hours")
 	}
@@ -62,11 +66,17 @@ func TestAFollowUpCanHaveAToneOfItsOwn(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Nobody has chosen, which is where a device saved before this existed is: a follow-up sounds like
-	// the wake word that started the conversation.
+	// Fresh Jarvis settings keep follow-ups silent while preserving the wake word's tone.
+	if !Tones(0, false) || Tones(0, true) || ChimeLength(0, true) != 0 {
+		t.Fatal("fresh settings must chime only for the wake word")
+	}
+	// Explicit inheritance, as on an older device with no follow-up override, sounds like the wake.
+	if err := config.Set().Wake(0).FollowUpTone(""); err != nil {
+		t.Fatal(err)
+	}
 	wake := ChimeLength(0, false)
 	if !Tones(0, true) {
-		t.Fatal("a follow-up does not chime by default")
+		t.Fatal("a follow-up with an empty override does not inherit the wake tone")
 	}
 	if d := ChimeLength(0, true); d != wake {
 		t.Errorf("a follow-up with no tone of its own lasted %s, the wake word's %s", d, wake)
