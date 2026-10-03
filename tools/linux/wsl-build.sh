@@ -23,13 +23,13 @@ find "$W/in" -type f -name '*.sh' -exec sed -i 's/\r$//' {} +
 for helper in newuidmap newgidmap; do
 	command -v "$helper" >/dev/null || { echo "wsl-build: $helper is required; install uidmap" >&2; exit 1; }
 done
-unshare -Ur --map-auto sh -c '
+"${JARVIS_ROOTFS_UNSHARE:-unshare}" -Ur --map-auto sh -c '
 	echo "Rootfs build UID/GID mappings:" >&2
 	cat /proc/self/uid_map /proc/self/gid_map >&2
 	probe=$(mktemp "$1/ownership-check.XXXXXX") || exit 1
 	trap '\''rm -f "$probe"'\'' EXIT
 	chown 0:42 "$probe" && chown 65534:65534 "$probe" || {
-		echo "wsl-build: namespace cannot preserve Alpine ownership; configure subordinate UID/GID ranges" >&2
+		echo "wsl-build: namespace cannot preserve Alpine ownership; check subordinate UID/GID ranges and host AppArmor userns policy" >&2
 		exit 1
 	}
 	rm -f "$probe"
