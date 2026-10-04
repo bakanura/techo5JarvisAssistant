@@ -85,6 +85,18 @@ class RecoveryTests(unittest.TestCase):
         self.assertFalse(session.twrp_flashed)
         fastboot.assert_not_called()
 
+    def test_recovery_identity_requires_one_matching_root_twrp(self):
+        identity = recovery.identify_recovery_show("crown", run=self.adb_runner(devices=("ADB-CROWN",)))
+        self.assertEqual(identity.serial, "ADB-CROWN")
+        self.assertEqual(identity.product, "CROWN")
+        self.assertTrue(identity.unlocked)
+
+        with self.assertRaisesRegex(recovery.RecoveryError, "no TWRP"):
+            recovery.identify_recovery_show("crown", run=self.adb_runner(devices=()))
+
+        with self.assertRaisesRegex(recovery.RecoveryError, "not crown"):
+            recovery.identify_recovery_show("crown", run=self.adb_runner(product="checkers"))
+
     def test_unlocked_fastboot_flashes_only_recovery_and_swdl(self):
         with tempfile.TemporaryDirectory() as td:
             amonet = pathlib.Path(td) / "amonet-crown-v2.0.1"

@@ -13,7 +13,7 @@ import subprocess
 import time
 from typing import Callable, Protocol
 
-from jarvis_crown.boards import profile_for_product
+from jarvis_crown.boards import profile_for_board, profile_for_product
 from jarvis_crown.device_gate import DeviceIdentity, SUPPORTED_PRODUCTS, identify_crown, identify_show
 from jarvis_crown.timing import (COMMAND_TIMEOUT_SECONDS, POLL_SECONDS, TWRP_REENUM_TIMEOUT_SECONDS)
 
@@ -144,6 +144,26 @@ def verify_twrp_board(serial: str, board: str, *, run: Callable = subprocess.run
 def verify_twrp_crown(serial: str, *, run: Callable = subprocess.run) -> None:
     """Compatibility wrapper for Crown tests/callers."""
     verify_twrp_board(serial, "crown", run=run)
+
+
+def identify_recovery_show(expected_board: str, *, run: Callable = subprocess.run) -> DeviceIdentity:
+    """Prove one already-running TWRP instance belongs to the requested board.
+
+    This is only suitable for resuming the install flow after it already reached
+    recovery. The caller must supply the expected board; recovery properties are
+    never used to auto-select a destructive board profile.
+    """
+    profile = profile_for_board(expected_board)
+    serial = _single_recovery(run=run)
+    if serial is None:
+        raise RecoveryError("no TWRP recovery device detected")
+    verify_twrp_board(serial, profile.board, run=run)
+    return DeviceIdentity(
+        serial=serial,
+        product=profile.fastboot_product,
+        unlocked=True,
+        lk_build_desc=None,
+    )
 
 
 def _pinned_twrp(amonet_dir: Path, board: str, expected_sha256: str | None = None) -> Path:

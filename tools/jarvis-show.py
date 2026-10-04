@@ -14,6 +14,7 @@ from jarvis_crown.boards import profile_for_board, profile_for_product  # noqa: 
 from jarvis_crown.device_gate import DeviceGateError, identify_show  # noqa: E402
 from jarvis_crown.flow import FlowError, InstallInputs, run_install_flow  # noqa: E402
 from jarvis_crown.preflight import preflight_ok, print_checks, run_preflight  # noqa: E402
+from jarvis_crown.recovery import RecoveryError, identify_recovery_show  # noqa: E402
 from jarvis_crown.unlock import UnlockError, unlock_show  # noqa: E402
 
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -67,18 +68,31 @@ def _validate_optional_sha(label: str, value: str | None) -> str | None:
     return normalized
 
 
-def _print_identity(identity, profile) -> None:
+def _print_identity(identity, profile, source: str) -> None:
     print(f"PASS: detected {profile.model}")
     print(f"PASS: product={identity.product}")
-    print(f"PASS: fastboot serial={identity.serial}")
+    print(f"PASS: {source} serial={identity.serial}")
     print(f"PASS: unlock_status={'true' if identity.unlocked else 'false'}")
 
 
-def _detect_profile(board: str | None):
-    identity = identify_show(expected_board=board)
+def _detect_profile(board: str | None, *, allow_recovery: bool = False):
+    try:
+        identity = identify_show(expected_board=board)
+        source = "fastboot"
+    except DeviceGateError as fastboot_error:
+        if not allow_recovery or board is None:
+            raise
+        try:
+            identity = identify_recovery_show(board)
+        except RecoveryError as recovery_error:
+            raise DeviceGateError(
+                f"fastboot identity unavailable ({fastboot_error}); "
+                f"recovery identity unavailable ({recovery_error})"
+            ) from recovery_error
+        source = "recovery"
     profile = profile_for_product(identity.product)
-    _print_identity(identity, profile)
-    return identity, profile
+    _print_identity(identity, profile, source)
+    return identity, profile, source
 
 
 def main() -> int:
@@ -101,9 +115,8 @@ def main() -> int:
             cmd += ["--passphrase-file", str(args.wifi_passphrase_file.resolve())]
         return subprocess.call(cmd)
 
-    # Identity is always established with read-only fastboot queries before a live-device command
-    # chooses board-specific assets. --board, when supplied, is only a cross-check and can never make
-    # the installer treat a different product as that board.
+    # identify/unlock require fastboot. install can resume from a verified TWRP
+    # session only when an explicit board cross-check is supplied.
     if args.command == "identify":
         try:
             _detect_profile(args.board)
@@ -119,7 +132,9 @@ def main() -> int:
         profile = profile_for_board(args.board)
     else:
         try:
-            identity, profile = _detect_profile(args.board)
+            identity, profile, identity_source = _detect_profile(
+                args.board, allow_recovery=args.command == "install"
+            )
         except DeviceGateError as exc:
             print(f"FAIL: device identity gate: {exc}", file=sys.stderr)
             return 2
@@ -192,6 +207,7 @@ def main() -> int:
                 confirm_unlock=confirm_unlock,
                 confirm_install=confirm_install,
                 progress=lambda stage: print(f"INFO: stage={stage}"),
+                initial_identity=identity if identity_source == "recovery" else None,
             )
         except (FlowError, DeviceGateError, UnlockError, RuntimeError) as exc:
             print(f"FAIL: install stopped: {exc}", file=sys.stderr)

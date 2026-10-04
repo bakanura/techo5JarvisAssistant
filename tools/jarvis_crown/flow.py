@@ -115,6 +115,7 @@ def run_install_flow(
     confirm_install: Callable[[BoardProfile], str],
     deps: FlowDeps | None = None,
     progress: Callable[[str], None] | None = None,
+    initial_identity: DeviceIdentity | None = None,
 ) -> FlowResult:
     deps = deps or FlowDeps()
     stage_lineage = deps.stage_lineage or execute_lineage_stage
@@ -134,10 +135,15 @@ def run_install_flow(
         _raise_preflight(checks)
 
     say("identify")
-    identity = deps.identify(expected_board=profile.board)
+    identity = initial_identity or deps.identify(expected_board=profile.board)
+    if identity.product != profile.fastboot_product:
+        raise FlowError(
+            f"device identity product {identity.product!r} does not match expected "
+            f"{profile.fastboot_product!r}"
+        )
     if inputs.expected_fastboot_serial is not None and identity.serial != inputs.expected_fastboot_serial:
         raise FlowError(
-            "fastboot device changed after auto-detection: "
+            "device changed after auto-detection: "
             f"expected {inputs.expected_fastboot_serial}, found {identity.serial}; stopping before writes"
         )
 

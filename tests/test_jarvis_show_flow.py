@@ -126,6 +126,20 @@ class FlowAcceptanceTests(unittest.TestCase):
             self.assertEqual(h.plan_kwargs["board"], "crown")
             self.assertEqual(h.stage_serial, "ADB123")
 
+    def test_verified_recovery_identity_avoids_second_fastboot_query(self):
+        with tempfile.TemporaryDirectory() as td_s:
+            h = FlowHarness(board="crown", locked=False)
+            result = run_install_flow(
+                inputs(pathlib.Path(td_s), "crown"),
+                confirm_unlock=lambda _p: self.fail("recovery identity is already unlocked"),
+                confirm_install=lambda p: p.install_confirmation,
+                deps=h.deps(),
+                initial_identity=h.identity,
+            )
+            self.assertEqual(result.identity, h.identity)
+            self.assertNotIn("identify", h.calls)
+            self.assertEqual(h.calls[0], "preflight")
+
     def test_locked_crown_unlocks_before_recovery(self):
         with tempfile.TemporaryDirectory() as td_s:
             h = FlowHarness(board="crown", locked=True)
