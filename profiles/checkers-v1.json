@@ -4,11 +4,21 @@
   "board": "checkers",
   "fastboot_product": "CHECKERS",
   "model": "Echo Show 5 1st gen / H23K37",
-  "display": {"width": 960, "height": 480},
+  "display": {
+    "width": 960,
+    "height": 480
+  },
   "install_confirmation": "ERASE LINEAGE INSTALL JARVIS CHECKERS",
   "unlock_confirmation": "UNLOCK CHECKERS",
   "destructive_assets": {
-    "status": "blocked-until-pinned",
-    "reason": "No trusted Checkers Amonet/TWRP/boot byte set was supplied in the project archive."
+    "status": "boot-pinned",
+    "boot": {
+      "source": "HuskerMinion/techo5 v1.0.1 techo5-boot-checkers-v1.0.1.img",
+      "sha256": "6fd696dce2592d2237a432e23ed7c032f1643bd1fe475d3094eccd9f7d2079b2",
+      "kernel": "4.9.337-g8d928c5176cc",
+      "trust": "listed in the v1.0.1 manifest signed by the upstream release key"
+    },
+    "twrp": "unpinned: only an already-installed TWRP that reports board checkers is used; flashing TWRP is refused",
+    "amonet": "unpinned: unlocking from stock is refused"
   }
 }

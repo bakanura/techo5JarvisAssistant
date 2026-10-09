@@ -270,7 +270,7 @@ class MultiBoardTests(unittest.TestCase):
             rootfs = make_shared_rootfs(td)
             boot = td / "checkers-boot.img"; boot.write_bytes(b"test-checkers-boot")
             backup = make_backup(td, product="CHECKERS", serial="CHK-ADB")
-            with self.assertRaisesRegex(InstallError, "not been cryptographically pinned"):
+            with self.assertRaisesRegex(InstallError, "not the pinned known-good image"):
                 make_install_plan(
                     repo_root=ROOT, adb_serial="CHK-ADB", name="Kitchen",
                     backup_root=backup, work_dir=td / "work", boot_image=boot,
