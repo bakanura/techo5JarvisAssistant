@@ -14,9 +14,11 @@ import (
 	"io/fs"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	esphome "github.com/ygelfand/go-esphome-device"
@@ -61,6 +63,7 @@ func (z *Zone) Handle(ctx context.Context, c *esphome.Conn, msg proto.Message) e
 			slog.Debug("asking home assistant for the time", "err", err)
 		}
 	case *api.GetTimeResponse:
+		setClock(m.GetEpochSeconds())
 		if z.SetHere() {
 			return nil // chosen on the device; Home Assistant does not override that
 		}
@@ -69,6 +72,39 @@ func (z *Zone) Handle(ctx context.Context, c *esphome.Conn, msg proto.Message) e
 		}
 	}
 	return nil
+}
+
+// The clock, when nothing else has set it. The device sets its clock by NTP, but a network that lets
+// it reach Home Assistant and nothing on the internet leaves it in 1970 (or wherever the RTC was), and
+// then nothing that checks a certificate works: the update check above all, which waits for a clock
+// and would wait forever. Home Assistant's answer carries its own time, which is right to the second
+// and plenty for a certificate. It is used only while the clock is plainly unset, so it never fights
+// NTP over a few hundred milliseconds.
+var (
+	clockUnset  = func() bool { return time.Now().Year() < 2025 }
+	setSysClock = func(t time.Time) error {
+		tv := syscall.NsecToTimeval(t.UnixNano())
+		return syscall.Settimeofday(&tv)
+	}
+	// saveRTC writes the clock to the RTC, so the next boot starts from a date that is at least close.
+	saveRTC = func() { _ = exec.Command("hwclock", "-w").Run() }
+)
+
+// setClock sets the clock from Home Assistant's time when the clock is unset and that time is sane.
+func setClock(epoch uint32) {
+	if epoch == 0 || !clockUnset() {
+		return
+	}
+	t := time.Unix(int64(epoch), 0)
+	if t.Year() < 2025 {
+		return // Home Assistant's clock is no better than ours
+	}
+	if err := setSysClock(t); err != nil {
+		slog.Warn("setting the clock from home assistant failed", "err", err)
+		return
+	}
+	saveRTC()
+	slog.Info("clock set from home assistant", "now", t.UTC().Format(time.RFC3339))
 }
 
 // Current is the zone in force, from userdata; empty when none has been set.

@@ -345,11 +345,21 @@ t5_wifi_prefer5() {
 	echo $((now + 1800)) > /run/techo5/prefer5-after
 }
 
+# t5_ntp_peers: ntpd's -p arguments: the NTP server, and the default gateway.
+# A network that keeps devices off the internet (an IoT VLAN) often still lets
+# them ask the router for the time; one that does not answer costs nothing.
+t5_ntp_peers() {
+	echo "-p ${NTP_SERVER:-pool.ntp.org}"
+	gw=$(ip route show default 2>/dev/null | awk '/^default/ {print $3; exit}')
+	[ -n "$gw" ] && echo "-p $gw"
+}
+
 # t5_ntp: set the clock once from NTP (the RTC is not trusted), then write it
 # to the RTC so the next boot starts closer. Bounded: an unreachable server
 # must not hold the boot.
 t5_ntp() {
-	timeout -s KILL ${NTP_WAIT:-40} ntpd -n -q -p "${NTP_SERVER:-pool.ntp.org}" > /tmp/ntpd.log 2>&1 || { log "clock: ntp failed"; return 1; }
+	# shellcheck disable=SC2046 # the peers are separate words on purpose
+	timeout -s KILL ${NTP_WAIT:-40} ntpd -n -q $(t5_ntp_peers) > /tmp/ntpd.log 2>&1 || { log "clock: ntp failed"; return 1; }
 	hwclock -w 2>/dev/null
 	log "clock: $(date)"
 }

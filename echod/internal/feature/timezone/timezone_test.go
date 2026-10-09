@@ -138,3 +138,30 @@ func restartAsked() string {
 		return ""
 	}
 }
+
+func TestClockSetFromHomeAssistantOnlyWhileUnset(t *testing.T) {
+	oldUnset, oldSet, oldRTC := clockUnset, setSysClock, saveRTC
+	t.Cleanup(func() { clockUnset, setSysClock, saveRTC = oldUnset, oldSet, oldRTC })
+	var got []time.Time
+	setSysClock = func(at time.Time) error { got = append(got, at); return nil }
+	saveRTC = func() {}
+
+	unset := true
+	clockUnset = func() bool { return unset }
+	setClock(0)                                                          // an answer without a time
+	setClock(uint32(time.Date(2010, 1, 1, 0, 0, 0, 0, time.UTC).Unix())) // no better than ours
+	if len(got) != 0 {
+		t.Fatalf("clock set from %v", got)
+	}
+	want := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+	setClock(uint32(want.Unix()))
+	if len(got) != 1 || !got[0].Equal(want) {
+		t.Fatalf("clock set to %v, want %v", got, want)
+	}
+
+	unset = false
+	setClock(uint32(want.Add(time.Hour).Unix()))
+	if len(got) != 1 {
+		t.Fatalf("a set clock was changed: %v", got)
+	}
+}

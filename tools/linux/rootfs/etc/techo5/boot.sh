@@ -133,7 +133,7 @@ t5_wifi_up $WIFI_MODULE $LOGDIR/wpa_supplicant.conf
 # SSH is echod's (feature/security): off unless switched on, and only with a key on userdata.
 if [ -n "$IP" ]; then
 	t5_ntp
-	ntpd -p "${NTP_SERVER:-pool.ntp.org}" > /dev/null 2>&1
+	ntpd $(t5_ntp_peers) > /dev/null 2>&1
 fi
 
 # --- Bluetooth (only on a kernel that has it; see t5_bt_up).
@@ -161,7 +161,7 @@ t5_bt_up "$BT_MODULE" /var/log
 			# and the update check, like anything that checks a certificate, needs it right.
 			if ! pidof ntpd >/dev/null; then
 				t5_ntp
-				ntpd -p "${NTP_SERVER:-pool.ntp.org}" > /dev/null 2>&1
+				ntpd $(t5_ntp_peers) > /dev/null 2>&1
 			fi
 			t5_wifi_prefer5
 			continue
