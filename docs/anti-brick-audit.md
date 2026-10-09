@@ -28,9 +28,9 @@ Jarvis Show supports exactly:
 
 `CRONOS` is explicitly refused as a newer Show 5 generation, and every unknown product is refused before writes. Automatic board detection is the source of truth; an optional `--board` argument can only narrow/reject the detected board, never override it. The initially detected fastboot serial is pinned across the destructive flow.
 
-## PASS — checkers flashes only the pinned boot image, never guessed assets
+## PASS — checkers flashes only pinned boot and TWRP images, never guessed assets
 
-The Checkers boot image is pinned to upstream TECHO5 v1.0.1 `techo5-boot-checkers-v1.0.1.img` (`6fd696dce2592d2237a432e23ed7c032f1643bd1fe475d3094eccd9f7d2079b2`). That hash is listed in the v1.0.1 `manifest.json`, whose signature checks against the upstream release key, and the image's kernel is `4.9.337-g8d928c5176cc`, the ABI the vendor-module gate requires. Checkers TWRP and Amonet stay unpinned: the installer uses only a TWRP that is already on the unit and reports board `checkers`, and it refuses to flash TWRP or unlock a stock unit.
+The Checkers boot image is pinned to upstream TECHO5 v1.0.1 `techo5-boot-checkers-v1.0.1.img` (`6fd696dce2592d2237a432e23ed7c032f1643bd1fe475d3094eccd9f7d2079b2`). That hash is listed in the v1.0.1 `manifest.json`, whose signature checks against the upstream release key, and the image's kernel is `4.9.337-g8d928c5176cc`, the ABI the vendor-module gate requires. Checkers TWRP is pinned to `bin/twrp.img` of the reviewed `amonet-checkers-v2.0.1.zip` (`dcc75bb651894c343039d45af73c4d900594762f6f55187c1ebdaf12d0ae59f5`), the image a unit runs in recovery after `jarvis-show.py amonet-upgrade`. The Amonet unlock bytes for checkers stay unpinned, so unlocking a stock unit is still refused; a unit that is already unlocked is moved to 2.x with the upgrade command instead.
 
 ## PASS — Crown destructive assets are pinned
 
