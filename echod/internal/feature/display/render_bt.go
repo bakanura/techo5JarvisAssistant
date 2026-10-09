@@ -3,7 +3,7 @@
 package display
 
 import (
-	"fmt"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"image"
 	"image/draw"
 )
@@ -47,7 +47,7 @@ func (r *renderer) pairingPage(s scene) {
 	if len(s.bt.Devices) == 0 {
 		// A dot that walks while the scan runs, so a still list reads as searching rather than stuck.
 		n := int(s.now.UnixMilli() / 400 % 4)
-		r.text(r.small, fmt.Sprintf("Searching%s", "..."[:n]), r.margin, btRowTop+38, dim)
+		r.text(r.small, i18n.Sprintf("Searching%s", "..."[:n]), r.margin, btRowTop+38, dim)
 	}
 	for i, d := range s.bt.Devices {
 		if i >= btRows {

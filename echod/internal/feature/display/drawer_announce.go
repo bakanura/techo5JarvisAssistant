@@ -4,7 +4,7 @@ package display
 
 import (
 	"context"
-	"fmt"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 
 	"github.com/HuskerMinion/techo5/echod/internal/feature/announce"
 )
@@ -38,7 +38,7 @@ func announceRows(s scene) ([]settingRow, string) {
 	// in while they are working out why nothing arrives.
 	sub := "No other devices found yet"
 	if s.announcePeers > 0 {
-		sub = fmt.Sprintf("Heard on %s", devicesText(s.announcePeers))
+		sub = i18n.Sprintf("Heard on %s", devicesText(s.announcePeers))
 	}
 	return []settingRow{{
 		id:     "announce:0",

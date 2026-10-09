@@ -4,6 +4,7 @@ package display
 
 import (
 	"fmt"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"image"
 	"image/color"
 	"math"
@@ -34,8 +35,8 @@ var (
 	colBolt  = color.RGBA{255, 214, 64, 255}
 )
 
-// conditionWords is home.ConditionWords, by its old name here.
-func conditionWords(c string) string { return home.ConditionWords(c) }
+// conditionWords is home.ConditionWords in the screen's language.
+func conditionWords(c string) string { return i18n.T(home.ConditionWords(c)) }
 
 // weatherLine is the reading under the clock: "72° Partly cloudy", or nothing without one.
 func weatherLine(w home.Weather) string {
@@ -105,9 +106,9 @@ func (r *roundRenderer) weatherFace(s roundScene) (bolt image.Rectangle) {
 	}
 	r.centered(r.body, conditionWords(cond), 232, colText)
 	if len(days) > 0 {
-		today := fmt.Sprintf("High %.0f°  Low %.0f°", days[0].High, days[0].Low)
+		today := i18n.Sprintf("High %.0f°  Low %.0f°", days[0].High, days[0].Low)
 		if days[0].Rain > 0 {
-			today += fmt.Sprintf("  Rain %d%%", days[0].Rain)
+			today += i18n.Sprintf("  Rain %d%%", days[0].Rain)
 		}
 		r.centered(r.small, today, 266, colDim)
 	}
@@ -125,7 +126,7 @@ func (r *roundRenderer) weatherFace(s roundScene) (bolt image.Rectangle) {
 	for i := 0; i < cols; i++ {
 		d := next[i]
 		x := center + (2*i-(cols-1))*44
-		name := d.When.Format("Mon")
+		name := i18n.Date(d.When, "Mon")
 		if d.When.IsZero() {
 			name = fmt.Sprintf("+%d", i+1)
 		}
@@ -227,13 +228,13 @@ type forecastDays = []hass.Day
 // which is also the reading somebody glances at, rather than the words for it.
 func (r *roundRenderer) dateWeather(w home.Weather, when time.Time, baseline int) {
 	if w.Temp == "" {
-		r.centered(r.small, when.Format("Monday, January 2"), baseline, colDim)
+		r.centered(r.small, i18n.Date(when, "Monday, January 2"), baseline, colDim)
 		return
 	}
 	// Sharing the line costs the long day and month: written out, the two together reach the bezel,
 	// and a round screen has less room the further from the middle a line sits.
 	const u, gap = 11.0, 8
-	line := w.Temp + "  ·  " + when.Format("Mon, Jan 2")
+	line := w.Temp + "  ·  " + i18n.Date(when, "Mon, Jan 2")
 	tw := r.width(r.small, line)
 	icon := 0
 	if conditionWords(w.Condition) != "" {

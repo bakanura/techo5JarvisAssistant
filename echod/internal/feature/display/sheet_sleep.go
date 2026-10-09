@@ -3,7 +3,7 @@
 package display
 
 import (
-	"fmt"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"time"
 
 	"github.com/HuskerMinion/techo5/echod/internal/config"
@@ -32,11 +32,11 @@ func sleepLabel(d time.Duration) string {
 	case d == time.Hour:
 		return "1 hour"
 	case d > time.Hour && d%time.Hour == 0:
-		return fmt.Sprintf("%d hours", int(d/time.Hour))
+		return i18n.Sprintf("%d hours", int(d/time.Hour))
 	case d > time.Hour:
-		return fmt.Sprintf("1 hour %d minutes", int(d%time.Hour/time.Minute))
+		return i18n.Sprintf("1 hour %d minutes", int(d%time.Hour/time.Minute))
 	}
-	return fmt.Sprintf("%d minutes", int(d/time.Minute))
+	return i18n.Sprintf("%d minutes", int(d/time.Minute))
 }
 
 // sleepIndex is the choice in force: the shortest one still longer than what is left, since the row
@@ -61,9 +61,9 @@ func sleepValue() string {
 		return "Off"
 	}
 	if left >= time.Hour {
-		return fmt.Sprintf("%d:%02d left", int(left/time.Hour), int(left%time.Hour/time.Minute))
+		return i18n.Sprintf("%d:%02d left", int(left/time.Hour), int(left%time.Hour/time.Minute))
 	}
-	return fmt.Sprintf("%d min left", int(left/time.Minute)+1)
+	return i18n.Sprintf("%d min left", int(left/time.Minute)+1)
 }
 
 func sleepSub() string {
@@ -90,7 +90,7 @@ func toneValue(db float64) string {
 	if db == 0 {
 		return "Flat"
 	}
-	return fmt.Sprintf("%+.0f dB", db)
+	return i18n.Sprintf("%+.0f dB", db)
 }
 
 // toneSub says what the pair of them are for, on the first of the two rows.

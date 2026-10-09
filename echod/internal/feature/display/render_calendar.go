@@ -4,6 +4,7 @@ package display
 
 import (
 	"fmt"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"image"
 	"image/color"
 	"image/draw"
@@ -112,7 +113,7 @@ func (r *renderer) calButton(label string, right int, kind calHitKind) int {
 
 // calendarMonth is the month as a grid, Sunday first, each day with as much of its events as fits.
 func (r *renderer) calendarMonth(v calendarView) {
-	r.text(r.title, v.month.Format("January 2006"), r.margin, r.margin+r.s(34), cream)
+	r.text(r.title, i18n.Date(v.month, "January 2006"), r.margin, r.margin+r.s(34), cream)
 	x := r.calButton("Done", r.w-r.margin, calDone)
 	if v.month.Year() != v.now.Year() || v.month.Month() != v.now.Month() {
 		x = r.calButton("Today", x, calToday)
@@ -200,7 +201,7 @@ func (r *renderer) calendarMonth(v calendarView) {
 func (r *renderer) calendarDay(v calendarView) {
 	// Done here goes back to the month; the month's own Done puts the calendar away.
 	x := r.calButton("Done", r.w-r.margin, calBack)
-	r.text(r.title, clipText(r, r.title, v.day.Format("Monday, January 2"), x-r.margin-r.s(10)), r.margin, r.margin+r.s(34), cream)
+	r.text(r.title, clipText(r, r.title, i18n.Date(v.day, "Monday, January 2"), x-r.margin-r.s(10)), r.margin, r.margin+r.s(34), cream)
 
 	evs := eventsOn(v.events, v.day)
 	top := r.margin + r.s(74)
@@ -250,17 +251,17 @@ func eventWhen(e hass.Event, day time.Time) string {
 		if sameDay(e.Start, last) || !last.After(e.Start) {
 			return "All day"
 		}
-		return "All day, " + e.Start.Format("Jan 2") + " – " + last.Format("Jan 2")
+		return "All day, " + i18n.Date(e.Start, "Jan 2") + " – " + i18n.Date(last, "Jan 2")
 	}
 	if !e.End.After(e.Start) {
 		return clockText(e.Start)
 	}
 	from, to := clockText(e.Start), clockText(e.End)
 	if !sameDay(e.Start, day) {
-		from = e.Start.Format("Jan 2") + " " + from
+		from = i18n.Date(e.Start, "Jan 2") + " " + from
 	}
 	if !sameDay(e.End, day) {
-		to = e.End.Format("Jan 2") + " " + to
+		to = i18n.Date(e.End, "Jan 2") + " " + to
 	}
 	return from + " – " + to
 }
@@ -270,18 +271,18 @@ func eventWhenFull(e hass.Event) (day, at string) {
 	if e.AllDay {
 		last := e.End.AddDate(0, 0, -1)
 		if !last.After(e.Start) {
-			return e.Start.Format("Monday, January 2"), "All day"
+			return i18n.Date(e.Start, "Monday, January 2"), "All day"
 		}
-		return e.Start.Format("Mon, Jan 2") + " – " + last.Format("Mon, Jan 2"), "All day"
+		return i18n.Date(e.Start, "Mon, Jan 2") + " – " + i18n.Date(last, "Mon, Jan 2"), "All day"
 	}
 	if !e.End.After(e.Start) {
-		return e.Start.Format("Monday, January 2"), clockText(e.Start)
+		return i18n.Date(e.Start, "Monday, January 2"), clockText(e.Start)
 	}
 	if sameDay(e.Start, e.End) {
-		return e.Start.Format("Monday, January 2"), clockText(e.Start) + " – " + clockText(e.End)
+		return i18n.Date(e.Start, "Monday, January 2"), clockText(e.Start) + " – " + clockText(e.End)
 	}
-	return fmt.Sprintf("%s %s –", e.Start.Format("Mon, Jan 2"), clockText(e.Start)),
-		fmt.Sprintf("%s %s", e.End.Format("Mon, Jan 2"), clockText(e.End))
+	return fmt.Sprintf("%s %s –", i18n.Date(e.Start, "Mon, Jan 2"), clockText(e.Start)),
+		fmt.Sprintf("%s %s", i18n.Date(e.End, "Mon, Jan 2"), clockText(e.End))
 }
 
 // calendarDetail is one event's window: the title, when, the calendar, and the location and the

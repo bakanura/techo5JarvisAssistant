@@ -3,6 +3,7 @@
 package display
 
 import (
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"image"
 	"strings"
 
@@ -20,12 +21,12 @@ func (r *renderer) welcome(s scene) {
 	r.text(r.title, "Hello", r.margin+40, 118, amber)
 	word := strings.ReplaceAll(config.Get().Wake.Slot(0).ID, "_", " ")
 	if word == "" {
-		word = "the wake word"
+		word = i18n.T("the wake word")
 	} else {
 		word = strings.ToUpper(word[:1]) + word[1:]
 	}
 	lines := []string{
-		"This is " + name + ". Say \"" + word + "\" and ask for anything.",
+		i18n.F("This is {name}. Say \"{word}\" and ask for anything.", "name", name, "word", word),
 		"Swipe down from the top for settings: Wi-Fi, Bluetooth, cameras, radio, themes.",
 		"Say \"show the front door\" or \"go home\" to move the screen.",
 	}

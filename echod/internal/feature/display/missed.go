@@ -1,11 +1,25 @@
 package display
 
 import (
-	"fmt"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"time"
 
+	"github.com/HuskerMinion/techo5/echod/internal/feature/firmware"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/ring"
 )
+
+// updateNote is the line that says an update is ready to install, or nothing. It shares the place a
+// missed ring is said in, and gives way to one. short is the round face's, where only a few words fit.
+func updateNote(short bool) string {
+	v := firmware.Get().Offered()
+	switch {
+	case v == "":
+		return ""
+	case short:
+		return "Update ready"
+	}
+	return i18n.F("Update ready: {version} · Settings › Updates", "version", v)
+}
 
 // missedNote is the line that says a ring fell due and never sounded, or nothing. The latest one by
 // name and time, and how many more, so a night away is one line rather than a list.
@@ -21,13 +35,13 @@ func missedNote(now time.Time, short bool) string {
 	if r := []rune(m.Label); short && len(r) > 12 {
 		m.Label = string(r[:11]) + "…"
 	}
-	line := fmt.Sprintf("Missed: %s at %s", m.Says(), clockText(m.Due))
+	line := i18n.Sprintf("Missed: %s at %s", m.Says(), clockText(m.Due))
 	if short {
 		return line
 	}
 	line += daysAgo(m.Due, now)
 	if n := len(list) - 1; n > 0 {
-		line += fmt.Sprintf(" · and %d more", n)
+		line += i18n.Sprintf(" · and %d more", n)
 	}
 	return line
 }
@@ -45,7 +59,7 @@ func daysAgo(t, now time.Time) string {
 	case days < 7:
 		return " on " + t.Weekday().String()
 	}
-	return " on " + t.Format("Jan 2")
+	return " on " + i18n.Date(t, "Jan 2")
 }
 
 // onMissed calls f when what was missed changes. Here rather than in display.go, whose frame loop

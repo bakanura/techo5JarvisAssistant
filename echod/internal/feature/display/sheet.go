@@ -4,7 +4,9 @@ package display
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"image"
 	"log/slog"
 	"math"
@@ -113,7 +115,7 @@ func categoryRows(sv sheetView) (rows []settingRow, note string) {
 			sendspinSub = "Pair a Music Assistant server from Home Assistant first"
 		}
 		return []settingRow{
-			{id: "volume", label: "Volume", kind: ctlStepper, value: fmt.Sprintf("%d of %d", st.volume, sheetVolumeSteps)},
+			{id: "volume", label: "Volume", kind: ctlStepper, value: i18n.Sprintf("%d of %d", st.volume, sheetVolumeSteps)},
 			{id: "mic", label: "Microphone", sub: "The mute button does this too", kind: ctlToggle, on: !st.muted, value: mic},
 			{id: "wakeword", label: "Wake word", kind: ctlChoice, value: st.wakeWord},
 			{id: "wakesens", label: "Wake word sensitivity", sub: "Higher wakes by mistake less often", kind: ctlStepper,
@@ -185,11 +187,18 @@ func generalRows(sv sheetView) []settingRow {
 	fw := firmware.Get()
 	updates := settingRow{id: "updates", label: "Updates", sub: "This is " + st.version, kind: ctlChoice,
 		value: capitalize(fw.Channel().Label()), button: "Check now"}
-	switch {
+	switch at, err := fw.LastCheck(); {
 	case st.checking:
 		updates.sub = "Checking…"
 	case fw.Offered() != "":
-		updates.sub, updates.button = fw.Offered()+" is ready · this is "+st.version, "Install"
+		updates.sub, updates.button = i18n.F("{next} is ready · this is {current}", "next", fw.Offered(), "current", st.version), "Install"
+	case at.IsZero():
+	case errors.Is(err, update.ErrClock):
+		updates.sub = "Couldn't check: the clock isn't set yet"
+	case err != nil:
+		updates.sub = i18n.F("Couldn't reach the update server · this is {current}", "current", st.version)
+	default:
+		updates.sub = i18n.F("Up to date · {current} · checked {time}", "current", st.version, "time", clockText(at))
 	}
 	restart := settingRow{id: "restart", label: "Restart", sub: "Back in about a minute", kind: ctlDanger, button: "Restart"}
 	if !st.restartArm.IsZero() && st.now.Sub(st.restartArm) < restartWindow {
@@ -200,7 +209,7 @@ func generalRows(sv sheetView) []settingRow {
 	return append(rows,
 		settingRow{id: "weather", label: "Weather", sub: "Shown with the clock", kind: ctlChoice, value: st.weather, button: "Show"},
 		settingRow{id: "timezone", label: "Time zone", sub: zoneSub(), kind: ctlChoice, value: zoneValue()},
-		settingRow{id: "screenlang", label: "Screen language", sub: "What this screen listens for, not what the assistant speaks",
+		settingRow{id: "screenlang", label: "Screen language", sub: "The words on this screen and the ones it listens for",
 			kind: ctlChoice, value: langOptions[langIndex()]},
 		updates,
 		settingRow{label: "About", kind: ctlValue, value: deviceModel + " · slot " + st.slot},
@@ -438,7 +447,7 @@ func pickerFor(id string, sv sheetView) (pickerView, bool) {
 					continue
 				}
 				n++
-				names[i] = fmt.Sprintf("Weather %d", n)
+				names[i] = i18n.Sprintf("Weather %d", n)
 			}
 		}
 		return pickerView{title: "Weather", opts: names, cur: cur}, len(names) > 0
@@ -668,6 +677,7 @@ func (d *Display) choose(id string, i int) {
 			if err := config.Set().Screen().Language(langCodes[i]); err != nil {
 				slog.Warn("saving the screen language failed", "err", err)
 			}
+			i18n.Changed()
 		}
 	default:
 		d.deviceChoose(id, i)

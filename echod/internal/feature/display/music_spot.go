@@ -3,7 +3,7 @@
 package display
 
 import (
-	"fmt"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"image"
 	"image/color"
 	"math"
@@ -250,7 +250,7 @@ func (r *roundRenderer) radioList(s roundScene) {
 		return rows[i]
 	}
 	cur := currentStation(rd)
-	r.centered(r.small, fmt.Sprintf("%d of %d", sel+1, len(rows)), 150, colDim)
+	r.centered(r.small, i18n.Sprintf("%d of %d", sel+1, len(rows)), 150, colDim)
 	if sel > 0 {
 		r.centered(r.body, clip(r.body, r, name(sel-1), 300), 200, colDim)
 	}

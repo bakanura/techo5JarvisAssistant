@@ -3,6 +3,7 @@
 package display
 
 import (
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"image"
 	"log/slog"
 	"strings"
@@ -77,7 +78,7 @@ func (r *paint) iconFace(size int) font.Face {
 func (r *paint) wrapLines(face font.Face, text string, w int) []string {
 	var lines []string
 	line := ""
-	for _, word := range strings.Fields(text) {
+	for _, word := range strings.Fields(i18n.T(text)) {
 		try := word
 		if line != "" {
 			try = line + " " + word

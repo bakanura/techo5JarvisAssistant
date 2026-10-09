@@ -3,6 +3,7 @@
 package display
 
 import (
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"image"
 	"image/color"
 	"image/draw"
@@ -155,6 +156,7 @@ func stripPicture(rd home.Radio) image.Image {
 
 // clipTo shortens s to fit w with an ellipsis.
 func (r *renderer) clipTo(face font.Face, s string, w int) string {
+	s = i18n.T(s)
 	if r.width(face, s) <= w {
 		return s
 	}

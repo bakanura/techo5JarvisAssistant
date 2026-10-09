@@ -219,6 +219,9 @@ func newID() string {
 // an alarm saying what it is for.
 func Say(words string) { sayPreferred(words) }
 
+// CanSay is whether Say has anything to say words with: Home Assistant, or a direct pipeline.
+func CanSay() bool { return hass.Get().Ready() || config.Get().Brain.DirectReady() }
+
 func sayPreferred(label string) {
 	if hass.Get().Ready() {
 		sayThroughHA(label)

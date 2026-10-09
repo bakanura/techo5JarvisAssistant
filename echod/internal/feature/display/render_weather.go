@@ -4,6 +4,7 @@ package display
 
 import (
 	"fmt"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"image"
 	"image/color"
 	"image/draw"
@@ -55,9 +56,9 @@ func (r *renderer) weatherPage(s scene) {
 	r.text(r.big, big, r.margin+r.s(170), r.s(225), cream)
 	r.text(r.body, conditionWords(cond), r.margin, r.s(300), sunPale)
 	if len(days) > 0 {
-		r.text(r.small, fmt.Sprintf("High %.0f°   Low %.0f°", days[0].High, days[0].Low), r.margin, r.s(345), dim)
+		r.text(r.small, i18n.Sprintf("High %.0f°   Low %.0f°", days[0].High, days[0].Low), r.margin, r.s(345), dim)
 		if days[0].Rain >= 0 {
-			r.text(r.small, fmt.Sprintf("Rain %d%%", days[0].Rain), r.margin, r.s(385), rainBlue)
+			r.text(r.small, i18n.Sprintf("Rain %d%%", days[0].Rain), r.margin, r.s(385), rainBlue)
 		}
 	}
 
@@ -71,7 +72,7 @@ func (r *renderer) weatherPage(s scene) {
 			x := left + i*colW
 			// Each day in its own box.
 			r.box(image.Rect(x+r.s(3), r.s(88), x+colW-r.s(3), r.s(360)), ember, r.s(2))
-			name := d.When.Format("Mon")
+			name := i18n.Date(d.When, "Mon")
 			if d.When.IsZero() {
 				name = fmt.Sprintf("+%d", i+1)
 			}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/HuskerMinion/techo5/echod/internal/feature/home"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/touch"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 )
 
 // Weather alerts on the Show (home/alerts.go fetches them): a badge on the clock while any is in force
@@ -159,7 +160,7 @@ func (r *renderer) alertPage(s scene) {
 
 	foot := ""
 	if n := len(s.alerts.Here); n > 1 {
-		foot = itoa(s.alertIdx+1) + " of " + itoa(n) + "  ·  swipe for the next"
+		foot = i18n.F("{n} of {total}  ·  swipe for the next", "n", itoa(s.alertIdx+1), "total", itoa(n))
 	}
 	if first < most {
 		if foot != "" {

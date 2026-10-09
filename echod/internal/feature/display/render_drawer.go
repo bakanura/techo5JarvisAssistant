@@ -3,6 +3,7 @@
 package display
 
 import (
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"image"
 	"slices"
 	"strconv"
@@ -133,7 +134,7 @@ func drawerRows(s scene) ([]settingRow, string) {
 				name = demoCameras[i%len(demoCameras)]
 			}
 			rows = append(rows, settingRow{id: "cam:" + strconv.Itoa(i), label: name,
-				sub: "Or say \"show " + strings.ToLower(name) + "\"", kind: ctlButton, button: "Show", rowTap: true})
+				sub: i18n.F("Or say \"show {name}\"", "name", strings.ToLower(name)), kind: ctlButton, button: "Show", rowTap: true})
 		}
 		return rows, ""
 	}

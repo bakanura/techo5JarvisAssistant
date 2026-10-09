@@ -12,6 +12,7 @@ import (
 
 	"github.com/HuskerMinion/techo5/echod/internal/feature/home"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/touch"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 )
 
 // Weather alerts on the Spot's round face (home/alerts.go fetches them): a pill near the top of the
@@ -187,7 +188,7 @@ func (r *roundRenderer) alertFace(s roundScene) {
 	}
 	hint := "tap to close"
 	if len(s.alerts.Here) > 1 {
-		hint = itoa(s.alertIdx+1) + " of " + itoa(len(s.alerts.Here)) + " · swipe for next"
+		hint = i18n.F("{n} of {total} · swipe for next", "n", itoa(s.alertIdx+1), "total", itoa(len(s.alerts.Here)))
 	}
 	if scroll+rows < len(lines) {
 		hint += " · swipe up"

@@ -3,6 +3,7 @@
 package display
 
 import (
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"image"
 	"image/color"
 	"image/draw"
@@ -53,7 +54,7 @@ func (r *roundRenderer) sunriseFace(s roundScene, p float64, face bool) {
 	if suffix := clockSuffix(s.now); suffix != "" {
 		r.text(r.title, suffix, center+r.width(r.clock, hm)/2+ampmGap, 200, ink)
 	}
-	r.centered(r.small, s.now.Format("Monday, January 2"), 250, ink)
+	r.centered(r.small, i18n.Date(s.now, "Monday, January 2"), 250, ink)
 }
 
 // lerpRGB mixes two colors, t from 0 (a) to 1 (b).

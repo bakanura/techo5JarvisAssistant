@@ -4,6 +4,7 @@ package display
 
 import (
 	"fmt"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"image"
 	"image/color"
 	"image/draw"
@@ -122,7 +123,7 @@ func musicRouteLabel(v home.MusicPlaybackView) string {
 	case len(v.Rooms) == 1:
 		return "Playing in  " + prettyMusicName(v.Rooms[0])
 	case v.Output != "":
-		return "Playing on  " + v.Output
+		return i18n.F("Playing on  {speaker}", "speaker", v.Output)
 	default:
 		return "Music Assistant"
 	}

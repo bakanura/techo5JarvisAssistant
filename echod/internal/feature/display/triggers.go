@@ -3,6 +3,7 @@
 package display
 
 import (
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"log/slog"
 
 	esphome "github.com/ygelfand/go-esphome-device"
@@ -50,6 +51,7 @@ func langSelect() *esphome.Select {
 					slog.Error("saving the screen language failed", "err", err)
 					return
 				}
+				i18n.Changed()
 				s.Set(v)
 				return
 			}

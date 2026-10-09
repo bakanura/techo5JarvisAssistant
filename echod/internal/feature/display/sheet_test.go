@@ -327,7 +327,8 @@ func TestTheCameraSoundSettingIsUnderSound(t *testing.T) {
 func TestACutLineLeavesTheValueWhole(t *testing.T) {
 	r := testRenderer()
 	fc := r.faces()
-	row := settingRow{id: "screenlang", label: "Screen language", sub: "What this screen listens for, not what the assistant speaks",
+	// The line is longer than any card here on purpose: the test is about what a cut does.
+	row := settingRow{id: "screenlang", label: "Screen language", sub: "The words on this screen and the ones it listens for, in every room",
 		kind: ctlChoice, value: "Match all"}
 	for w := 520; w <= 760; w += 20 {
 		card := image.Rect(0, 0, w, 400)

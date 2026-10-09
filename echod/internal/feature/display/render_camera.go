@@ -3,6 +3,7 @@
 package display
 
 import (
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"image"
 	"image/draw"
 	"time"
@@ -33,7 +34,7 @@ func (r *renderer) cameraView(s scene, v home.CameraView) {
 		y := (r.h - b.Dy()) / 2
 		draw.Draw(r.dst, image.Rect(x, y, x+b.Dx(), y+b.Dy()), v.Frame, b.Min, draw.Src)
 	} else {
-		msg := "Connecting to " + name + "…"
+		msg := i18n.F("Connecting to {name}…", "name", name)
 		if v.Error != "" {
 			msg = name + ": " + v.Error
 		}

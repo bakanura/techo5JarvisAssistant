@@ -3,7 +3,7 @@
 package display
 
 import (
-	"fmt"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 
 	"github.com/HuskerMinion/techo5/echod/internal/feature/setup"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/web"
@@ -24,7 +24,7 @@ func setupRow(demo bool) settingRow {
 	case s.On():
 		row.sub, row.on = "Open "+setupURL(), true
 		if demo {
-			row.sub = fmt.Sprintf("Open http://192.168.1.50:%d", web.Port)
+			row.sub = i18n.Sprintf("Open http://192.168.1.50:%d", web.Port)
 		}
 	}
 	return row
@@ -36,8 +36,8 @@ func setupRow(demo bool) settingRow {
 func setupURL() string {
 	for _, ip := range metrics.Addresses() {
 		if v4 := ip.To4(); v4 != nil {
-			return fmt.Sprintf("http://%s:%d", v4, web.Port)
+			return i18n.Sprintf("http://%s:%d", v4, web.Port)
 		}
 	}
-	return fmt.Sprintf("this device's address, port %d", web.Port)
+	return i18n.Sprintf("this device's address, port %d", web.Port)
 }

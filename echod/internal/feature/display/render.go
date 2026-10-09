@@ -4,6 +4,7 @@ package display
 
 import (
 	"fmt"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"image"
 	"image/color"
 	"image/draw"
@@ -171,6 +172,8 @@ type scene struct {
 
 	// missed is a ring that fell due while the device could not sound it, said in the footer.
 	missed string
+	// update is an update that is ready to install, said in the footer when nothing was missed.
+	update string
 
 	// strip is the music in a strip at the foot of the clock page, rather than on its own page; faved
 	// is the star having been pressed for what is playing.
@@ -581,7 +584,7 @@ func (r *renderer) timeAndDateAt(now time.Time, base int, dateSuffix string, ali
 	r.text(clock, hour, x, base, cream)
 	r.text(ampmFace, ampm, x+hw+gap, base, dateColor(amber)) // a chosen date color takes the AM/PM with it
 
-	date := now.Format("Monday, January 2") + dateSuffix
+	date := i18n.Date(now, "Monday, January 2") + dateSuffix
 	x = across(r.width(r.small, date))
 	r.text(r.small, date, x, base+dateGap, dateColor(dim))
 	return image.Rect(x, base+dateGap-r.s(30), x+r.width(r.small, date), base+dateGap+r.s(10))
@@ -716,8 +719,8 @@ func (r *renderer) cameraSoundTapped(p image.Point) bool {
 // part of it rather than as a picture somebody put there.
 const weatherMark = 46
 
-// conditionWords is home.ConditionWords, by its old name here.
-func conditionWords(c string) string { return home.ConditionWords(c) }
+// conditionWords is home.ConditionWords in the screen's language.
+func conditionWords(c string) string { return i18n.T(home.ConditionWords(c)) }
 
 // cornerClock keeps the time in view while words have the screen.
 func (r *renderer) cornerClock(s scene) {
@@ -729,7 +732,7 @@ func (r *renderer) cornerClock(s scene) {
 // minutes rather than glances at: while music plays the big clock is gone, and the date went with it.
 func (r *renderer) cornerClockDated(s scene) {
 	r.cornerClock(s)
-	d := s.now.Format("Mon, Jan 2")
+	d := i18n.Date(s.now, "Mon, Jan 2")
 	r.text(r.tiny, d, r.w-r.margin-r.width(r.tiny, d), r.margin+r.s(54), dim)
 }
 
@@ -879,6 +882,8 @@ func (r *renderer) footer(s scene) {
 		r.text(r.tiny, "setup: a browser is asking to be let in", r.margin, y, amber)
 	case s.missed != "":
 		r.text(r.tiny, s.missed, r.margin, y, amber)
+	case s.update != "":
+		r.text(r.tiny, s.update, r.margin, y, amber)
 	case s.slideshowTrouble != "":
 		r.text(r.tiny, s.slideshowTrouble, r.margin, y, dim)
 	}

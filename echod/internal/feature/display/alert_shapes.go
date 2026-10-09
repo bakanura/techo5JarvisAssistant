@@ -4,6 +4,7 @@ package display
 
 import (
 	"fmt"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"image"
 	"image/color"
 	"image/draw"
@@ -215,7 +216,7 @@ func alertWhen(a home.Alert, now time.Time) string {
 	at := func(t time.Time) string {
 		t = t.Local()
 		if y, m, d := t.Date(); y != now.Year() || m != now.Month() || d != now.Day() {
-			return t.Format("Mon") + " " + clockText(t)
+			return i18n.Date(t, "Mon") + " " + clockText(t)
 		}
 		return clockText(t)
 	}

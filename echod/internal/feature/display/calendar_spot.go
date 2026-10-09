@@ -3,6 +3,7 @@
 package display
 
 import (
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"math"
 	"slices"
 	"strconv"
@@ -65,7 +66,7 @@ func (r *roundRenderer) calendarFace(s roundScene) {
 		y += 76
 	}
 	if more := len(s.calToday) - len(shown); heading == "Today" && more > 0 {
-		r.centered(r.small, "and "+strconv.Itoa(more)+" more today", y-8, colDim)
+		r.centered(r.small, i18n.F("and {count} more today", "count", strconv.Itoa(more)), y-8, colDim)
 	}
 }
 
@@ -103,7 +104,7 @@ func comingDay(day, now time.Time) string {
 	case days == 1:
 		return "Tomorrow"
 	case days > 1 && days < 7:
-		return day.Format("Monday")
+		return i18n.Date(day, "Monday")
 	}
-	return day.Format("Mon, Jan 2")
+	return i18n.Date(day, "Mon, Jan 2")
 }

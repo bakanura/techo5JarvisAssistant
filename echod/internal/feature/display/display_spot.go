@@ -1224,6 +1224,9 @@ func (d *Display) frame() time.Duration {
 	d.mu.Unlock()
 	d.alertSceneSpot(&s, now)
 	s.missed = missedNote(now, true)
+	if s.missed == "" {
+		s.update = updateNote(true)
+	}
 
 	if boring {
 		s.slideshow = home.Get().SlideshowBackground()

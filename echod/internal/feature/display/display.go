@@ -20,6 +20,7 @@ package display
 import (
 	"context"
 	"errors"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"image"
 	"log/slog"
 	"math"
@@ -1410,7 +1411,7 @@ func (d *Display) wifiKey(k string) {
 // wifiJoin joins a network in the background and shows how it went.
 func (d *Display) wifiJoin(n wifi.Network, passphrase string) {
 	d.mu.Lock()
-	d.wifi.busy, d.wifi.err = "Connecting to "+n.SSID+"…", ""
+	d.wifi.busy, d.wifi.err = i18n.F("Connecting to {name}…", "name", n.SSID), ""
 	d.mu.Unlock()
 	d.wake()
 	go func() {
@@ -1826,6 +1827,9 @@ func (d *Display) frame() time.Duration {
 		s.reminderFrom = s.reminder.From
 	}
 	s.missed = missedNote(now, false)
+	if s.missed == "" {
+		s.update = updateNote(false)
+	}
 
 	if boring {
 		s.slideshow = home.Get().SlideshowBackground()

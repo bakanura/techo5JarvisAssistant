@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	esphome "github.com/ygelfand/go-esphome-device"
 
@@ -47,6 +48,9 @@ type Firmware struct {
 	mu           sync.Mutex
 	found        update.Manifest
 	foundChannel update.Channel
+	// checked is when the last check finished and checkErr how: nil when it got an answer.
+	checked  time.Time
+	checkErr error
 
 	announced  sync.Once
 	rolledBack string
@@ -267,31 +271,50 @@ func (u *Firmware) Channel() update.Channel {
 // installed: Home Assistant reads the versions and decides whether to offer the update.
 //
 // A fetch that fails leaves the last answer in place, so a device that briefly cannot reach the channel
-// keeps reporting what it knew rather than blanking the card.
-func (u *Firmware) Check(ctx context.Context) {
+// keeps reporting what it knew rather than blanking the card. The error is what LastCheck reports, and
+// what the schedule uses to decide when to look again.
+func (u *Firmware) Check(ctx context.Context) error {
 	channel := u.Channel()
 
 	found, err := update.Fetch(ctx, channel)
 	if err != nil {
+		u.recordCheck(err)
 		// Checking before the clock is set is ordinary just after boot, and the next check follows.
 		if errors.Is(err, update.ErrClock) {
 			slog.Info("update check waits for the clock", "channel", channel.Label())
-			return
+			return err
 		}
 		slog.Error("checking for an update failed", "channel", channel.Label(), "err", err)
-		return
+		return err
 	}
 
 	// Checks can overlap - on connect, on a channel change, on the schedule - and a slow one for the
 	// channel just left must not replace the answer for the one chosen since.
 	if u.Channel() != channel {
 		slog.Info("update check for a channel no longer followed; dropped", "channel", channel.Label())
-		return
+		return nil
 	}
 	u.rememberFound(channel, found)
+	u.recordCheck(nil)
 
 	slog.Info("update check", "channel", channel.Label(), "running", layout.Version, "offered", found.Version)
 	u.publish(found)
+	u.tell()
+	return nil
+}
+
+func (u *Firmware) recordCheck(err error) {
+	u.mu.Lock()
+	u.checked, u.checkErr = time.Now(), err
+	u.mu.Unlock()
+}
+
+// LastCheck is when the last check finished, zero when none has, and why it got no answer: nil when it
+// did.
+func (u *Firmware) LastCheck() (time.Time, error) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.checked, u.checkErr
 }
 
 // command is Home Assistant asking for one of the two things it can ask for. Neither has a reply: what

@@ -3,6 +3,7 @@
 package display
 
 import (
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"image"
 	"image/color"
 	"image/draw"
@@ -46,5 +47,5 @@ func (r *roundRenderer) screensaverClock(s roundScene, big bool) {
 	}
 	now := s.now
 	r.timeLine(now, 240)
-	r.centered(r.small, now.Format("Monday, January 2"), 290, colDim)
+	r.centered(r.small, i18n.Date(now, "Monday, January 2"), 290, colDim)
 }

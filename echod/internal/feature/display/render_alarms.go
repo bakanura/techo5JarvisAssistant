@@ -4,6 +4,7 @@ package display
 
 import (
 	"fmt"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"image"
 	"image/draw"
 	"strings"
@@ -46,7 +47,7 @@ func (r *renderer) ringingPage(s scene) {
 	if st.silenced {
 		note := "Silenced"
 		if st.snoozable {
-			note = fmt.Sprintf("Silenced · press again to snooze %d min", s.snooze)
+			note = i18n.Sprintf("Silenced · press again to snooze %d min", s.snooze)
 		}
 		// In the tiny face, on the one band that is clear: the title's descenders end around 92 and
 		// the clock's digits begin around 122, which a 34pt line does not fit inside and this does.
@@ -70,7 +71,7 @@ func (r *renderer) ringingPage(s scene) {
 	stop := image.Rect(left.Min.X, left.Min.Y, right.Max.X, left.Max.Y)
 	if st.snoozable {
 		stop = left
-		label := fmt.Sprintf("Snooze %d min", s.snooze)
+		label := i18n.Sprintf("Snooze %d min", s.snooze)
 		fg := r.buttonFace(right, rad, btnSecondary)
 		r.text(r.body, label, right.Min.X+(right.Dx()-r.width(r.body, label))/2, mid+r.s(14), fg)
 	}
@@ -97,7 +98,7 @@ func (r *renderer) timersLine(s scene, y int) {
 		line = "Timer  " + line
 	}
 	if n := len(running) - 1; n > 0 {
-		line += fmt.Sprintf("   +%d more", n)
+		line += i18n.Sprintf("   +%d more", n)
 	}
 	w := r.width(r.body, line)
 	x := (r.w - w) / 2

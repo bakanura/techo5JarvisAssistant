@@ -4,6 +4,7 @@ package display
 
 import (
 	"fmt"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"image"
 	"image/color"
 	"math"
@@ -131,7 +132,7 @@ func initials(name string) string {
 }
 
 // cameraItem is camera i's item, and cameraOf the camera an item is, or -1.
-func cameraItem(i int) itemID { return itemID(fmt.Sprintf("cam:%d", i)) }
+func cameraItem(i int) itemID { return itemID(i18n.Sprintf("cam:%d", i)) }
 
 func cameraOf(id itemID) int {
 	var i int
@@ -286,7 +287,7 @@ func itemHint(s roundScene, id itemID) string {
 	case itemCall:
 		switch {
 		case s.contactCount > 0:
-			return fmt.Sprintf("%d to call", s.contactCount)
+			return i18n.Sprintf("%d to call", s.contactCount)
 		case !s.phoneReady && !s.houseReady:
 			return "needs a house word"
 		}
@@ -305,7 +306,7 @@ func itemHint(s roundScene, id itemID) string {
 		}
 		return "radio stations"
 	case itemVolume:
-		return fmt.Sprintf("%d · tap, then turn", s.volume)
+		return i18n.Sprintf("%d · tap, then turn", s.volume)
 	case itemCamera:
 		if s.muted {
 			return "off while muted"
@@ -329,9 +330,9 @@ func itemHint(s roundScene, id itemID) string {
 		case s.timerRinging:
 			return "ringing · tap to stop"
 		case len(s.timers) == 1:
-			return clockDuration(s.timers[0].Left) + " left"
+			return i18n.F("{time} left", "time", clockDuration(s.timers[0].Left))
 		case len(s.timers) > 1:
-			return fmt.Sprintf("%s left · %d timers", clockDuration(s.timers[0].Left), len(s.timers))
+			return i18n.Sprintf("%s left · %d timers", clockDuration(s.timers[0].Left), len(s.timers))
 		}
 		return "none running · ask to set one"
 	case itemSettings:

@@ -3,7 +3,7 @@
 package display
 
 import (
-	"fmt"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"image/color"
 	"math"
 	"strings"
@@ -128,13 +128,13 @@ func (r *roundRenderer) ringFace(s roundScene) {
 	if st.silenced {
 		r.centered(r.title, "Silenced", 372, colText)
 		if st.alarm != nil {
-			r.centered(r.small, fmt.Sprintf("press again to snooze %d min", st.snoozeIn), 410, colDim)
+			r.centered(r.small, i18n.Sprintf("press again to snooze %d min", st.snoozeIn), 410, colDim)
 		}
 		return
 	}
 
 	r.centered(r.title, "Tap to stop", 372, colText)
 	if st.alarm != nil {
-		r.centered(r.small, fmt.Sprintf("swipe to snooze %d min", st.snoozeIn), 410, colDim)
+		r.centered(r.small, i18n.Sprintf("swipe to snooze %d min", st.snoozeIn), 410, colDim)
 	}
 }

@@ -4,6 +4,7 @@ package display
 
 import (
 	"fmt"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"log/slog"
 	"time"
 
@@ -33,7 +34,7 @@ func sunriseLabels() []string {
 	for i, m := range sunriseChoices {
 		out[i] = "Off"
 		if m > 0 {
-			out[i] = fmt.Sprintf("%d minutes before", m)
+			out[i] = i18n.Sprintf("%d minutes before", m)
 		}
 	}
 	return out
@@ -55,7 +56,7 @@ func sunriseValue() string {
 		return fmt.Sprintf("%d%%", int(sunriseLevel(p)*100))
 	}
 	if m := config.Get().Alarms.SunriseMinutes; m > 0 {
-		return fmt.Sprintf("%d min", m)
+		return i18n.Sprintf("%d min", m)
 	}
 	return "Off"
 }
@@ -82,11 +83,11 @@ func anySunrise() bool {
 func alarmSunrise() (labels []string, values []int) {
 	def := "off"
 	if m := config.Get().Alarms.SunriseMinutes; m > 0 {
-		def = fmt.Sprintf("%d min", m)
+		def = i18n.Sprintf("%d min", m)
 	}
-	labels, values = []string{"Same as the default (" + def + ")", "Off"}, []int{0, config.SunriseOff}
+	labels, values = []string{i18n.F("Same as the default ({sound})", "sound", def), "Off"}, []int{0, config.SunriseOff}
 	for _, m := range sunriseChoices[1:] {
-		labels, values = append(labels, fmt.Sprintf("%d minutes before", m)), append(values, m)
+		labels, values = append(labels, i18n.Sprintf("%d minutes before", m)), append(values, m)
 	}
 	return labels, values
 }
@@ -108,7 +109,7 @@ func alarmSunriseValue(a config.Alarm) string {
 	case a.Sunrise < 0:
 		return "Off"
 	case a.Sunrise > 0:
-		return fmt.Sprintf("%d min", a.Sunrise)
+		return i18n.Sprintf("%d min", a.Sunrise)
 	}
 	return "Default"
 }

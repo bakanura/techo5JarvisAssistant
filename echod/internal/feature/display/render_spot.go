@@ -4,6 +4,7 @@ package display
 
 import (
 	"fmt"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"image"
 	"image/color"
 	"image/draw"
@@ -152,6 +153,8 @@ type roundScene struct {
 
 	// missed is a ring that fell due while the device could not sound it, said under the clock.
 	missed string
+	// update is an update that is ready to install, said under the clock when nothing was missed.
+	update string
 
 	// announceReady is whether this house has a word set, announceRecording whether this device is
 	// taking an announcement now, announcePeers how many others are listening, and announcement one
@@ -379,7 +382,7 @@ func (r *roundRenderer) clockFace(s roundScene) {
 	now := s.now
 	r.alertPill(s.alerts.Here, clockPillY)
 	r.timeLine(now, 240)
-	r.centered(r.small, now.Format("Monday, January 2"), 290, colDim)
+	r.centered(r.small, i18n.Date(now, "Monday, January 2"), 290, colDim)
 
 	line := 332
 	if weatherLine(s.weather) != "" {
@@ -393,6 +396,9 @@ func (r *roundRenderer) clockFace(s roundScene) {
 	}
 	if s.missed != "" {
 		r.centered(r.small, s.missed, line, colTimer)
+		line += 34
+	} else if s.update != "" {
+		r.centered(r.small, s.update, line, colDim)
 		line += 34
 	}
 	if s.slideshowTrouble != "" {
@@ -588,7 +594,7 @@ func (r *roundRenderer) text(face font.Face, s string, x, baseline int, c color.
 }
 
 func (r *roundRenderer) width(face font.Face, s string) int {
-	return font.MeasureString(face, s).Round()
+	return font.MeasureString(face, i18n.T(s)).Round()
 }
 
 // centered2 is centered about x rather than the middle of the panel.
@@ -607,7 +613,7 @@ func (r *roundRenderer) centered(face font.Face, s string, baseline int, c color
 // centered. It returns the baseline after the last line.
 func (r *roundRenderer) paragraph(face font.Face, s string, baseline int, c color.Color, maxLines int) int {
 	lineH := face.Metrics().Height.Round() + 4
-	words := strings.Fields(s)
+	words := strings.Fields(i18n.T(s))
 	for n := 0; n < maxLines && len(words) > 0; n++ {
 		avail := chord(baseline-10) - 56
 		line := words[0]

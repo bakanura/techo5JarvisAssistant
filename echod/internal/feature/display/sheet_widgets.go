@@ -3,6 +3,7 @@
 package display
 
 import (
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"image"
 	"image/color"
 	"math"
@@ -109,6 +110,7 @@ func (r *paint) text(face font.Face, s string, x, baseline int, c color.Color) {
 	if face == nil {
 		return
 	}
+	s = i18n.T(s)
 	// Nothing runs off the panel. A line that would, centred wider than the panel or set too far
 	// right, starts inside the edge and is cut there with an ellipsis.
 	if r.w > 0 && s != "" {
@@ -159,7 +161,7 @@ func (r *paint) width(face font.Face, s string) int {
 	if face == nil {
 		return 0
 	}
-	return (&font.Drawer{Face: face}).MeasureString(s).Ceil()
+	return (&font.Drawer{Face: face}).MeasureString(i18n.T(s)).Ceil()
 }
 
 // wrap breaks text into lines no wider than maxW, on spaces; a single word wider than the line is
@@ -167,7 +169,7 @@ func (r *paint) width(face font.Face, s string) int {
 func (r *paint) wrap(face font.Face, s string, maxW int) []string {
 	var lines []string
 	var line string
-	for _, word := range strings.Fields(s) {
+	for _, word := range strings.Fields(i18n.T(s)) {
 		try := word
 		if line != "" {
 			try = line + " " + word
@@ -599,6 +601,7 @@ func (r *paint) picker(p pickerView, scroll int) int {
 
 // fit shortens text to room pixels, with an ellipsis where it was cut.
 func (r *paint) fit(face font.Face, text string, room int) string {
+	text = i18n.T(text)
 	if text == "" || r.width(face, text) <= room {
 		return text
 	}

@@ -4,7 +4,7 @@ package display
 
 import (
 	"context"
-	"fmt"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"net/url"
 	"strings"
 	"time"
@@ -98,11 +98,11 @@ func folderPicker(f folderView, demo bool) pickerView {
 	use := "Use this folder"
 	switch {
 	case f.photos > 0 && len(f.folders) > 0:
-		use += fmt.Sprintf(" · %d photos + %d folders", f.photos, len(f.folders))
+		use += i18n.Sprintf(" · %d photos + %d folders", f.photos, len(f.folders))
 	case f.photos > 0:
-		use += fmt.Sprintf(" · %d photos", f.photos)
+		use += i18n.Sprintf(" · %d photos", f.photos)
 	case len(f.folders) > 0:
-		use += fmt.Sprintf(" · %d folders", len(f.folders))
+		use += i18n.Sprintf(" · %d folders", len(f.folders))
 	}
 	p := pickerView{title: title, opts: []string{use}, cur: 0}
 	if len(f.stack) > 0 {
@@ -111,7 +111,7 @@ func folderPicker(f folderView, demo bool) pickerView {
 	for i, c := range f.folders {
 		name := c.Title
 		if demo {
-			name = fmt.Sprintf("Folder %d", i+1)
+			name = i18n.Sprintf("Folder %d", i+1)
 		}
 		p.opts = append(p.opts, name+"  ›")
 	}

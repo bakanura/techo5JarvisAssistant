@@ -3,7 +3,7 @@
 package display
 
 import (
-	"fmt"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"image"
 	"image/draw"
 	"math"
@@ -109,7 +109,7 @@ func (r *renderer) drawSplash(s *splash, elapsed time.Duration, step bootStep) {
 	line := step.label()
 	if step < stepReady {
 		line += "…"
-		count := fmt.Sprintf("  %d of %d", int(step)+1, bootSteps)
+		count := i18n.Sprintf("  %d of %d", int(step)+1, bootSteps)
 		w := r.width(r.tiny, line) + r.width(r.tiny, count)
 		x := (r.w - w) / 2
 		r.text(r.tiny, line, x, y, cream)

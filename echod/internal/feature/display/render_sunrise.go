@@ -3,6 +3,7 @@
 package display
 
 import (
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"image"
 	"image/color"
 	"image/draw"
@@ -90,7 +91,7 @@ func (r *renderer) sunriseClock(s scene, p float64) {
 	base := r.h/2 - r.s(56)
 	r.text(r.clock, hour, x, base, ink)
 	r.text(r.ampm, ampm, x+hw+gap, base, ink)
-	date := s.now.Format("Monday, January 2")
+	date := i18n.Date(s.now, "Monday, January 2")
 	r.text(r.small, date, (r.w-r.width(r.small, date))/2, base+r.s(64), ink)
 }
 

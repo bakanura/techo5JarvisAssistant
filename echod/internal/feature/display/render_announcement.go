@@ -3,6 +3,7 @@
 package display
 
 import (
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"image"
 	"image/color"
 	"strings"
@@ -106,6 +107,7 @@ func onAnnounceStrip(x, y, w, h int) bool {
 // right amount of room. An automation sending a paragraph gets the start of it and a mark saying
 // there was more, which beats both a wall of text and a sentence that simply stops.
 func clipText(r *renderer, f font.Face, s string, width int) string {
+	s = i18n.T(s)
 	if r.width(f, s) <= width {
 		return s
 	}

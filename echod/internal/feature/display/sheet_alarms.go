@@ -4,6 +4,7 @@ package display
 
 import (
 	"fmt"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"log/slog"
 	"strings"
 	"time"
@@ -31,7 +32,7 @@ func alarmsCard(sv sheetView) cardView {
 	for _, row := range alarmRows(sv.alarms) {
 		switch {
 		case row.snoozed != nil:
-			v.rows = append(v.rows, settingRow{id: "snoozed", label: "Snoozed until " + clockText(row.snoozed.At),
+			v.rows = append(v.rows, settingRow{id: "snoozed", label: i18n.F("Snoozed until {time}", "time", clockText(row.snoozed.At)),
 				sub: cmpOr(row.snoozed.Label, "Alarm"), bold: true, kind: ctlButton, button: "Cancel"})
 		case row.local != nil:
 			a := row.local
@@ -67,7 +68,7 @@ func alarmsCard(sv sheetView) cardView {
 	}
 	v.rows = append(v.rows, rows...)
 	return v.withRows(
-		settingRow{id: "snooze", label: "Snooze length", kind: ctlStepper, value: fmt.Sprintf("%d min", sv.snooze)},
+		settingRow{id: "snooze", label: "Snooze length", kind: ctlStepper, value: i18n.Sprintf("%d min", sv.snooze)},
 		ringVolumeRow(),
 		settingRow{id: "alarmsound", label: "Alarm sound", sub: "Plays once when you choose it", kind: ctlChoice, value: alarm.Get().Sound()},
 	)
@@ -81,7 +82,7 @@ func ringVolumeRow() settingRow {
 		return settingRow{id: "ringvol", label: "Ring volume", sub: "Alarms and timers will make no sound", kind: ctlStepper, value: "Silent"}
 	}
 	return settingRow{id: "ringvol", label: "Ring volume", sub: "Alarms and timers, not the music", kind: ctlStepper,
-		value: fmt.Sprintf("%d of %d", n, sheetVolumeSteps)}
+		value: i18n.Sprintf("%d of %d", n, sheetVolumeSteps)}
 }
 
 func (v cardView) withRows(rows ...settingRow) cardView {
@@ -143,11 +144,11 @@ func alarmEditorCard(sv sheetView, d alarmDraft) cardView {
 		title = "New alarm"
 	}
 	when := clockTime(a.Hour, a.Minute)
-	blurb := "Rings at " + when + ", " + config.DaysLabel(a.Days)
+	blurb := i18n.F("Rings at {time}, {days}", "time", when, "days", i18n.Names(i18n.T(config.DaysLabel(a.Days))))
 	if a.Days&config.DaysEvery == config.DaysOnce {
 		blurb = "Rings once, at " + when
 		if t, ok := a.OnDate(); ok {
-			blurb += ", " + t.Format("Monday, January 2")
+			blurb += ", " + i18n.Date(t, "Monday, January 2")
 		}
 	}
 	v := cardView{
@@ -204,7 +205,7 @@ func dayWord(t, now time.Time) string {
 	case days > 1 && days < 7:
 		return t.Weekday().String()
 	}
-	return t.Format("Jan 2")
+	return i18n.Date(t, "Jan 2")
 }
 
 // actionTap is a button in the card's header.
