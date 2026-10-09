@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 import json
 import os
 from pathlib import Path
@@ -141,13 +142,27 @@ def _find_host(name: str):
     return find
 
 
-def _key_file(args, backups: Path) -> Path | None:
+def _key_file(args, backups: Path, asker: Asker) -> Path | None:
+    """The Show's encryption key. With several installed Shows, the newest install is offered first."""
     if args.key_file:
         return args.key_file
     if args.serial:
         return backups / args.serial / "home-assistant.key"
-    keys = sorted(backups.glob("*/home-assistant.key"))
-    return keys[0] if len(keys) == 1 else None
+    keys = sorted(backups.glob("*/home-assistant.key"), key=lambda k: k.stat().st_mtime, reverse=True)
+    if len(keys) <= 1:
+        return keys[0] if keys else None
+    asker.say("   Several Shows were installed from here (newest first):")
+    for n, key in enumerate(keys, 1):
+        when = datetime.fromtimestamp(key.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+        asker.say(f"     {n}. serial ending {key.parent.name[-4:]}, installed {when}")
+
+    def pick(raw: str) -> str:
+        if not raw.isdigit() or not 1 <= int(raw) <= len(keys):
+            raise ValueError(f"pick 1 to {len(keys)}")
+        return raw
+
+    choice = asker.text("Which one", "1", pick)
+    return keys[int(choice) - 1] if choice else None
 
 
 def deploy_to_home_assistant(settings: Settings, args, *, name: str, key_file: Path, host: str | None,
@@ -188,12 +203,13 @@ def home_assistant_command(args, backups: Path) -> int:
     if not args.name:
         print("FAIL: home-assistant requires --name, the Show's name as installed", file=sys.stderr)
         return 1
-    key_file = _key_file(args, backups)
+    asker = _asker(args)
+    key_file = _key_file(args, backups, asker)
     if key_file is None:
         print("FAIL: say which Show with --serial or --key-file", file=sys.stderr)
         return 1
     try:
-        settings = gather(args, _asker(args), want_wifi=False)
+        settings = gather(args, asker, want_wifi=False)
     except SettingsError as exc:
         print(f"FAIL: {exc}", file=sys.stderr)
         return 1

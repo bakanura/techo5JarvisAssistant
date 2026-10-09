@@ -345,3 +345,37 @@ class InstallShowSettingsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+SHOW_SPEC = importlib.util.spec_from_file_location("jarvis_show_cli", TOOLS / "jarvis-show.py")
+show_cli = importlib.util.module_from_spec(SHOW_SPEC)
+SHOW_SPEC.loader.exec_module(show_cli)
+
+
+class KeyFileTests(unittest.TestCase):
+    def _backups(self, root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
+        old, new = root / "AAAA0001" / "home-assistant.key", root / "BBBB0002" / "home-assistant.key"
+        for n, key in enumerate((old, new)):
+            key.parent.mkdir()
+            key.write_text("k\n")
+            os.utime(key, (1_000_000 + n, 1_000_000 + n))
+        return old, new
+
+    def test_several_shows_offers_the_newest_first(self):
+        args = argparse.Namespace(key_file=None, serial=None)
+        with tempfile.TemporaryDirectory() as tmp:
+            old, new = self._backups(pathlib.Path(tmp))
+            said: list[str] = []
+            pick = lambda answers: Asker(True, ask=lambda _p: answers.pop(0), say=said.append)
+            self.assertEqual(show_cli._key_file(args, pathlib.Path(tmp), pick([""])), new)
+            self.assertEqual(show_cli._key_file(args, pathlib.Path(tmp), pick(["9", "2"])), old)
+            self.assertIn("   pick 1 to 2", said)
+            self.assertIsNone(show_cli._key_file(args, pathlib.Path(tmp), Asker(False)))
+
+    def test_one_show_needs_no_question(self):
+        args = argparse.Namespace(key_file=None, serial=None)
+        with tempfile.TemporaryDirectory() as tmp:
+            key = pathlib.Path(tmp) / "CCCC0003" / "home-assistant.key"
+            key.parent.mkdir()
+            key.write_text("k\n")
+            self.assertEqual(show_cli._key_file(args, pathlib.Path(tmp), Asker(False)), key)
