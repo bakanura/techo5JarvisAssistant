@@ -141,8 +141,8 @@ and words from the song can end up in the request.
 The blueprint [turn-room-down.yaml](../blueprints/automation/turn-room-down.yaml) turns such speakers
 almost all the way down (to a tenth of their volume by default) for the whole conversation: while
 the Show listens, thinks and answers, and through any follow-up. They come back up once the Show has
-been idle for three seconds. A tenth is enough to hear that the music is still there; a quarter was
-still loud enough for Whisper to pick up sung words in ours. A
+been idle for three seconds. At a tenth you still hear that the music is there, and the answer
+comes through clearly. A
 speaker that wasn't playing is left alone, and one whose volume somebody changed during the turn
 keeps the new volume. Import it in **Settings → Automations & scenes → Blueprints → Import
 blueprint** with the file's GitHub address, then make an automation from it: the Show's assist
