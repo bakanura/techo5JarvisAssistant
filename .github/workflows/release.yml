@@ -1,8 +1,14 @@
 name: Publish Jarvis Show release
 
+# Each of the dev, staging and stable branches is a release source: a push builds, signs and publishes a
+# release on that branch's update channel. The version comes from the VERSION file (the next stable
+# version): dev builds are vX.Y.Z-dev.N, staging builds vX.Y.Z-rc.N and stable vX.Y.Z, N being the run
+# number, so dev < rc < stable for one VERSION. Promote by fast-forwarding dev -> staging -> stable.
 on:
   push:
+    branches: [dev, staging, stable]
     tags: ['v*.*.*']
+    paths-ignore: ['docs/**', 'audit/**', '**.md']
   workflow_dispatch:
     inputs:
       version:
@@ -39,8 +45,26 @@ jobs:
         env:
           INPUT_VERSION: ${{ inputs.version }}
           INPUT_NOTES: ${{ inputs.notes }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ "$GITHUB_REF_TYPE" = tag ]; then
+          channel=
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF_TYPE" = branch ]; then
+            channel="$GITHUB_REF_NAME"
+            base=$(tr -d '[:space:]' < VERSION)
+            [[ "$base" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "VERSION must be X.Y.Z, not '$base'" >&2; exit 1; }
+            if gh release view "v$base" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "v$base is already released as stable, so builds of it would rank below it and reach no device. Bump VERSION." >&2
+              exit 1
+            fi
+            n="$GITHUB_RUN_NUMBER"
+            [ "$GITHUB_RUN_ATTEMPT" = 1 ] || n="$n.$GITHUB_RUN_ATTEMPT"
+            case "$channel" in
+              dev) version="v$base-dev.$n";;
+              staging) version="v$base-rc.$n";;
+              stable) version="v$base";;
+            esac
+            notes="Jarvis Show $version ($channel channel, $(git rev-parse --short HEAD))"
+          elif [ "$GITHUB_REF_TYPE" = tag ]; then
             version="$GITHUB_REF_NAME"
             notes="Jarvis Show $version"
           else
@@ -48,10 +72,16 @@ jobs:
             notes="$INPUT_NOTES"
           fi
           [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          printf 'notes<<EOF\n%s\nEOF\n' "$notes" >> "$GITHUB_OUTPUT"
+          {
+            echo "version=$version"
+            echo "channel=$channel"
+            printf 'notes<<EOF\n%s\nEOF\n' "$notes"
+          } >> "$GITHUB_OUTPUT"
       - name: Security regression gate
         run: tools/security-regression.sh
+      # The installer's anti-brick tests check real, pinned images; fetch them and verify their hashes.
+      - name: Fetch pinned historical test fixtures
+        run: python3 tools/fetch-test-fixtures.py
       - name: Test source before release
         run: |
           python3 -m unittest discover -s tests -p 'test_*.py'
@@ -96,11 +126,16 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.meta.outputs.version }}
           NOTES: ${{ steps.meta.outputs.notes }}
+          CHANNEL: ${{ steps.meta.outputs.channel }}
           JARVIS_SHOW_RELEASE_REPO: bakanura/techo5JarvisAssistant
         run: |
+          channel_args=()
+          [ -z "$CHANNEL" ] || channel_args=(--channel "$CHANNEL")
           tools/release-jarvis-show.sh \
             --version "$VERSION" \
             --notes "$NOTES" \
+            --target "$GITHUB_SHA" \
+            "${channel_args[@]}" \
             --binary bin/echod-arm \
             --rootfs "bin/jarvis-show-rootfs-$VERSION.tar.gz" \
             --sign-key "$RUNNER_TEMP/jarvis-show-release.seed" \

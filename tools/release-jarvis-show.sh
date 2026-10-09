@@ -13,15 +13,23 @@ SIGN_KEY=${JARVIS_SHOW_SIGN_KEY:-}
 CROWN_BOOT=
 CHECKERS_BOOT=
 PUBLISH=
+CHANNEL=
+TARGET=
 OUT=${JARVIS_SHOW_RELEASE_OUT:-$ROOT/bin/release}
 
 usage() {
   cat <<USAGE
 usage: $0 --version vX.Y.Z[...prerelease] --notes TEXT --binary FILE --rootfs FILE \\
-          --sign-key FILE [--crown-boot FILE] [--checkers-boot FILE] [--publish]
+          --sign-key FILE [--crown-boot FILE] [--checkers-boot FILE]
+          [--channel stable|staging|dev] [--target COMMIT] [--publish]
 
 Without --publish the script only validates artifacts and writes signed manifest/SHA256SUMS into --out.
 It does not build the rootfs or boot images.
+
+--channel says which update channel the release is for. Without it, a version without a suffix is
+stable, -rc.N is staging and anything else is dev. A release moves its own channel and every less
+stable one forward (stable: stable, staging, dev; staging: staging, dev), never back.
+--target is the commit a new release tag is made on; without it GitHub uses the default branch.
 USAGE
 }
 
@@ -35,6 +43,8 @@ while [ $# -gt 0 ]; do
     --crown-boot) CROWN_BOOT=$2; shift 2;;
     --checkers-boot) CHECKERS_BOOT=$2; shift 2;;
     --out) OUT=$2; shift 2;;
+    --channel) CHANNEL=$2; shift 2;;
+    --target) TARGET=$2; shift 2;;
     --publish) PUBLISH=1; shift;;
     -h|--help) usage; exit 0;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2;;
@@ -43,6 +53,18 @@ done
 
 [[ $VERSION =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "invalid --version: $VERSION" >&2; exit 2; }
 [ -n "$NOTES" ] || { echo "--notes is required" >&2; exit 2; }
+if [ -z "$CHANNEL" ]; then
+  case $VERSION in
+    *-rc.*) CHANNEL=staging;;
+    *-*) CHANNEL=dev;;
+    *) CHANNEL=stable;;
+  esac
+fi
+case $CHANNEL in
+  stable) [[ $VERSION != *-* ]] || { echo "a stable release cannot be a prerelease: $VERSION" >&2; exit 2; };;
+  staging|dev) [[ $VERSION == *-* ]] || { echo "a $CHANNEL release must be a prerelease (vX.Y.Z-...): $VERSION" >&2; exit 2; };;
+  *) echo "invalid --channel: $CHANNEL" >&2; exit 2;;
+esac
 for pair in "binary:$BINARY" "rootfs:$ROOTFS" "signing key:$SIGN_KEY"; do
   label=${pair%%:*}; path=${pair#*:}
   [ -f "$path" ] || { echo "$label not found: $path" >&2; exit 2; }
@@ -124,20 +146,25 @@ echo "PASS: signed release payload prepared in $OUT"
 [ -n "$PUBLISH" ] || exit 0
 
 release_args=(release create "$VERSION" --repo "$REPO" --title "Jarvis Show $VERSION" --notes "$NOTES")
-[[ $VERSION == *-* ]] && release_args+=(--prerelease)
+[ -z "$TARGET" ] || release_args+=(--target "$TARGET")
+# Stable is GitHub's "latest" release; everything else is a prerelease, so a stable device never sees it.
+if [ "$CHANNEL" = stable ]; then release_args+=(--latest); else release_args+=(--prerelease --latest=false); fi
 release_args+=("$OUT/echod-arm" "$OUT/jarvis-show-rootfs-$VERSION.tar.gz" "$OUT/manifest.json" "$OUT/manifest.json.sig" "$OUT/SHA256SUMS")
 release_args+=("${assets[@]}")
 gh "${release_args[@]}"
 
-# Rolling dev only moves forward. The manifest continues to point at immutable versioned release assets.
-current=
-if gh release view dev --repo "$REPO" >/dev/null 2>&1; then
-  current=$(gh release download dev --repo "$REPO" -p manifest.json -O - 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("version", ""))' || true)
-else
-  gh release create dev --repo "$REPO" --prerelease --title "Jarvis Show dev" --notes "Rolling Jarvis Show development channel."
-fi
-set +e
-python3 - "$VERSION" "$current" <<'PY'
+# Staging and dev are rolling releases (channel-staging, channel-dev) holding only the signed manifest of
+# the release they point at; the manifest names that release's own immutable assets. A release moves its
+# own channel and the less stable ones, so dev never offers something older than staging or stable: a
+# unit would refuse it and its update card would never clear (techo5 issue #42). A channel never moves
+# back. The tags are not the branch names because a tag and a branch both called dev confuse git.
+case $CHANNEL in
+  stable|staging) rolling=(staging dev);;
+  dev) rolling=(dev);;
+esac
+
+newer() {
+  python3 - "$1" "$2" <<'PY'
 import re, sys
 
 def parse(v):
@@ -162,15 +189,31 @@ def newer(a,b):
 
 sys.exit(0 if newer(sys.argv[1], sys.argv[2]) else 10)
 PY
-compare_status=$?
-set -e
-case $compare_status in
-  0)
-    gh release upload dev "$OUT/manifest.json" "$OUT/manifest.json.sig" --repo "$REPO" --clobber
-    echo "PASS: dev channel advanced to $VERSION"
-    ;;
-  10) echo "PASS: dev channel left on newer/equal $current";;
-  *) exit $?;;
-esac
+}
 
-echo "PASS: published https://github.com/$REPO/releases/tag/$VERSION"
+for name in "${rolling[@]}"; do
+  tag="channel-$name"
+  current=
+  if gh release view "$tag" --repo "$REPO" >/dev/null 2>&1; then
+    current=$(gh release download "$tag" --repo "$REPO" -p manifest.json -O - 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("version", ""))' || true)
+  else
+    create=(release create "$tag" --repo "$REPO" --prerelease --latest=false --title "Jarvis Show $name channel"
+      --notes "Rolling Jarvis Show $name channel. It holds only the signed manifest of the release it points at.")
+    [ -z "$TARGET" ] || create+=(--target "$TARGET")
+    gh "${create[@]}"
+  fi
+  set +e
+  newer "$VERSION" "$current"
+  compare_status=$?
+  set -e
+  case $compare_status in
+    0)
+      gh release upload "$tag" "$OUT/manifest.json" "$OUT/manifest.json.sig" --repo "$REPO" --clobber
+      echo "PASS: $name channel advanced to $VERSION"
+      ;;
+    10) echo "PASS: $name channel left on newer/equal $current";;
+    *) exit "$compare_status";;
+  esac
+done
+
+echo "PASS: published https://github.com/$REPO/releases/tag/$VERSION ($CHANNEL)"

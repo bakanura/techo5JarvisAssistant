@@ -57,7 +57,8 @@ The host build therefore does not bootstrap trust from the downloaded `apk.stati
 Stable and dev use the same signature and artifact checks. Channel selection changes only which signed manifest URL is fetched.
 
 - stable: `https://github.com/bakanura/techo5JarvisAssistant/releases/latest/download/manifest.json`
-- dev: `https://github.com/bakanura/techo5JarvisAssistant/releases/download/dev/manifest.json`
+- staging: `https://github.com/bakanura/techo5JarvisAssistant/releases/download/channel-staging/manifest.json`
+- dev: `https://github.com/bakanura/techo5JarvisAssistant/releases/download/channel-dev/manifest.json`
 
 Caches are channel-bound and cleared on a channel change. An in-flight response from an old channel is discarded. The updater refuses version downgrades and refuses to guess ordering from an unrankable locally built version.
 

@@ -165,10 +165,10 @@ function Test-VersionNewer([string]$a, [string]$b) {
     return [string]::CompareOrdinal($x.Pre, $y.Pre) -gt 0
 }
 $devVersion = $null
-try { $devVersion = ((& gh release download dev --repo $repo -p manifest.json -O - 2>$null) -join "`n" | ConvertFrom-Json).version } catch { }
+try { $devVersion = ((& gh release download channel-dev --repo $repo -p manifest.json -O - 2>$null) -join "`n" | ConvertFrom-Json).version } catch { }
 if (-not $devVersion -or (Test-VersionNewer $Version $devVersion)) {
-    & gh release upload dev (Join-Path $bin 'manifest.json') (Join-Path $bin 'manifest.json.sig') --repo $repo --clobber
-    if ($LASTEXITCODE -ne 0) { throw "published, but the dev channel was not updated: upload manifest.json and manifest.json.sig to the dev release by hand" }
+    & gh release upload channel-dev (Join-Path $bin 'manifest.json') (Join-Path $bin 'manifest.json.sig') --repo $repo --clobber
+    if ($LASTEXITCODE -ne 0) { throw "published, but the dev channel was not updated: upload manifest.json and manifest.json.sig to the channel-dev release by hand" }
     Write-Host "dev channel: $Version (was $devVersion)"
 } else {
     Write-Host "dev channel left on $devVersion, which is newer than $Version"
