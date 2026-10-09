@@ -206,7 +206,7 @@ func (a *API) Run(ctx context.Context) error {
 			stop()
 		}()
 
-		err = a.srv.Serve(serving, ln)
+		err = a.srv.Serve(serving, refusePlaintext{Listener: ln, encrypted: func() bool { return a.srv.PSK != nil }})
 		stop()
 
 		if err != nil || ctx.Err() != nil {
