@@ -49,7 +49,7 @@ func TestUpdateIsSaidOncePerVersion(t *testing.T) {
 }
 
 func TestSpokenVersion(t *testing.T) {
-	for v, want := range map[string]string{"v1.0.1": "1.0.1", "v1.0.1-dev.6": "1.0.1 dev 6", "v2.0.0-rc.3": "2.0.0 rc 3"} {
+	for v, want := range map[string]string{"v1.0.1": "1.0.1", "v1.0.1-dev.6": "1.0.1 dev 6", "v2.0.0-staging.31": "2.0.0 staging 31", "v1.0.1-stable.40": "1.0.1 stable 40"} {
 		if got := spoken(v); got != want {
 			t.Errorf("spoken(%q) = %q, want %q", v, got, want)
 		}

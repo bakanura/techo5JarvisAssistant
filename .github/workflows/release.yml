@@ -2,8 +2,9 @@ name: Publish Jarvis Show release
 
 # Each of the dev, staging and stable branches is a release source: a push builds, signs and publishes a
 # release on that branch's update channel. The version comes from the VERSION file (the next stable
-# version): dev builds are vX.Y.Z-dev.N, staging builds vX.Y.Z-rc.N and stable vX.Y.Z, N being the run
-# number, so dev < rc < stable for one VERSION. Promote by fast-forwarding dev -> staging -> stable.
+# version) and names the channel: vX.Y.Z-dev.N, vX.Y.Z-staging.N and vX.Y.Z-stable.N, N being the run
+# number. All three branches share N, so a later build always ranks higher, on the Show and in Home
+# Assistant alike. Promote by fast-forwarding dev -> staging -> stable.
 on:
   push:
     branches: [dev, staging, stable]
@@ -59,16 +60,20 @@ jobs:
             channel="$GITHUB_REF_NAME"
             base=$(tr -d '[:space:]' < VERSION)
             [[ "$base" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "VERSION must be X.Y.Z, not '$base'" >&2; exit 1; }
-            if gh release view "v$base" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              echo "v$base is already released as stable, so builds of it would rank below it and reach no device. Bump VERSION." >&2
+            # Once X.Y.Z is out on stable it is done: another build of it would give two stable releases
+            # of one version. The bare vX.Y.Z is how stable was named before the channel was.
+            released=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --json tagName \
+              --jq "[.[].tagName | select(. == \"v$base\" or startswith(\"v$base-stable.\"))] | first // empty")
+            if [ -n "$released" ]; then
+              echo "$base is already released on stable as $released. Bump VERSION." >&2
               exit 1
             fi
             n="$GITHUB_RUN_NUMBER"
             [ "$GITHUB_RUN_ATTEMPT" = 1 ] || n="$n.$GITHUB_RUN_ATTEMPT"
             case "$channel" in
               dev) version="v$base-dev.$n";;
-              staging) version="v$base-rc.$n";;
-              stable) version="v$base";;
+              staging) version="v$base-staging.$n";;
+              stable) version="v$base-stable.$n";;
             esac
             notes="Jarvis Show $version ($channel channel, $(git rev-parse --short HEAD))"
           elif [ "$GITHUB_REF_TYPE" = tag ]; then

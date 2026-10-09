@@ -413,8 +413,13 @@ def default_key_file(backup):
 
 
 def show_version(tag):
-    m = re.match(r'^v(\d+)\.(\d+)\.(\d+)$', tag)
-    return tuple(int(x) for x in m.groups()) if m else None
+    """A stable release's place in line: vX.Y.Z-stable.N, or the bare vX.Y.Z stable releases had before
+    they named their channel, which ranks past every build of the same X.Y.Z."""
+    m = re.match(r'^v(\d+)\.(\d+)\.(\d+)(?:-stable\.(\d+))?$', tag)
+    if not m:
+        return None
+    x, y, z, n = m.groups()
+    return (int(x), int(y), int(z), int(n) if n else float('inf'))
 
 
 def boot_name(dev, tag):

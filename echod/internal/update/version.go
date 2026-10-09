@@ -73,9 +73,47 @@ func parseVersion(v string) (numbers []int, prerelease string, ok bool) {
 	return numbers, prerelease, true
 }
 
+// channelWords are the channels a CI build names itself after: vX.Y.Z-dev.N, -staging.N, -stable.N.
+// The value is the order two builds with the same number would take.
+var channelWords = map[string]int{"dev": 0, "staging": 1, "stable": 2}
+
+// channelBuild splits a CI build's tail into its channel and its numbers: "staging.42" or, for a
+// rerun, "staging.42.2".
+func channelBuild(tail string) (rank int, numbers []int, ok bool) {
+	fields := strings.Split(tail, ".")
+	rank, ok = channelWords[fields[0]]
+	if !ok || len(fields) < 2 {
+		return 0, nil, false
+	}
+	for _, f := range fields[1:] {
+		n, err := strconv.Atoi(f)
+		if err != nil {
+			return 0, nil, false
+		}
+		numbers = append(numbers, n)
+	}
+	return rank, numbers, true
+}
+
 // comparePrerelease ranks two prerelease tails field by field, numbers as numbers so beta.10 is past
 // beta.9, and a longer tail past a shorter one it shares a prefix with.
+//
+// Two CI builds go by their numbers whatever channel they name. N is the workflow's run number, which
+// all three branches share, so the higher one is the later build. It is also how Home Assistant ranks
+// them: AwesomeVersion knows dev but not staging or stable, and two modifiers it cannot place it ranks
+// by their numbers alone. Ranking by the word instead would put stable below staging, as text does,
+// and a unit on staging would refuse the stable release its own build was promoted to.
 func comparePrerelease(a, b string) int {
+	if ar, an, ok := channelBuild(a); ok {
+		if br, bn, ok := channelBuild(b); ok {
+			for i := 0; i < max(len(an), len(bn)); i++ {
+				if x, y := at(an, i), at(bn, i); x != y {
+					return sign(x - y)
+				}
+			}
+			return sign(ar - br)
+		}
+	}
 	af, bf := strings.Split(a, "."), strings.Split(b, ".")
 	for i := 0; i < max(len(af), len(bf)); i++ {
 		switch {

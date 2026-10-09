@@ -19,17 +19,24 @@ tests, builds the rootfs, signs and publishes a release on that channel:
 | Branch    | Version            | Moves channels         |
 |-----------|--------------------|------------------------|
 | `dev`     | `vX.Y.Z-dev.N`     | dev                    |
-| `staging` | `vX.Y.Z-rc.N`      | staging, dev           |
-| `stable`  | `vX.Y.Z`           | stable, staging, dev   |
+| `staging` | `vX.Y.Z-staging.N` | staging, dev           |
+| `stable`  | `vX.Y.Z-stable.N`  | stable, staging, dev   |
 
-`X.Y.Z` is the `VERSION` file, the next stable version. `N` is the workflow run number. For one VERSION
-that ranks dev < rc < stable, and a release moves the less stable channels too, so dev never offers
-something older than what stable already has. Channels only ever move forward.
+`X.Y.Z` is the `VERSION` file, the next stable version. `N` is the workflow run number, which the three
+branches share, so for one VERSION the later build ranks higher whichever channel it names. The Show,
+the release script and Home Assistant all rank them that way: Home Assistant's AwesomeVersion knows
+`dev` but not `staging` or `stable`, and ranks those by their number alone. Ranking by the word would
+put `stable` below `staging`, as plain text order does. A release moves the less stable channels too,
+so dev never offers something older than what stable already has. Channels only ever move forward.
+
+The stable release is GitHub's "latest" release even though its name has a suffix, because the
+release script marks it latest and the others prerelease. `v1.0.0` predates channel names; a bare
+`vX.Y.Z` still counts as stable and ranks past every build of the same `X.Y.Z`.
 
 Usual flow: work lands on `dev`; when it is good, fast-forward `staging` to it; when staging has run fine
 on a unit, fast-forward `stable` to staging. After a stable release, bump `VERSION` on `dev` before the
-next push. The workflow stops if VERSION is already released as stable, since every build of it would
-rank below the stable release and reach no device.
+next push. The workflow stops if VERSION is already released on stable (`vX.Y.Z-stable.N` or a bare
+`vX.Y.Z`), so there is never a second stable release of one version.
 
 Pushes that only touch `docs/`, `audit/` or Markdown files don't cut a release. Neither does creating a
 channel branch at a commit GitHub already has, because that push changes no files. In both cases run the
@@ -38,7 +45,7 @@ workflow by hand on the branch with the version left empty, and it releases the 
     gh workflow run release.yml --ref dev
 
 A `v*.*.*` tag push, or a manual run with a version, picks the channel from the version instead (no
-suffix: stable, `-rc.N`: staging, anything else: dev).
+suffix or `-stable.N`: stable, `-staging.N` or `-rc.N`: staging, anything else: dev).
 
 ## On the device
 

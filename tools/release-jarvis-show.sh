@@ -26,8 +26,8 @@ usage: $0 --version vX.Y.Z[...prerelease] --notes TEXT --binary FILE --rootfs FI
 Without --publish the script only validates artifacts and writes signed manifest/SHA256SUMS into --out.
 It does not build the rootfs or boot images.
 
---channel says which update channel the release is for. Without it, a version without a suffix is
-stable, -rc.N is staging and anything else is dev. A release moves its own channel and every less
+--channel says which update channel the release is for. Without it, -stable.N or no suffix is stable,
+-staging.N or -rc.N is staging and anything else is dev. A release moves its own channel and every less
 stable one forward (stable: stable, staging, dev; staging: staging, dev), never back.
 --target is the commit a new release tag is made on; without it GitHub uses the default branch.
 USAGE
@@ -55,14 +55,15 @@ done
 [ -n "$NOTES" ] || { echo "--notes is required" >&2; exit 2; }
 if [ -z "$CHANNEL" ]; then
   case $VERSION in
-    *-rc.*) CHANNEL=staging;;
+    *-stable.*) CHANNEL=stable;;
+    *-staging.*|*-rc.*) CHANNEL=staging;;
     *-*) CHANNEL=dev;;
     *) CHANNEL=stable;;
   esac
 fi
 case $CHANNEL in
-  stable) [[ $VERSION != *-* ]] || { echo "a stable release cannot be a prerelease: $VERSION" >&2; exit 2; };;
-  staging|dev) [[ $VERSION == *-* ]] || { echo "a $CHANNEL release must be a prerelease (vX.Y.Z-...): $VERSION" >&2; exit 2; };;
+  stable) [[ $VERSION != *-* || $VERSION == *-stable.* ]] || { echo "a stable release is vX.Y.Z-stable.N or vX.Y.Z: $VERSION" >&2; exit 2; };;
+  staging|dev) [[ $VERSION == *-* && $VERSION != *-stable.* ]] || { echo "a $CHANNEL release must be a prerelease (vX.Y.Z-...), not stable: $VERSION" >&2; exit 2; };;
   *) echo "invalid --channel: $CHANNEL" >&2; exit 2;;
 esac
 for pair in "binary:$BINARY" "rootfs:$ROOTFS" "signing key:$SIGN_KEY"; do
@@ -175,12 +176,26 @@ def parse(v):
     fields = [] if pre is None else [int(x) if x.isdigit() else x for x in pre.split('.')]
     return core, pre is None, fields
 
+# CI builds (dev.N, staging.N, stable.N) rank by their numbers whatever channel they name: N is the
+# shared run number, and it is how the Show and Home Assistant rank them (echod internal/update/version.go).
+CHANNELS = {"dev": 0, "staging": 1, "stable": 2}
+
+def channel_build(fields):
+    if len(fields) < 2 or fields[0] not in CHANNELS or not all(isinstance(x, int) for x in fields[1:]):
+        return None
+    return fields[1:], CHANNELS[fields[0]]
+
 def newer(a,b):
     if not b: return True
     pa,pb=parse(a),parse(b)
     if not pa or not pb: return False
     if pa[0] != pb[0]: return pa[0] > pb[0]
     if pa[1] != pb[1]: return pa[1] and not pb[1]
+    ca,cb=channel_build(pa[2]),channel_build(pb[2])
+    if ca and cb:
+        n = max(len(ca[0]), len(cb[0]))
+        xa, xb = ca[0] + [0]*(n-len(ca[0])), cb[0] + [0]*(n-len(cb[0]))
+        return (xa, ca[1]) > (xb, cb[1])
     for x,y in zip(pa[2],pb[2]):
         if x == y: continue
         if isinstance(x,int) and isinstance(y,int): return x > y
