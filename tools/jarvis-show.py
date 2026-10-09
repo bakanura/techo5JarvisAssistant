@@ -14,6 +14,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from jarvis_crown.amonet_upgrade import AdbUpgradeClient, UpgradeError, upgrade_amonet  # noqa: E402
 from jarvis_crown.assets import amonet_bundle_dir, asset_path, assets_for, default_cache_dir  # noqa: E402
+from jarvis_crown.boot_logo import BootLogoError, SshClient, put_logo  # noqa: E402
 from jarvis_crown.boards import profile_for_board, profile_for_product  # noqa: E402
 from jarvis_crown.device_gate import DeviceGateError, identify_show  # noqa: E402
 from jarvis_crown.flow import FlowError, InstallInputs, run_install_flow  # noqa: E402
@@ -29,7 +30,7 @@ SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="jarvis-show")
-    parser.add_argument("command", choices=["preflight", "identify", "unlock", "install", "amonet-upgrade", "wifi", "home-assistant"], nargs="?", default="preflight")
+    parser.add_argument("command", choices=["preflight", "identify", "unlock", "install", "amonet-upgrade", "wifi", "home-assistant", "boot-logo"], nargs="?", default="preflight")
     parser.add_argument("--board", choices=("crown", "checkers"), help="optional first-gen board cross-check; install/identify auto-detect by default")
     parser.add_argument("--amonet-dir", type=Path)
     parser.add_argument("--amonet-zip", type=Path, help="amonet-upgrade: the pinned Amonet 2.x zip; default from the asset cache")
@@ -60,6 +61,8 @@ def parse_args() -> argparse.Namespace:
     hass = parser.add_argument_group("home-assistant: add an installed Show to Home Assistant")
     hass.add_argument("--host", help="the Show's address, when Home Assistant has not discovered it")
     hass.add_argument("--key-file", type=Path, help="its encryption key (default backups/<serial>/home-assistant.key)")
+    logo = parser.add_argument_group("boot-logo: the OpenJade logo at boot on an installed Show (--name, --host)")
+    logo.add_argument("--amazon-logo", action="store_true", help="put Amazon's logo back instead")
     return parser.parse_args()
 
 
@@ -286,6 +289,48 @@ def amonet_upgrade(args, backups: Path) -> int:
     return 0
 
 
+def boot_logo_command(args, backups: Path) -> int:
+    """OpenJade's logo in kaeru's wordmark slot, over the Show's SSH; see jarvis_crown/boot_logo.py."""
+    if not args.name:
+        print("FAIL: boot-logo requires --name, the Show's name as installed", file=sys.stderr)
+        return 1
+    show = show_named(backups, args.name)
+    if show is None:
+        print(f"FAIL: no Show named {args.name!r} was installed from here", file=sys.stderr)
+        for known in known_shows(backups):
+            print(f"INFO:   installed: {known.name!r} ({known.board}, serial ending {known.serial_tail})", file=sys.stderr)
+        return 1
+    host = args.host
+    if not host:
+        try:
+            host = (show.folder / "address").read_text(encoding="utf-8").strip()
+        except OSError:
+            host = ""
+    if not host:
+        print("FAIL: the Show's address is not known; give it with --host", file=sys.stderr)
+        return 1
+    saved = show.folder / "partitions" / "p7-expdb.img"
+    print(f"PASS: {show.name} is the {show.board} Show with serial ending {show.serial_tail}, at {host}")
+
+    def confirm(phrase):
+        print("WARN: this rewrites the logo inside the bootloader (kaeru, in expdb); nothing else is written.")
+        print("WARN: keep the Show on power until it says PASS. A broken kaeru does not start at all.")
+        try:
+            return input(f"Type {phrase} to continue: ").strip()
+        except EOFError:  # no terminal (piped or closed stdin) is a no, not a crash
+            print()
+            return ""
+
+    try:
+        done = put_logo(SshClient(host), show.board, saved_expdb=saved, amazon=args.amazon_logo,
+                        confirm=confirm, progress=lambda text: print(f"INFO: {text}"))
+    except BootLogoError as exc:
+        print(f"FAIL: boot-logo stopped: {exc}", file=sys.stderr)
+        return 4
+    print(f"PASS: {done}; it shows on the next cold start (unplug, plug back in)")
+    return 0
+
+
 def main() -> int:
     args = parse_args()
     root = Path(__file__).resolve().parents[1]
@@ -309,6 +354,8 @@ def main() -> int:
     if args.command == "amonet-upgrade":
         return amonet_upgrade(args, backups)
 
+    if args.command == "boot-logo":
+        return boot_logo_command(args, backups)
     if args.command == "home-assistant":
         return home_assistant_command(args, backups)
 
