@@ -153,6 +153,27 @@ class Asker:
             except ValueError as exc:
                 self.say(f"   {exc}")
 
+    def pick(self, label: str, current: str, options: list[str]) -> str | None:
+        """One of options by number or name. Enter keeps current; None when nobody is asked."""
+        if not self.interactive or not options:
+            return None
+        self.say(f"   {label}:")
+        for i, option in enumerate(options, 1):
+            self.say(f"     {i}) {option}" + ("  (now)" if option == current else ""))
+        while True:
+            try:
+                raw = self.ask(f"   {label} [{current or 'keep'}]: ").strip()
+            except EOFError:
+                return None
+            if not raw:
+                return None
+            if raw.isdigit() and 1 <= int(raw) <= len(options):
+                return options[int(raw) - 1]
+            named = [o for o in options if o.casefold() == raw.casefold()]
+            if named:
+                return named[0]
+            self.say(f"   pick 1 to {len(options)}, or Enter to keep it")
+
     def secret(self, label: str, check: Callable[[str], str]) -> str | None:
         if not self.interactive:
             return None

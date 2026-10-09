@@ -306,11 +306,15 @@ What happens with the answers:
   every other default itself. A `state.json` that is already there is kept as it is.
 - **In Home Assistant, right after.** With an admin token and Wi-Fi, the tool waits up to five
   minutes for the Show to come up, then over Home Assistant's REST API:
-  1. adds it as an ESPHome device with its encryption key (from the discovery Home Assistant already
-     has, or by its address);
+  1. adds it as an ESPHome device with its encryption key, by its address or else by its `.local`
+     name (REST cannot see the discoveries Home Assistant has open, so it starts its own flow; an
+     open discovery for the same unit closes by itself once the device is added);
   2. turns on "Allow the device to perform Home Assistant actions";
-  3. sets the assistant to `Jarvis` and the wake word to `Hey Jarvis` (`--assistant`, `--wake-word`;
-     `''` leaves one alone);
+  3. picks the assistant (which of Home Assistant's Assist pipelines the Show talks to) and the wake
+     word. The tool lists what is really there, the pipelines this Home Assistant has and the wake
+     words this Show has, and you pick one or press Enter to keep the current one. `--assistant` and
+     `--wake-word` answer ahead of time; `''` leaves one alone. With nobody at the terminal and no
+     switch, both stay as they are;
   4. hands it the DashCast server, Home Assistant access and Music Assistant address again through
      its own actions, and turns its Sendspin switch on.
 
@@ -328,4 +332,29 @@ It knows which Show you mean from the name. As soon as the installer has read a 
 writes `backups/<serial>/show.json` with the name and board, and `home-assistant` looks the name up
 there to find that unit's key. It never guesses: an unknown name, or two Shows installed under the
 same name, stops with a list of the Shows it knows (`--serial` or `--key-file` pick one by hand).
-The Show's address comes from `backups/<serial>/address`, mDNS, or `--host`.
+The Show's address comes from `--host`, `backups/<serial>/address`, mDNS on this computer, or
+Home Assistant resolving `<name>.local` itself, in that order. When the Show is on a different
+network than Home Assistant (an IoT VLAN, say), mDNS does not cross, so give it `--host` or a fixed
+DHCP address in that file.
+
+### Where the answers come from
+
+The Show is an ESPHome voice satellite. It hears its wake word itself, then streams what you say to
+Home Assistant, and the Assist pipeline picked in step 3 does the rest: speech to text, a
+conversation agent, text to speech. Whatever a pipeline is built from in that Home Assistant
+(Whisper or the cloud, the built-in agent or an Ollama or OpenAI one, Piper or anything else) is what
+the Show uses; nothing about it is set on the Show, and changing the pipeline in Home Assistant
+changes every Show set to it. "preferred" follows whichever pipeline Home Assistant marks as
+preferred.
+
+A Show can also answer without Home Assistant. On its setup page (`http://<show>:8181/setup`) the mode is one of:
+
+- **Home Assistant** (the default): every turn goes through the pipeline above.
+- **Automatic**: Home Assistant while it is connected, the direct pipeline when it is not.
+- **Direct**: never Home Assistant for speech. Speech to text and text to speech are Wyoming servers
+  (`host:port`, such as the faster-whisper and Piper add-ons, which listen on 10300 and 10200), and
+  the answer comes from a chat model behind an OpenAI-style endpoint (llama.cpp's server, Ollama's
+  `/v1`, and the like), with an optional key, a SearXNG server to look things up, and extra
+  instructions. The model acts through the Show's own abilities as tools.
+
+The installer does not set the direct pipeline; it is set on the Show.

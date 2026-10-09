@@ -23,8 +23,6 @@ import urllib.request
 DASHCAST_PORT = 9555
 DASHCAST_MIN_KEY = 16
 ESPHOME_PORT = 6053
-DEFAULT_WAKE_WORD = "Hey Jarvis"
-DEFAULT_ASSISTANT = "Jarvis"
 _ENTRY_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
@@ -230,21 +228,6 @@ def find_entry(ha: HomeAssistant, name: str) -> dict | None:
     return None
 
 
-def discovered_flow(ha: HomeAssistant, name: str) -> dict | None:
-    """An ESPHome discovery Home Assistant already has in progress for this Show, if any."""
-    node = node_slug(name)
-    for flow in ha.request("GET", "/api/config/config_entries/flow") or []:
-        if flow.get("handler") != "esphome":
-            continue
-        context = flow.get("context") or {}
-        if context.get("source") not in ("zeroconf", "dhcp", "mqtt"):
-            continue
-        shown = str((context.get("title_placeholders") or {}).get("name") or "")
-        if node_slug(shown) == node:
-            return flow
-    return None
-
-
 def _drop_flow(ha: HomeAssistant, flow_id: str) -> None:
     try:
         ha.request("DELETE", f"/api/config/config_entries/flow/{flow_id}")
@@ -314,18 +297,17 @@ def _drive_flow(ha: HomeAssistant, result: dict, *, host: str | None, psk: str, 
 
 
 def add_device(ha: HomeAssistant, *, name: str, psk: str, host: str | None) -> tuple[str, bool]:
-    """The Show's ESPHome entry, made when it is missing. Returns (entry_id, made_now)."""
+    """The Show's ESPHome entry, made when it is missing. Returns (entry_id, made_now).
+
+    REST cannot list the discoveries Home Assistant has open (that is websocket only), so this always starts
+    its own flow. Without an address it gives the Show's .local name, which Home Assistant resolves over mDNS
+    when it shares a network with the Show. A discovery left open for the same unit closes on its own once
+    this flow makes the entry."""
     found = find_entry(ha, name)
     if found:
         return found["entry_id"], False
-    flow = discovered_flow(ha, name)
-    if flow is not None:
-        result = ha.request("GET", f"/api/config/config_entries/flow/{flow['flow_id']}")
-        return _drive_flow(ha, result, host=host, psk=psk, name=name), True
-    if not host:
-        raise _Unreachable("Home Assistant has not discovered the Show, and its address is not known")
     result = ha.request("POST", "/api/config/config_entries/flow", {"handler": "esphome", "show_advanced_options": False})
-    return _drive_flow(ha, result, host=host, psk=psk, name=name), True
+    return _drive_flow(ha, result, host=host or f"{node_slug(name)}.local", psk=psk, name=name), True
 
 
 def allow_actions(ha: HomeAssistant, entry_id: str) -> bool:
@@ -370,13 +352,24 @@ def entry_entities(ha: HomeAssistant, entry_id: str) -> list[str]:
     return [line.strip() for line in str(text or "").splitlines() if line.strip()]
 
 
-def _select(ha: HomeAssistant, entities: list[str], suffix: str, option: str) -> str:
-    """Sets the select ending in suffix to option. Returns what happened, for the log."""
+Chooser = Callable[[str, str, list[str]], "str | None"]
+
+
+def _select(ha: HomeAssistant, entities: list[str], suffix: str, option: str | None,
+            choose: Chooser | None = None) -> str:
+    """Sets the select ending in suffix to option, or to what choose picks from the options it really has
+    (the assistants this Home Assistant has, the wake words this Show has). Returns what happened, for the log."""
     matches = [e for e in entities if e.startswith("select.") and e.endswith(suffix)]
     if not matches:
         return f"no {suffix.lstrip('_')} select on this Show"
     entity = min(matches, key=len)
     state = ha.request("GET", f"/api/states/{entity}") or {}
+    if option is None:
+        options = [str(o) for o in (state.get("attributes") or {}).get("options") or []]
+        current = str(state.get("state") or "")
+        option = choose(suffix.lstrip("_").replace("_", " "), current, options) if choose and options else None
+        if option is None or option == current:
+            return f"{entity} left at {current or 'its default'}"
     if state.get("state") == option:
         return f"{entity} is already {option}"
     options = (state.get("attributes") or {}).get("options") or []
@@ -420,15 +413,15 @@ class DeployOptions:
     name: str
     psk: str
     host: str | None = None
-    wake_word: str | None = DEFAULT_WAKE_WORD
-    assistant: str | None = DEFAULT_ASSISTANT
+    wake_word: str | None = None   # None: keep the Show's, or ask through choose
+    assistant: str | None = None   # the Assist pipeline the Show talks to; None as above
     settings: DeviceSettings = DeviceSettings()
     wait_seconds: float = 300.0
 
 
 def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], None] = print,
            sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic,
-           find_host: Callable[[], str | None] | None = None) -> str:
+           find_host: Callable[[], str | None] | None = None, choose: Chooser | None = None) -> str:
     """Takes the Show into Home Assistant and sets it up; returns the ESPHome entry_id."""
     deadline = clock() + opts.wait_seconds
     host = opts.host
@@ -465,7 +458,7 @@ def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], 
 
     # The options change reloads the entry, so the entities and actions come back a moment later.
     entities: list[str] = []
-    want_selects = bool(opts.wake_word or opts.assistant)
+    want_selects = bool(opts.wake_word or opts.assistant or choose)
     while True:
         entities = entry_entities(ha, entry_id) if want_selects or s.music_assistant else []
         services = _services(ha) if wanted else set()
@@ -475,10 +468,10 @@ def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], 
             break
         sleep(5)
 
-    if opts.assistant:
-        progress(_select(ha, entities, "_assistant", opts.assistant))
-    if opts.wake_word:
-        progress(_select(ha, entities, "_wake_word", opts.wake_word))
+    if opts.assistant or choose:
+        progress(_select(ha, entities, "_assistant", opts.assistant, choose))
+    if opts.wake_word or choose:
+        progress(_select(ha, entities, "_wake_word", opts.wake_word, choose))
     services = _services(ha) if wanted else set()
     for svc, data, what in wanted:
         if svc not in services:

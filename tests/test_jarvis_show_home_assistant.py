@@ -75,10 +75,9 @@ class AddressTests(unittest.TestCase):
 class FakeHA:
     """Home Assistant's REST answers for one ESPHome device, from nothing to fully set up."""
 
-    def __init__(self, *, flow_errors=(), discovered=False, allowed=False, entry=False):
+    def __init__(self, *, flow_errors=(), allowed=False, entry=False):
         self.calls = []
         self.flow_errors = list(flow_errors)
-        self.discovered = discovered
         self.allowed = allowed
         self.entries = [{"entry_id": "E1", "domain": "esphome", "title": "Jarvis Show 5"}] if entry else []
         self.states = {
@@ -92,12 +91,7 @@ class FakeHA:
         if path.startswith("/api/config/config_entries/entry"):
             return list(self.entries)
         if method == "GET" and path == "/api/config/config_entries/flow":
-            if not self.discovered:
-                return []
-            return [{"flow_id": "D1", "handler": "esphome",
-                     "context": {"source": "zeroconf", "title_placeholders": {"name": "jarvis-show-5"}}}]
-        if method == "GET" and path == "/api/config/config_entries/flow/D1":
-            return {"type": "form", "flow_id": "D1", "step_id": "discovery_confirm"}
+            raise ha.HomeAssistantError("GET /api/config/config_entries/flow: HTTP 405")
         if method == "POST" and path == "/api/config/config_entries/flow":
             return {"type": "form", "flow_id": "F1", "step_id": "user"}
         if method == "POST" and path.startswith("/api/config/config_entries/flow/"):
@@ -138,7 +132,7 @@ class FakeHA:
         return [(p, b) for m, p, b in self.calls if m == "POST" and p.startswith(prefix)]
 
 
-def run_deploy(fake, **kw):
+def run_deploy(fake, choose=None, **kw):
     settings = ha.DeviceSettings(dashcast="10.0.0.5:9555", dashcast_key=DASH_KEY, ha_url="http://ha:8123",
                                  ha_token=TOKEN, music_assistant="10.0.0.6")
     opts = ha.DeployOptions(name="Jarvis Show 5", psk=PSK, settings=settings, **kw)
@@ -147,14 +141,14 @@ def run_deploy(fake, **kw):
 
     def sleep(seconds):
         now[0] += seconds
-    entry = ha.deploy(fake, opts, progress=log.append, sleep=sleep, clock=lambda: now[0])
+    entry = ha.deploy(fake, opts, progress=log.append, sleep=sleep, clock=lambda: now[0], choose=choose)
     return entry, log
 
 
 class DeployTests(unittest.TestCase):
     def test_new_show_by_address(self):
         fake = FakeHA()
-        entry, log = run_deploy(fake, host="10.0.0.9")
+        entry, log = run_deploy(fake, host="10.0.0.9", assistant="Jarvis", wake_word="Hey Jarvis")
         self.assertEqual(entry, "E1")
         self.assertIn(("/api/config/config_entries/flow/F1", {"host": "10.0.0.9", "port": 6053}),
                       fake.posted("/api/config/config_entries/flow/F1"))
@@ -177,17 +171,37 @@ class DeployTests(unittest.TestCase):
             self.assertNotIn(TOKEN, line)
             self.assertNotIn(DASH_KEY, line)
 
-    def test_discovered_show_needs_no_address(self):
-        fake = FakeHA(discovered=True)
+    def test_show_without_an_address_is_found_by_its_local_name(self):
+        fake = FakeHA()
         entry, _ = run_deploy(fake)
         self.assertEqual(entry, "E1")
-        self.assertIn(("/api/config/config_entries/flow/D1", {}), fake.posted("/api/config/config_entries/flow/D1"))
-        self.assertFalse(fake.posted("/api/config/config_entries/flow/F1"))
+        self.assertIn(("/api/config/config_entries/flow/F1", {"host": "jarvis-show-5.local", "port": 6053}),
+                      fake.posted("/api/config/config_entries/flow/F1"))
+
+    def test_nothing_chosen_leaves_the_selects_alone(self):
+        fake = FakeHA()
+        _, log = run_deploy(fake, host="10.0.0.9")
+        self.assertFalse(fake.posted("/api/services/select/"))
+        self.assertEqual(fake.states["select.jarvis_show_5_wake_word"]["state"], "Okay Nabu")
+
+    def test_chooser_picks_from_what_is_really_there(self):
+        fake = FakeHA()
+        offered = {}
+
+        def choose(label, current, options):
+            offered[label] = (current, options)
+            return options[-1] if label == "assistant" else None
+        _, log = run_deploy(fake, choose=choose, host="10.0.0.9")
+        self.assertEqual(offered, {"assistant": ("preferred", ["preferred", "Jarvis"]),
+                                   "wake word": ("Okay Nabu", ["Okay Nabu", "Hey Jarvis"])})
+        self.assertEqual(fake.states["select.jarvis_show_5_assistant"]["state"], "Jarvis")
+        self.assertEqual(fake.states["select.jarvis_show_5_wake_word"]["state"], "Okay Nabu")
+        self.assertTrue(any("left at Okay Nabu" in line for line in log))
 
     def test_known_show_is_only_brought_up_to_date(self):
         fake = FakeHA(entry=True, allowed=True)
         fake.states["select.jarvis_show_5_wake_word"]["state"] = "Hey Jarvis"
-        _, log = run_deploy(fake)
+        _, log = run_deploy(fake, wake_word="Hey Jarvis")
         self.assertFalse(fake.posted("/api/config/config_entries/flow"))
         self.assertFalse(fake.posted("/api/config/config_entries/options/flow/O1"))
         self.assertIn(("DELETE", "/api/config/config_entries/options/flow/O1", None), fake.calls)
@@ -247,6 +261,16 @@ class GatherTests(unittest.TestCase):
     def asker(self, answers, secrets):
         answers, secrets, said = list(answers), list(secrets), []
         return Asker(True, ask=lambda _: answers.pop(0), ask_secret=lambda _: secrets.pop(0), say=said.append), said
+
+    def test_pick_by_number_name_or_enter(self):
+        asker, said = self.asker(["9", "2"], [])
+        self.assertEqual(asker.pick("assistant", "preferred", ["preferred", "Jarvis"]), "Jarvis")
+        self.assertTrue(any("pick 1 to 2" in line for line in said))
+        asker, _ = self.asker(["hey jarvis"], [])
+        self.assertEqual(asker.pick("wake word", "Okay Nabu", ["Okay Nabu", "Hey Jarvis"]), "Hey Jarvis")
+        asker, _ = self.asker([""], [])
+        self.assertIsNone(asker.pick("wake word", "Okay Nabu", ["Okay Nabu", "Hey Jarvis"]))
+        self.assertIsNone(Asker(False).pick("wake word", "Okay Nabu", ["Okay Nabu"]))
 
     def test_everything_asked(self):
         asker, _ = self.asker(["Home", "http://ha:8123/", "10.0.0.5", "10.0.0.6"],

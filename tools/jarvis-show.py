@@ -54,8 +54,8 @@ def parse_args() -> argparse.Namespace:
     setup.add_argument("--dashcast", help="the DashCast server, host[:port]")
     setup.add_argument("--dashcast-key-file", type=Path)
     setup.add_argument("--music-assistant", help="the Music Assistant server's IP address or name")
-    setup.add_argument("--wake-word", default=ha_api.DEFAULT_WAKE_WORD, help="set in Home Assistant; '' leaves it alone")
-    setup.add_argument("--assistant", default=ha_api.DEFAULT_ASSISTANT, help="the Assist pipeline; '' leaves it alone")
+    setup.add_argument("--wake-word", help="the wake word, one the Show offers (default: ask; '' leaves it alone)")
+    setup.add_argument("--assistant", help="the Assist pipeline it talks to, by name (default: ask; '' leaves it alone)")
     setup.add_argument("--no-questions", action="store_true", help="ask nothing; take switches and the keyring only")
     hass = parser.add_argument_group("home-assistant: add an installed Show to Home Assistant")
     hass.add_argument("--host", help="the Show's address, when Home Assistant has not discovered it")
@@ -142,6 +142,18 @@ def _find_host(name: str):
     return find
 
 
+def _chooser(args):
+    """Asks for the assistant and wake word the switches left open; '' on a switch means do not touch it."""
+    asker = _asker(args)
+    if not asker.interactive:
+        return None
+    given = {"assistant": args.assistant, "wake word": args.wake_word}
+
+    def choose(label: str, current: str, options: list[str]) -> str | None:
+        return None if given.get(label) is not None else asker.pick(label, current, options)
+    return choose
+
+
 def _key_file(args, backups: Path) -> Path | None:
     """The Show's encryption key: from the switches, or from the record the installer left for this name."""
     if args.key_file:
@@ -186,7 +198,8 @@ def deploy_to_home_assistant(settings: Settings, args, *, name: str, key_file: P
     print(f"INFO: adding {name!r} to Home Assistant at {settings.ha_url}")
     try:
         ha_api.deploy(ha_api.HomeAssistant(settings.ha_url, settings.ha_admin_token), opts,
-                      progress=lambda text: print(f"INFO: {text}"), find_host=_find_host(name))
+                      progress=lambda text: print(f"INFO: {text}"), find_host=_find_host(name),
+                      choose=_chooser(args))
     except ha_api.HomeAssistantError as exc:
         print(f"FAIL: Home Assistant: {exc}", file=sys.stderr)
         return 5
