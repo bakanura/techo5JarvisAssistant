@@ -1,6 +1,7 @@
 /*
  * The next calendar event, large, with the calendar's name and the event's
- * day beside it.
+ * day beside it. However far off it is: the card looks two weeks ahead
+ * first, and further when those are empty, up to a year.
  *
  * Every size is a multiple of --u, one pixel of the 1280x800 screen this
  * card was laid out on. On that screen it looks as it always did; on any
@@ -16,6 +17,9 @@ class JarvisCalendarCard extends HTMLElement {
     this._config = {
       entity: config.entity,
       daysAhead: Number(config.daysAhead || 14),
+      // Where it stops looking. daysAhead used to be both, which hid an
+      // appointment three weeks out behind "Keine Termine".
+      maxDaysAhead: Math.max(Number(config.maxDaysAhead || 366), Number(config.daysAhead || 14)),
       title: config.title || "Kalender"
     };
 
@@ -54,19 +58,29 @@ class JarvisCalendarCard extends HTMLElement {
     }
 
     try {
+      // A short look first, as most days there is something soon, and a
+      // year of a busy calendar is a big answer to ask for every minute.
       const start = new Date();
-      const end = new Date(start.getTime() + this._config.daysAhead * 86400000);
-      const query = new URLSearchParams({
-        start: start.toISOString(),
-        end: end.toISOString()
-      });
+      let events = [];
+      for (const days of this._horizons()) {
+        const end = new Date(start.getTime() + days * 86400000);
+        const query = new URLSearchParams({
+          start: start.toISOString(),
+          end: end.toISOString()
+        });
 
-      const response = await this._hass.callApi(
-        "GET",
-        "calendars/" + encodeURIComponent(this._config.entity) + "?" + query.toString()
-      );
+        const response = await this._hass.callApi(
+          "GET",
+          "calendars/" + encodeURIComponent(this._config.entity) + "?" + query.toString()
+        );
 
-      this._events = Array.isArray(response) ? response : [];
+        events = Array.isArray(response) ? response : [];
+        if (events.length) {
+          break;
+        }
+      }
+
+      this._events = events;
       this._loading = false;
     } catch (_) {
       this._events = [];
@@ -74,6 +88,14 @@ class JarvisCalendarCard extends HTMLElement {
     }
 
     this._render();
+  }
+
+  // daysAhead, then a quarter, then maxDaysAhead: the windows the card
+  // asks for in turn until one has an event.
+  _horizons() {
+    const first = this._config.daysAhead;
+    const last = this._config.maxDaysAhead;
+    return [...new Set([first, Math.min(Math.max(first, 92), last), last])];
   }
 
   _escape(value) {
@@ -117,7 +139,7 @@ class JarvisCalendarCard extends HTMLElement {
   _render() {
     const event = this._events[0];
     const eventName = this._loading ? "Lade…" : event?.summary || "Keine Termine";
-    const date = event ? this._when(event) : "Nächste 14 Tage";
+    const date = event ? this._when(event) : "";
 
     this.innerHTML = `
       <style>
