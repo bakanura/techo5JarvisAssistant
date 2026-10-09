@@ -132,7 +132,8 @@ def verify_twrp_board(serial: str, board: str, *, run: Callable = subprocess.run
     if layout == "AMONET1":
         raise RecoveryError(
             "legacy Amonet 1.x boot microloader detected; its boot layout is incompatible "
-            "with Jarvis Show. Upgrade to Amonet 2.0.1+ and a plain Lineage boot image first"
+            "with Jarvis Show. Upgrade to Amonet 2.0.1+ and a plain Lineage boot image first "
+            "(tools/fetch-show-assets.py picks up and checks the Amonet zip)"
         )
     if layout != "PLAIN":
         raise RecoveryError(

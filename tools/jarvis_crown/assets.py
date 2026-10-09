@@ -5,6 +5,10 @@ The LineageOS zip (staged only for its vendor drivers) and the board boot image 
 never live in the repository. They are fetched over HTTPS into a cache outside the checkout and kept only
 when their size and SHA-256 match what is listed here. Boot hashes come from install.py, so the installer
 and the fetcher cannot disagree about which image is trusted.
+
+Amonet packages are only published as XDA attachments, which need a login. Those are marked manual: the
+fetcher takes them from a folder the person downloaded into (~/Downloads by default) instead of the web.
+An empty sha256 means nobody has reviewed and pinned that package yet, so it is never used, only inspected.
 """
 from __future__ import annotations
 
@@ -23,10 +27,16 @@ class Asset:
     sha256: str
     size: int
     source: str
+    manual: bool = False  # behind a login; downloaded by hand from url, then picked up locally
 
 
 LINEAGE_RELEASES = "https://github.com/amazon-oss/releases/releases/download"
 TECHO5_RELEASES = "https://github.com/HuskerMinion/techo5/releases/download"
+XDA_ATTACHMENTS = "https://xdaforums.com/attachments"
+
+# Where the open-source parts of each Amonet package live, so a downloaded zip can be compared file by
+# file before anyone pins it. The XDA threads link mt8163-echo-show; the per-board branches came first.
+AMONET_SOURCE = ("R0rt1z2/amonet", ("mt8163-echo-show", "mt8163-checkers", "mt8163-crown"))
 
 # LineageOS 18.1 builds from amazon-oss/releases. Each sha256 is the one the release notes publish and
 # the one GitHub reports as the asset digest. 20260904 is the first build whose kernel is
@@ -58,6 +68,15 @@ ASSETS: dict[str, tuple[Asset, ...]] = {
             f"{TECHO5_RELEASES}/v1.0.1/techo5-boot-checkers-v1.0.1.img",
             BOOT_SHA256_BY_BOARD["checkers"] or "", 13172736,
             "HuskerMinion/techo5 v1.0.1 (signed manifest)",
+        ),
+        # Needed only by units first unlocked with Amonet 1.x (boot starts with "microloader by xyz"):
+        # flashing this zip in TWRP moves them to the 2.x layout. Not pinned until it has been reviewed.
+        Asset(
+            "amonet", "amonet-checkers-v2.0.1.zip",
+            f"{XDA_ATTACHMENTS}/amonet-checkers-v2-0-1-zip.6373840/",
+            "", 0,
+            "XDA thread 4762900 (R0rt1z2), needs an XDA login",
+            manual=True,
         ),
     ),
 }

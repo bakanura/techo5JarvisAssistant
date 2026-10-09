@@ -33,6 +33,19 @@ keeps a file only when its size and SHA-256 match the pin in `tools/jarvis_crown
 the paths. It refuses a folder inside the repository: these files are hundreds of MB and never belong in
 the checkout. `--check` verifies what is cached without downloading.
 
+Amonet zips are only attached to the XDA threads, and those downloads need a login, so the tool never
+fetches them itself. It prints the attachment link instead. Download it in a browser and run the tool
+again: it takes the zip from `~/Downloads` (or `--from DIR`), checks it against its pin and copies it
+into the cache. A package with no pin yet (`amonet-checkers-v2.0.1.zip` today) is not used. The tool
+compares every file in it with the public source (R0rt1z2/amonet), lists the ones that match, the ones
+that differ, and the binaries only the zip carries (preloader, LK, TZ, kaeru, TWRP), then stops. Its
+hash goes into `tools/jarvis_crown/assets.py` only after someone has reviewed that list.
+
+A Show 5 first unlocked with Amonet 1.x has `microloader by xyz` at the start of its boot partition, and
+the TWRP gate refuses it. The upgrade the XDA thread gives for that is flashing the 2.x zip in TWRP.
+That rewrites the preloader, `lk_real`, `tee1_real`, `tee2_real`, `expdb` and recovery, so it is a
+bootloader write and only ever uses the pinned zip.
+
 The Amonet package stays a local/user-supplied dependency rather than a Jarvis Crown release asset.
 Later installer stages must not weaken or bypass this gate.
 
