@@ -3,6 +3,7 @@ package firmware
 import (
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/HuskerMinion/techo5/echod/internal/config"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/remind"
@@ -11,28 +12,37 @@ import (
 )
 
 // Saying that an update is ready. Home Assistant shows its update card, and the screen says so under the
-// clock, but nobody opens either to look: the device says it once, out loud, for each new version. Not in
-// quiet hours, and not when there is nothing to say it with; the next check tries again, so a version
-// found at night is said in the morning.
+// clock, but nobody opens either to look: the device says it out loud, and again every remindEvery until
+// the update is installed, so it cannot be missed. Not in quiet hours, and not when there is nothing to
+// say it with; the next check tries again, so a version found at night is said in the morning. With
+// automatic installs on there is nothing for anybody to do, so that is said once.
 var (
 	say    = func(words string) { safe.Go("update notice", func() { remind.Say(words) }) }
 	canSay = remind.CanSay
 	quiet  = config.Quiet
 )
 
-func (u *Firmware) tell() { u.tellOf(u.Offered()) }
+// remindEvery is how long after saying an update is ready it is said again, while it still waits.
+const remindEvery = 4 * time.Hour
 
-// tellOf says that v is ready, if it has not been said and can be now.
-func (u *Firmware) tellOf(v string) {
-	if v == "" || v == config.Get().Update.Told || quiet() || !canSay() {
+func (u *Firmware) tell() { u.tellOf(u.Offered(), time.Now()) }
+
+// tellOf says that v is ready, if it is due and can be said now.
+func (u *Firmware) tellOf(v string, now time.Time) {
+	if v == "" || quiet() || !canSay() {
 		return
 	}
-	if err := config.Set().Update().Told(v); err != nil {
+	auto := u.AutoInstall()
+	c := config.Get().Update
+	if v == c.Told && (auto || now.Sub(c.ToldAt) < remindEvery) {
+		return
+	}
+	if err := config.Set().Update().Told(v, now); err != nil {
 		slog.Error("saving the update notice failed", "err", err)
 		return
 	}
-	slog.Info("saying an update is ready", "version", v)
-	say(notice(v, u.AutoInstall()))
+	slog.Info("saying an update is ready", "version", v, "again", v == c.Told)
+	say(notice(v, auto))
 }
 
 // notice is what is said: the version, and what happens next.
