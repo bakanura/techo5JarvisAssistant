@@ -142,7 +142,7 @@ type Display struct {
 	r     *renderer
 
 	// booting is the splash: from the first frame until Home Assistant is listening and at least
-	// splashMin has passed.
+	// splashMin has passed, however long that takes. Only a ring or the Wi-Fi page cut it short.
 	booting bool
 	started time.Time
 	logo    *splash
@@ -1651,13 +1651,8 @@ func (d *Display) frame() time.Duration {
 		d.booting, booting = false, false
 		slog.Info("splash cut short: Wi-Fi setup", "after", now.Sub(started).Round(time.Millisecond))
 	}
-	// And a device with no Home Assistant access: one that left the Home Assistant it had, or never
-	// had one. Home Assistant may still add it, but nothing says it will, and the clock, the alarms
-	// and the settings - the way to the setup page among them - were all behind the logo.
-	if booting && now.Sub(started) >= noHomeAssistantWait && !hass.Get().Ready() {
-		d.booting, booting = false, false
-		slog.Info("splash cut short: no Home Assistant access", "after", now.Sub(started).Round(time.Millisecond))
-	}
+	// Nothing else ends it, a slow Home Assistant included: a Show that is not connected stays on
+	// "Connecting to Home Assistant" rather than showing pages that need Home Assistant to work.
 	d.mu.Unlock()
 	if booting {
 		d.r.drawSplash(d.logo, now.Sub(started), d.bootStep(now, started))

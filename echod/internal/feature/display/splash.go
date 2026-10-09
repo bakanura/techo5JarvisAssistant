@@ -38,11 +38,6 @@ const (
 	// page opens by itself, ending the splash: long enough for a lease on a slow network, short enough
 	// that a fresh unit, or one in a house it has no network for, is not left on the splash.
 	noAddressWait = 45 * time.Second
-
-	// noHomeAssistantWait is how long a device with no Home Assistant access waits on the splash for
-	// Home Assistant to add it before showing the clock: a device already in a Home Assistant is
-	// usually listening well inside it.
-	noHomeAssistantWait = 60 * time.Second
 )
 
 // bootStep is how far coming up has got: each one is a third of the bar.
