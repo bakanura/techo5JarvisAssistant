@@ -1,6 +1,6 @@
 # Jarvis Show release pipeline
 
-Official release repository: `bakanura/techo5JarvisAssistant`.
+Official release repository: `vardstein/techo5JarvisAssistant`.
 
 The project has one canonical publishing path: `tools/release-jarvis-show.sh` locally or
 `.github/workflows/release.yml` in GitHub Actions. The inherited generic TECHO5 PowerShell publisher is

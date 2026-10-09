@@ -59,7 +59,7 @@ from techo5lib import (CONSOLE_TECHO5, Adb, Console, Fastboot, Release, ask_name
 from jarvis_crown.timing import (FASTBOOT_REENUM_TIMEOUT_SECONDS, FIRST_BOOT_TIMEOUT_SECONDS,
                                   RESCUE_CONSOLE_TIMEOUT_SECONDS, TWRP_DATA_REBOOT_TIMEOUT_SECONDS)  # noqa: E402
 
-REPO = os.environ.get('JARVIS_SHOW_RELEASE_REPO', 'bakanura/techo5JarvisAssistant')
+REPO = os.environ.get('JARVIS_SHOW_RELEASE_REPO', 'vardstein/techo5JarvisAssistant')
 # The LineageOS kernel commit TECHO5's kernel is rebuilt from: the vendor modules only load on it.
 # All three boards run this same commit, which is why one daemon and one installer serve them.
 KERNEL_RELEASE = '4.9.337-g8d928c5176cc'

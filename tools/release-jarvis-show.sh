@@ -3,7 +3,7 @@
 # This script NEVER builds a rootfs or boot image. CI/local build jobs produce those separately.
 set -euo pipefail
 
-REPO=${JARVIS_SHOW_RELEASE_REPO:-bakanura/techo5JarvisAssistant}
+REPO=${JARVIS_SHOW_RELEASE_REPO:-vardstein/techo5JarvisAssistant}
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 VERSION=
 NOTES=

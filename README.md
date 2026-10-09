@@ -362,6 +362,6 @@ TECHO5 isn't affiliated with Amazon. Echo and Alexa are trademarks of Amazon.com
 
 ## Jarvis Show release repository
 
-Official fork/releases: https://github.com/bakanura/techo5JarvisAssistant
+Official fork/releases: https://github.com/vardstein/techo5JarvisAssistant
 
 Device OTA trusts only the Jarvis Show Ed25519 release key; see `docs/ota-identity.md`.

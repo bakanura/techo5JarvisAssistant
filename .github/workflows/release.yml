@@ -12,12 +12,12 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (vX.Y.Z or prerelease)'
-        required: true
+        description: 'Release version (vX.Y.Z or prerelease); leave empty on dev, staging or stable to release that branch'
+        required: false
         type: string
       notes:
         description: 'Release notes'
-        required: true
+        required: false
         type: string
 
 permissions:
@@ -48,7 +48,14 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           channel=
-          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF_TYPE" = branch ]; then
+          # A manual run on a channel branch without a version releases that branch like a push would. That is
+          # also how a branch created at a commit GitHub already has gets its first release: such a push has
+          # no changed files, and paths-ignore then skips it.
+          if [ "$GITHUB_REF_TYPE" = branch ] && { [ "$GITHUB_EVENT_NAME" = push ] || [ -z "$INPUT_VERSION" ]; }; then
+            case "$GITHUB_REF_NAME" in
+              dev|staging|stable) ;;
+              *) echo "a run on $GITHUB_REF_NAME needs a version" >&2; exit 1;;
+            esac
             channel="$GITHUB_REF_NAME"
             base=$(tr -d '[:space:]' < VERSION)
             [[ "$base" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "VERSION must be X.Y.Z, not '$base'" >&2; exit 1; }
@@ -69,7 +76,7 @@ jobs:
             notes="Jarvis Show $version"
           else
             version="$INPUT_VERSION"
-            notes="$INPUT_NOTES"
+            notes="${INPUT_NOTES:-Jarvis Show $INPUT_VERSION}"
           fi
           [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]
           {
@@ -127,7 +134,7 @@ jobs:
           VERSION: ${{ steps.meta.outputs.version }}
           NOTES: ${{ steps.meta.outputs.notes }}
           CHANNEL: ${{ steps.meta.outputs.channel }}
-          JARVIS_SHOW_RELEASE_REPO: bakanura/techo5JarvisAssistant
+          JARVIS_SHOW_RELEASE_REPO: vardstein/techo5JarvisAssistant
         run: |
           channel_args=()
           [ -z "$CHANNEL" ] || channel_args=(--channel "$CHANNEL")

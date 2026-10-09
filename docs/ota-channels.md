@@ -2,9 +2,9 @@
 
 Jarvis Show has three compiled-in release streams under the same signed release trust root:
 
-- `stable`: `https://github.com/bakanura/techo5JarvisAssistant/releases/latest/download/manifest.json`
-- `staging`: `https://github.com/bakanura/techo5JarvisAssistant/releases/download/channel-staging/manifest.json`
-- `dev`: `https://github.com/bakanura/techo5JarvisAssistant/releases/download/channel-dev/manifest.json`
+- `stable`: `https://github.com/vardstein/techo5JarvisAssistant/releases/latest/download/manifest.json`
+- `staging`: `https://github.com/vardstein/techo5JarvisAssistant/releases/download/channel-staging/manifest.json`
+- `dev`: `https://github.com/vardstein/techo5JarvisAssistant/releases/download/channel-dev/manifest.json`
 
 Stable follows GitHub's latest non-prerelease release. Staging and dev follow the rolling
 `channel-staging` and `channel-dev` releases, which hold only the signed manifest of the release they
@@ -31,9 +31,14 @@ on a unit, fast-forward `stable` to staging. After a stable release, bump `VERSI
 next push. The workflow stops if VERSION is already released as stable, since every build of it would
 rank below the stable release and reach no device.
 
-Pushes that only touch `docs/`, `audit/` or Markdown files don't cut a release. A `v*.*.*` tag push or a
-manual run of the workflow still works and picks the channel from the version (no suffix: stable,
-`-rc.N`: staging, anything else: dev).
+Pushes that only touch `docs/`, `audit/` or Markdown files don't cut a release. Neither does creating a
+channel branch at a commit GitHub already has, because that push changes no files. In both cases run the
+workflow by hand on the branch with the version left empty, and it releases the branch like a push:
+
+    gh workflow run release.yml --ref dev
+
+A `v*.*.*` tag push, or a manual run with a version, picks the channel from the version instead (no
+suffix: stable, `-rc.N`: staging, anything else: dev).
 
 ## On the device
 

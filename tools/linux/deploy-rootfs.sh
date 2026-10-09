@@ -28,7 +28,7 @@ INPUTS=${TECHO5_INPUTS:-$(cd "$(dirname "$0")/../.." && pwd)/inputs}
 # for anyone keep UTC.
 TZ_NAME=${TZ_NAME:-UTC}
 GO=${GO:-go}
-RELEASE_REPO=${JARVIS_SHOW_RELEASE_REPO:-bakanura/techo5JarvisAssistant}
+RELEASE_REPO=${JARVIS_SHOW_RELEASE_REPO:-vardstein/techo5JarvisAssistant}
 VERSION=${VERSION:-}
 WSL_DISTRO=${WSL_DISTRO:-Ubuntu}
 # Another device: BUILD_TAGS (the daemon's, e.g. spot) and DEVICE_OVERLAY (files laid over tools/linux/rootfs,

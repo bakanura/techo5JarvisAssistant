@@ -1,14 +1,14 @@
 # Jarvis Show OTA identity
 
-Official GitHub repository: `https://github.com/bakanura/techo5JarvisAssistant`
+Official GitHub repository: `https://github.com/vardstein/techo5JarvisAssistant`
 
-Official release base: `https://github.com/bakanura/techo5JarvisAssistant/releases`
+Official release base: `https://github.com/vardstein/techo5JarvisAssistant/releases`
 
 Channels:
 
-- stable: `https://github.com/bakanura/techo5JarvisAssistant/releases/latest/download/manifest.json`
-- staging: `https://github.com/bakanura/techo5JarvisAssistant/releases/download/channel-staging/manifest.json`
-- dev: `https://github.com/bakanura/techo5JarvisAssistant/releases/download/channel-dev/manifest.json`
+- stable: `https://github.com/vardstein/techo5JarvisAssistant/releases/latest/download/manifest.json`
+- staging: `https://github.com/vardstein/techo5JarvisAssistant/releases/download/channel-staging/manifest.json`
+- dev: `https://github.com/vardstein/techo5JarvisAssistant/releases/download/channel-dev/manifest.json`
 
 Both manifests require a detached Ed25519 signature at `manifest.json.sig`. The updater and installer
 trust only the Jarvis Show v1 release key below:

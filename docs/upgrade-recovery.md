@@ -13,7 +13,7 @@ not treat those as interchangeable operations.
 The repository uses:
 
 ```text
-origin   https://github.com/bakanura/techo5JarvisAssistant.git
+origin   https://github.com/vardstein/techo5JarvisAssistant.git
 upstream https://github.com/HuskerMinion/techo5.git
 ```
 

@@ -10,7 +10,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 class ReleaseContractTests(unittest.TestCase):
     def test_official_release_namespace_is_consistent(self):
-        expected = "bakanura/techo5JarvisAssistant"
+        expected = "vardstein/techo5JarvisAssistant"
         for rel in (
             "tools/release-jarvis-show.sh",
             "tools/install-show.py",
@@ -18,7 +18,7 @@ class ReleaseContractTests(unittest.TestCase):
         ):
             self.assertIn(expected, (ROOT / rel).read_text(encoding="utf-8"), rel)
         self.assertIn(
-            "https://github.com/bakanura/techo5JarvisAssistant/releases",
+            "https://github.com/vardstein/techo5JarvisAssistant/releases",
             (ROOT / "echod/internal/update/releases_cronos.go").read_text(encoding="utf-8"),
         )
 
