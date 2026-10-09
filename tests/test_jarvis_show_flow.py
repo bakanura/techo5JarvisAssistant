@@ -1,3 +1,4 @@
+import json
 import pathlib
 import sys
 import tempfile
@@ -125,6 +126,8 @@ class FlowAcceptanceTests(unittest.TestCase):
             self.assertEqual(h.plan_kwargs["confirmation"], profile_for_board("crown").install_confirmation)
             self.assertEqual(h.plan_kwargs["board"], "crown")
             self.assertEqual(h.stage_serial, "ADB123")
+            record = json.loads((td / "backups" / "ADB123" / "show.json").read_text())
+            self.assertEqual((record["name"], record["board"]), ("Living Room", "crown"))
 
     def test_verified_recovery_identity_avoids_second_fastboot_query(self):
         with tempfile.TemporaryDirectory() as td_s:

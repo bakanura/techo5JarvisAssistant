@@ -1,4 +1,6 @@
 import argparse
+import contextlib
+import io
 import importlib.util
 import json
 import os
@@ -14,6 +16,7 @@ sys.path.insert(0, str(TOOLS))
 
 from jarvis_crown import home_assistant as ha  # noqa: E402
 from jarvis_crown.settings import Asker, Settings, SettingsError, gather, load_defaults, save_defaults, secret_files  # noqa: E402
+from jarvis_crown.shows import record_show, show_named  # noqa: E402
 from techo5lib import Fail  # noqa: E402
 
 SPEC = importlib.util.spec_from_file_location("jarvis_install_show_settings", TOOLS / "install-show.py")
@@ -353,29 +356,35 @@ SHOW_SPEC.loader.exec_module(show_cli)
 
 
 class KeyFileTests(unittest.TestCase):
-    def _backups(self, root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
-        old, new = root / "AAAA0001" / "home-assistant.key", root / "BBBB0002" / "home-assistant.key"
-        for n, key in enumerate((old, new)):
-            key.parent.mkdir()
-            key.write_text("k\n")
-            os.utime(key, (1_000_000 + n, 1_000_000 + n))
-        return old, new
+    """home-assistant finds the Show by the name the installer recorded, never by guessing."""
 
-    def test_several_shows_offers_the_newest_first(self):
-        args = argparse.Namespace(key_file=None, serial=None)
-        with tempfile.TemporaryDirectory() as tmp:
-            old, new = self._backups(pathlib.Path(tmp))
-            said: list[str] = []
-            pick = lambda answers: Asker(True, ask=lambda _p: answers.pop(0), say=said.append)
-            self.assertEqual(show_cli._key_file(args, pathlib.Path(tmp), pick([""])), new)
-            self.assertEqual(show_cli._key_file(args, pathlib.Path(tmp), pick(["9", "2"])), old)
-            self.assertIn("   pick 1 to 2", said)
-            self.assertIsNone(show_cli._key_file(args, pathlib.Path(tmp), Asker(False)))
+    def _args(self, name):
+        return argparse.Namespace(key_file=None, serial=None, name=name)
 
-    def test_one_show_needs_no_question(self):
-        args = argparse.Namespace(key_file=None, serial=None)
+    def test_finds_the_show_by_its_installed_name(self):
         with tempfile.TemporaryDirectory() as tmp:
-            key = pathlib.Path(tmp) / "CCCC0003" / "home-assistant.key"
-            key.parent.mkdir()
-            key.write_text("k\n")
-            self.assertEqual(show_cli._key_file(args, pathlib.Path(tmp), Asker(False)), key)
+            backups = pathlib.Path(tmp)
+            record_show(backups / "AAAA05BJ", name="Jarvis Show 5", board="checkers")
+            record_show(backups / "BBBB08TU", name="Kitchen", board="crown")
+            (backups / "CCCC0003").mkdir()
+            (backups / "CCCC0003" / "home-assistant.key").write_text("k\n")
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(show_cli._key_file(self._args("jarvis show 5"), backups),
+                                 backups / "AAAA05BJ" / "home-assistant.key")
+
+    def test_unknown_name_stops_and_lists_the_known_shows(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            backups = pathlib.Path(tmp)
+            record_show(backups / "BBBB08TU", name="Kitchen", board="crown")
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                self.assertIsNone(show_cli._key_file(self._args("Jarvis Show 5"), backups))
+            self.assertIn("'Kitchen' (crown, serial ending 08TU)", err.getvalue())
+            self.assertNotIn("BBBB08TU", err.getvalue())
+
+    def test_two_shows_with_one_name_are_not_guessed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            backups = pathlib.Path(tmp)
+            record_show(backups / "A1", name="Show", board="checkers")
+            record_show(backups / "A2", name="Show", board="crown")
+            self.assertIsNone(show_named(backups, "Show"))

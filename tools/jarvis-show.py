@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime
 import json
 import os
 from pathlib import Path
@@ -19,6 +18,7 @@ from jarvis_crown.boards import profile_for_board, profile_for_product  # noqa: 
 from jarvis_crown.device_gate import DeviceGateError, identify_show  # noqa: E402
 from jarvis_crown.flow import FlowError, InstallInputs, run_install_flow  # noqa: E402
 from jarvis_crown import home_assistant as ha_api  # noqa: E402
+from jarvis_crown.shows import known_shows, show_named  # noqa: E402
 from jarvis_crown.settings import Asker, Settings, SettingsError, gather, save_defaults, secret_files  # noqa: E402
 from jarvis_crown.preflight import preflight_ok, print_checks, run_preflight  # noqa: E402
 from jarvis_crown.recovery import RecoveryError, adb_recovery_serials, identify_recovery_show  # noqa: E402
@@ -142,27 +142,22 @@ def _find_host(name: str):
     return find
 
 
-def _key_file(args, backups: Path, asker: Asker) -> Path | None:
-    """The Show's encryption key. With several installed Shows, the newest install is offered first."""
+def _key_file(args, backups: Path) -> Path | None:
+    """The Show's encryption key: from the switches, or from the record the installer left for this name."""
     if args.key_file:
         return args.key_file
     if args.serial:
         return backups / args.serial / "home-assistant.key"
-    keys = sorted(backups.glob("*/home-assistant.key"), key=lambda k: k.stat().st_mtime, reverse=True)
-    if len(keys) <= 1:
-        return keys[0] if keys else None
-    asker.say("   Several Shows were installed from here (newest first):")
-    for n, key in enumerate(keys, 1):
-        when = datetime.fromtimestamp(key.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
-        asker.say(f"     {n}. serial ending {key.parent.name[-4:]}, installed {when}")
-
-    def pick(raw: str) -> str:
-        if not raw.isdigit() or not 1 <= int(raw) <= len(keys):
-            raise ValueError(f"pick 1 to {len(keys)}")
-        return raw
-
-    choice = asker.text("Which one", "1", pick)
-    return keys[int(choice) - 1] if choice else None
+    show = show_named(backups, args.name)
+    if show is None:
+        print(f"FAIL: no Show named {args.name!r} was installed from here", file=sys.stderr)
+        for known in known_shows(backups):
+            print(f"INFO:   installed: {known.name!r} ({known.board}, serial ending {known.serial_tail})",
+                  file=sys.stderr)
+        print("INFO:   or say which with --serial or --key-file", file=sys.stderr)
+        return None
+    print(f"PASS: {show.name} is the {show.board} Show with serial ending {show.serial_tail}")
+    return show.key_file
 
 
 def deploy_to_home_assistant(settings: Settings, args, *, name: str, key_file: Path, host: str | None,
@@ -203,13 +198,11 @@ def home_assistant_command(args, backups: Path) -> int:
     if not args.name:
         print("FAIL: home-assistant requires --name, the Show's name as installed", file=sys.stderr)
         return 1
-    asker = _asker(args)
-    key_file = _key_file(args, backups, asker)
+    key_file = _key_file(args, backups)
     if key_file is None:
-        print("FAIL: say which Show with --serial or --key-file", file=sys.stderr)
         return 1
     try:
-        settings = gather(args, asker, want_wifi=False)
+        settings = gather(args, _asker(args), want_wifi=False)
     except SettingsError as exc:
         print(f"FAIL: {exc}", file=sys.stderr)
         return 1

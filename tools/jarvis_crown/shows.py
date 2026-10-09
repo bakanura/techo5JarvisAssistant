@@ -1,0 +1,54 @@
+"""Which Show is which: backups/<serial>/show.json, written by the installer as soon as it knows the serial.
+
+The later steps (adding a Show to Home Assistant, handing it its settings) find a unit by the name it was
+installed with, so they never have to guess between several backups.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timezone
+import json
+from pathlib import Path
+
+RECORD = "show.json"
+
+
+@dataclass(frozen=True)
+class Show:
+    name: str
+    board: str
+    folder: Path
+
+    @property
+    def key_file(self) -> Path:
+        return self.folder / "home-assistant.key"
+
+    @property
+    def serial_tail(self) -> str:
+        return self.folder.name[-4:]
+
+
+def record_show(folder: Path, *, name: str, board: str) -> None:
+    folder.mkdir(parents=True, exist_ok=True)
+    data = {"name": name, "board": board,
+            "installed": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+    tmp = folder / (RECORD + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(folder / RECORD)
+
+
+def known_shows(backups: Path) -> list[Show]:
+    shows = []
+    for record in sorted(backups.glob(f"*/{RECORD}")):
+        try:
+            data = json.loads(record.read_text(encoding="utf-8"))
+            shows.append(Show(name=str(data["name"]), board=str(data.get("board", "")), folder=record.parent))
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    return shows
+
+
+def show_named(backups: Path, name: str) -> Show | None:
+    """The Show installed under this name (case-insensitive), or None when there is not exactly one."""
+    matches = [s for s in known_shows(backups) if s.name.casefold() == name.strip().casefold()]
+    return matches[0] if len(matches) == 1 else None

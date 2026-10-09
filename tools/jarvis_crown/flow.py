@@ -18,6 +18,7 @@ from jarvis_crown.boards import BoardProfile, profile_for_board
 from jarvis_crown.device_gate import DeviceIdentity, identify_show
 from jarvis_crown.install import InstallPlan, execute_install, make_install_plan
 from jarvis_crown.preflight import Check, preflight_ok, run_preflight
+from jarvis_crown.shows import record_show
 from jarvis_crown.recovery import (
     BackupResult,
     RecoverySession,
@@ -176,6 +177,7 @@ def run_install_flow(
 
     say("backup")
     backup_root = inputs.backups_dir / session.adb_serial
+    record_show(backup_root, name=inputs.name, board=profile.board)
     client = deps.client_factory(session.adb_serial)
     backup: BackupResult = deps.backup(
         client,

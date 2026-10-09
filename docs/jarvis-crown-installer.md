@@ -324,6 +324,8 @@ tool says how to finish later. The same steps run on their own for a Show that i
 python3 tools/jarvis-show.py home-assistant --name "Kitchen Show"
 ```
 
-It finds the encryption key in `backups/<serial>/home-assistant.key` (`--serial` or `--key-file`
-when there is more than one), and the Show's address in `backups/<serial>/address`, through mDNS,
-or from `--host`.
+It knows which Show you mean from the name. As soon as the installer has read a unit's serial it
+writes `backups/<serial>/show.json` with the name and board, and `home-assistant` looks the name up
+there to find that unit's key. It never guesses: an unknown name, or two Shows installed under the
+same name, stops with a list of the Shows it knows (`--serial` or `--key-file` pick one by hand).
+The Show's address comes from `backups/<serial>/address`, mDNS, or `--host`.
