@@ -81,8 +81,19 @@ def save_defaults(settings: Settings, path: Path | None = None) -> None:
         pass
 
 
+# Where secret-tool lives when it is not on PATH (on OpenJade desktops it ships with jplane).
+SECRET_TOOL_FALLBACKS = ("~/.local/share/jplane/libsecret/bin/secret-tool",)
+
+
 def secret_tool() -> str | None:
-    return os.environ.get("JARVIS_SHOW_SECRET_TOOL") or shutil.which("secret-tool")
+    found = os.environ.get("JARVIS_SHOW_SECRET_TOOL") or shutil.which("secret-tool")
+    if found:
+        return found
+    for candidate in SECRET_TOOL_FALLBACKS:
+        path = os.path.expanduser(candidate)
+        if os.access(path, os.X_OK):
+            return path
+    return None
 
 
 def keyring_lookup(secret: str, **attrs: str) -> str | None:

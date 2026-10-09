@@ -58,7 +58,11 @@ class AddressTests(unittest.TestCase):
     def test_ha_url_is_scheme_host_port(self):
         self.assertEqual(ha.normalize_ha_url("https://HA.example/"), "https://HA.example")
         self.assertEqual(ha.normalize_ha_url("http://10.0.0.2:8123"), "http://10.0.0.2:8123")
-        for bad in ("ha.example", "ftp://ha", "http://u:p@ha", "http://ha/lovelace"):
+        self.assertEqual(ha.normalize_ha_url("haos.example.org"), "https://haos.example.org")
+        self.assertEqual(ha.normalize_ha_url("10.0.0.2"), "http://10.0.0.2:8123")
+        self.assertEqual(ha.normalize_ha_url("10.0.0.2:8124"), "http://10.0.0.2:8124")
+        self.assertEqual(ha.normalize_ha_url("homeassistant.local"), "http://homeassistant.local:8123")
+        for bad in ("ftp://ha", "http://u:p@ha", "http://ha/lovelace", "haos.example.org/lovelace"):
             with self.assertRaises(ValueError, msg=bad):
                 ha.normalize_ha_url(bad)
 

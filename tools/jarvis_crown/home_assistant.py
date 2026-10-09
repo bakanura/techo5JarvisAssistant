@@ -116,8 +116,17 @@ def check_dashcast_key(key: str) -> str:
 
 
 def normalize_ha_url(url: str) -> str:
-    """Home Assistant's address as http(s)://host[:port], the way the Show and this tool both use it."""
-    u = urllib.parse.urlsplit(url.strip())
+    """Home Assistant's address as http(s)://host[:port], the way the Show and this tool both use it.
+    Without a scheme, a domain name means its https site (a reverse proxy, like haos.example.org) and
+    an IP address, a .local name or a host:port means Home Assistant itself on http, port 8123."""
+    url = url.strip()
+    if url and "://" not in url:
+        host = url.split("/", 1)[0]
+        bare = host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+        proxied = ":" not in host and "." in bare and not bare.endswith(".local") \
+            and not re.fullmatch(r"[\d.]+", bare)
+        url = f"https://{url}" if proxied else f"http://{host if ':' in host else host + ':8123'}{url[len(host):]}"
+    u = urllib.parse.urlsplit(url)
     scheme = u.scheme.lower()
     if scheme not in ("http", "https") or not u.hostname:
         raise ValueError("not a Home Assistant address: write it like http://homeassistant.local:8123")
