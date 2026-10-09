@@ -364,6 +364,8 @@ def _select(ha: HomeAssistant, entities: list[str], suffix: str, option: str | N
         return f"no {suffix.lstrip('_')} select on this Show"
     entity = min(matches, key=len)
     state = ha.request("GET", f"/api/states/{entity}") or {}
+    if state.get("state") in (None, "unavailable", "unknown"):
+        return f"{entity} is not available yet; set it in Home Assistant once the Show is connected"
     if option is None:
         options = [str(o) for o in (state.get("attributes") or {}).get("options") or []]
         current = str(state.get("state") or "")
@@ -377,6 +379,20 @@ def _select(ha: HomeAssistant, entities: list[str], suffix: str, option: str | N
         return f"{entity} has no option {option!r} (it has {', '.join(map(str, options)) or 'none yet'})"
     ha.request("POST", "/api/services/select/select_option", {"entity_id": entity, "option": option})
     return f"{entity} set to {option}"
+
+
+def _selects_ready(ha: HomeAssistant, entities: list[str]) -> bool:
+    """Whether the assistant and wake word selects are there with their real options. Right after the
+    entry is added the wake word one is unavailable and offers only no_wake_word, until the Show has sent
+    Home Assistant its configuration."""
+    for suffix in ("_assistant", "_wake_word"):
+        matches = [e for e in entities if e.startswith("select.") and e.endswith(suffix)]
+        if not matches:
+            continue
+        state = ha.request("GET", f"/api/states/{min(matches, key=len)}") or {}
+        if state.get("state") in (None, "unavailable", "unknown"):
+            return False
+    return True
 
 
 def _switch_on(ha: HomeAssistant, entities: list[str], suffix: str) -> str:
@@ -463,9 +479,12 @@ def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], 
         entities = entry_entities(ha, entry_id) if want_selects or s.music_assistant else []
         services = _services(ha) if wanted else set()
         ready = (not (want_selects or s.music_assistant) or any(e.startswith("select.") for e in entities)) and \
-            all(svc in services for svc, _, _ in wanted)
+            all(svc in services for svc, _, _ in wanted) and (not want_selects or _selects_ready(ha, entities))
         if ready or clock() >= deadline:
             break
+        if want_selects and entities and last != "selects":
+            progress("waiting for the Show to tell Home Assistant its assistant and wake words")
+            last = "selects"
         sleep(5)
 
     if opts.assistant or choose:

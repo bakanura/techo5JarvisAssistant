@@ -155,26 +155,32 @@ class Asker:
             except ValueError as exc:
                 self.say(f"   {exc}")
 
-    def pick(self, label: str, current: str, options: list[str]) -> str | None:
-        """One of options by number or name. Enter keeps current; None when nobody is asked."""
+    def pick(self, label: str, current: str, options: list[str], *, default: str | None = None,
+             names: dict[str, str] | None = None) -> str | None:
+        """One of options by number, name or a piece of a name. Enter takes default (None: leave it as it
+        is); None also when nobody is asked."""
         if not self.interactive or not options:
             return None
-        self.say(f"   {label}:")
+        names = names or {}
+        self.say(f"   {label}")
         for i, option in enumerate(options, 1):
-            self.say(f"     {i}) {option}" + ("  (now)" if option == current else ""))
+            self.say(f"     {i}) {names.get(option, option)}" + ("  (now)" if option == current else ""))
+        enter = f"Enter: {names.get(default, default)}" if default else "Enter: leave it"
         while True:
             try:
-                raw = self.ask(f"   {label} [{current or 'keep'}]: ").strip()
+                raw = self.ask(f"   number or name [{enter}]: ").strip()
             except EOFError:
                 return None
             if not raw:
-                return None
+                return default
             if raw.isdigit() and 1 <= int(raw) <= len(options):
                 return options[int(raw) - 1]
-            named = [o for o in options if o.casefold() == raw.casefold()]
-            if named:
-                return named[0]
-            self.say(f"   pick 1 to {len(options)}, or Enter to keep it")
+            want = raw.casefold()
+            for found in ([o for o in options if want in (o.casefold(), names.get(o, o).casefold())],
+                          [o for o in options if want in o.casefold() or want in names.get(o, o).casefold()]):
+                if len(found) == 1:
+                    return found[0]
+            self.say(f"   type 1 to {len(options)} or a name from the list ({enter})")
 
     def secret(self, label: str, check: Callable[[str], str], *, strip: bool = True,
                confirm: bool = False) -> str | None:

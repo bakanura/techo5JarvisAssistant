@@ -75,8 +75,9 @@ class AddressTests(unittest.TestCase):
 class FakeHA:
     """Home Assistant's REST answers for one ESPHome device, from nothing to fully set up."""
 
-    def __init__(self, *, flow_errors=(), allowed=False, entry=False):
+    def __init__(self, *, flow_errors=(), allowed=False, entry=False, unconfigured=0):
         self.calls = []
+        self.unconfigured = unconfigured  # times the wake word select still reads unavailable
         self.flow_errors = list(flow_errors)
         self.allowed = allowed
         self.entries = [{"entry_id": "E1", "domain": "esphome", "title": "Jarvis Show 5"}] if entry else []
@@ -117,7 +118,11 @@ class FakeHA:
             names = ["jarvis_show_5_dashboard_server", "jarvis_show_5_home_assistant", "jarvis_show_5_sendspin_server"]
             return [{"domain": "light", "services": {}}, {"domain": "esphome", "services": {n: {} for n in names}}]
         if path.startswith("/api/states/"):
-            return self.states.get(path[len("/api/states/"):])
+            entity = path[len("/api/states/"):]
+            if self.unconfigured and entity.endswith("_wake_word"):
+                self.unconfigured -= 1
+                return {"state": "unavailable", "attributes": {"options": ["no_wake_word"]}}
+            return self.states.get(entity)
         if path == "/api/services/select/select_option":
             self.states[body["entity_id"]]["state"] = body["option"]
             return []
@@ -257,6 +262,25 @@ def args(**kw):
     return argparse.Namespace(**base)
 
 
+    def test_waits_for_the_show_to_send_its_wake_words(self):
+        fake = FakeHA(unconfigured=3)
+        offered = {}
+
+        def choose(label, current, options):
+            offered[label] = (current, options)
+            return None
+        _, log = run_deploy(fake, choose=choose, host="10.0.0.9")
+        self.assertEqual(offered["wake word"], ("Okay Nabu", ["Okay Nabu", "Hey Jarvis"]))
+        self.assertTrue(any("waiting for the Show to tell" in line for line in log))
+
+    def test_a_select_that_never_comes_is_not_asked_about(self):
+        fake = FakeHA(unconfigured=10**6)
+        asked = []
+        _, log = run_deploy(fake, choose=lambda label, *_: asked.append(label), host="10.0.0.9")
+        self.assertEqual(asked, ["assistant"])
+        self.assertTrue(any("not available yet" in line for line in log))
+
+
 class GatherTests(unittest.TestCase):
     def asker(self, answers, secrets):
         answers, secrets, said = list(answers), list(secrets), []
@@ -265,12 +289,22 @@ class GatherTests(unittest.TestCase):
     def test_pick_by_number_name_or_enter(self):
         asker, said = self.asker(["9", "2"], [])
         self.assertEqual(asker.pick("assistant", "preferred", ["preferred", "Jarvis"]), "Jarvis")
-        self.assertTrue(any("pick 1 to 2" in line for line in said))
+        self.assertTrue(any("type 1 to 2" in line for line in said))
         asker, _ = self.asker(["hey jarvis"], [])
         self.assertEqual(asker.pick("wake word", "Okay Nabu", ["Okay Nabu", "Hey Jarvis"]), "Hey Jarvis")
         asker, _ = self.asker([""], [])
         self.assertIsNone(asker.pick("wake word", "Okay Nabu", ["Okay Nabu", "Hey Jarvis"]))
         self.assertIsNone(Asker(False).pick("wake word", "Okay Nabu", ["Okay Nabu"]))
+        asker, _ = self.asker(["jarvis"], [])
+        self.assertEqual(asker.pick("wake word", "Okay Nabu", ["Okay Nabu", "Hey Jarvis"]), "Hey Jarvis")
+        asker, said = self.asker(["hey", ""], [])
+        self.assertEqual(asker.pick("wake word", "", ["Hey Jarvis", "Hey Mycroft"], default="Hey Jarvis"),
+                         "Hey Jarvis")
+        self.assertTrue(any("Enter: Hey Jarvis" in line for line in said))
+        asker, said = self.asker(["1"], [])
+        self.assertEqual(asker.pick("q", "preferred", ["preferred", "Jarvis"], names={"preferred": "the usual"}),
+                         "preferred")
+        self.assertIn("     1) the usual  (now)", said)
 
     def test_everything_asked(self):
         asker, _ = self.asker(["Home", "http://ha:8123/", "10.0.0.5", "10.0.0.6"],

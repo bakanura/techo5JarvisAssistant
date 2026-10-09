@@ -142,15 +142,30 @@ def _find_host(name: str):
     return find
 
 
+# How the assistant and wake word questions read, by the label deploy() asks them with.
+QUESTIONS = {
+    "assistant": ("Which assistant should the Show talk to?",
+                  {"preferred": "the one Home Assistant has as preferred"}, ("jarvis",)),
+    "wake word": ("Which wake word should it listen for?",
+                  {"no_wake_word": "none, no wake word"}, ("hey jarvis", "jarvis")),
+}
+
+
 def _chooser(args):
-    """Asks for the assistant and wake word the switches left open; '' on a switch means do not touch it."""
+    """Asks for the assistant and wake word the switches left open; '' on a switch means do not touch it.
+    Enter takes Jarvis when this Home Assistant and this Show have it."""
     asker = _asker(args)
     if not asker.interactive:
         return None
     given = {"assistant": args.assistant, "wake word": args.wake_word}
 
     def choose(label: str, current: str, options: list[str]) -> str | None:
-        return None if given.get(label) is not None else asker.pick(label, current, options)
+        if given.get(label) is not None:
+            return None
+        question, names, liked = QUESTIONS.get(label, (label, {}, ()))
+        default = next((o for want in liked for o in options if o.casefold() == want), None) or \
+            next((o for o in options if any(want in o.casefold() for want in liked)), None)
+        return asker.pick(question, current, options, default=default, names=names)
     return choose
 
 
