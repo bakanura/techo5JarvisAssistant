@@ -140,6 +140,9 @@ func setupMusicFailoverTest(t *testing.T) (*Feature, *musicHAFake) {
 
 	musicRoute = musicRouteState{}
 	musicPlayback = musicPlaybackState{}
+	oldRoom := roomPlayer
+	roomPlayer = func() string { return "" }
+	t.Cleanup(func() { roomPlayer = oldRoom })
 	return &Feature{}, fake
 }
 

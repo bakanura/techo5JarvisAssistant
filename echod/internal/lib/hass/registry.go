@@ -89,6 +89,8 @@ type RegistryEntity struct {
 	DeviceID string `json:"device_id"`
 	Platform string `json:"platform"`
 	UniqueID string `json:"unique_id"`
+	// Area is the entity's own area, empty when it is in its device's.
+	Area string `json:"area_id"`
 }
 
 // Registries is the device and entity registries as a caller needs them to work out which entity belongs

@@ -18,8 +18,9 @@ import (
 )
 
 // Room music routing belongs to Music Assistant. Jarvis Show only decides which MA player represents
-// this room right now: the configured preferred player while it is available, otherwise this Show's
-// own MA player. Queue transfer and grouping remain Music Assistant operations.
+// this room right now: the preferred player while it is available (the configured one, or the one in
+// this Show's area, music_room.go), otherwise this Show's own MA player. Queue transfer and grouping
+// remain Music Assistant operations.
 const musicRouteEvery = 5 * time.Second
 
 type musicRouteState struct {
@@ -82,15 +83,19 @@ func musicOutput() (target, local string, usingFallback bool, err error) {
 	if err != nil {
 		return "", "", false, err
 	}
-	if local == "" {
-		return "", "", false, errors.New("no Music Assistant player for this Jarvis Show")
-	}
-	primary := strings.TrimSpace(config.Get().Home.MusicPrimary)
+	noLocal := errors.New("no Music Assistant player for this Jarvis Show")
+	primary := musicPrimary()
 	if primary == "" || primary == local {
+		if local == "" {
+			return "", "", false, noLocal
+		}
 		return local, local, false, nil
 	}
 	st, stateErr := hass.Get().State(primary)
 	if stateErr != nil || !musicPlayerOnline(st) || !musicAssistantState(st) {
+		if local == "" {
+			return "", "", false, noLocal
+		}
 		return local, local, true, nil
 	}
 	return primary, local, false, nil
@@ -157,12 +162,14 @@ func (f *Feature) musicRouteTick() {
 	if !hass.Get().Ready() {
 		return
 	}
-	primary := strings.TrimSpace(config.Get().Home.MusicPrimary)
+	primary := musicPrimary()
 	if primary == "" {
 		return
 	}
+	// A Show that is no Music Assistant player of its own still shows what the room's speaker plays;
+	// it only has nowhere to carry the music on when that speaker goes away.
 	local, err := musicAssistantPlayer()
-	if err != nil || local == "" || local == primary {
+	if err != nil || local == primary {
 		return
 	}
 	st, err := hass.Get().State(primary)
@@ -190,7 +197,7 @@ func (f *Feature) musicRouteTick() {
 	}
 	shouldFailOver := musicRoute.primaryWasPlaying
 	musicRoute.Unlock()
-	if !shouldFailOver {
+	if !shouldFailOver || local == "" {
 		return
 	}
 
@@ -213,7 +220,7 @@ func (f *Feature) musicRouteTick() {
 
 // MusicOutput reports the route for display/diagnostics. It does not trigger a route change.
 func (f *Feature) MusicOutput() (preferred, active string, fallback bool) {
-	preferred = strings.TrimSpace(config.Get().Home.MusicPrimary)
+	preferred = musicPrimary()
 	musicRoute.Lock()
 	active, fallback = musicRoute.activeOutput, musicRoute.fallbackActive
 	musicRoute.Unlock()
