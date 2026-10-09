@@ -12,10 +12,14 @@ import (
 
 // Loading a dashboard is the dear part: on a Raspberry Pi a heavy one keeps Chrome busy for tens of
 // seconds. So a screen that goes away does not take its tab with it at once. The tab is parked -
-// its stream stopped, the page frozen so its scripts stop too - and a screen that comes back for
-// the same dashboard within warmFor gets it back, thawed, without loading anything. A device
-// restarting, a dashboard switched away from and back, the connection dropping for a moment: none
-// of them is a reload.
+// its stream stopped - and a screen that comes back for the same dashboard within warmFor gets it
+// back without loading anything. A device restarting, a dashboard switched away from and back, the
+// connection dropping for a moment: none of them is a reload.
+//
+// A parked page keeps running. It used to be frozen as well (Page.setWebLifecycleState), but
+// Chromium 152 never draws a frozen page again once it is thawed: its scripts run, the screencast
+// sends one frame and then nothing, and not even a reload brings the frames back. A Show picked
+// up that way kept the picture from the moment it reconnected, clock and all.
 
 const (
 	warmFor   = 5 * time.Minute
@@ -66,7 +70,7 @@ type warmPool struct {
 
 var warm = &warmPool{}
 
-// take is the parked tab for key, thawed, or nil.
+// take is the parked tab for key, still alive, or nil.
 func (p *warmPool) take(key string) *warmTab {
 	p.mu.Lock()
 	var w *warmTab
@@ -82,7 +86,7 @@ func (p *warmPool) take(key string) *warmTab {
 		return nil
 	}
 	w.expiry.Stop()
-	if err := chromedp.Run(w.ctx, page.SetWebLifecycleState(page.SetWebLifecycleStateStateActive)); err != nil {
+	if err := chromedp.Run(w.ctx, chromedp.Evaluate(`1`, nil)); err != nil {
 		w.close()
 		return nil
 	}
@@ -111,11 +115,10 @@ func (p *warmPool) discard(key string) {
 	}
 }
 
-// park stops a tab's stream, freezes it, and keeps it for warmFor.
+// park stops a tab's stream and keeps it for warmFor.
 func (p *warmPool) park(w *warmTab) {
 	w.watch(nil)
-	if err := chromedp.Run(w.ctx, page.StopScreencast(),
-		page.SetWebLifecycleState(page.SetWebLifecycleStateStateFrozen)); err != nil {
+	if err := chromedp.Run(w.ctx, page.StopScreencast()); err != nil {
 		w.close()
 		return
 	}

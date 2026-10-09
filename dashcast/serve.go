@@ -581,8 +581,8 @@ func keepOnDashboards(ctx context.Context, tab context.Context, home string, g *
 }
 
 // lost counts the seconds a page has been cut off from Home Assistant. The frontend reconnects by
-// itself, mostly; but a tab thawed after being parked (warm.go) can sit on "Connection lost.
-// Reconnecting..." for good, its retry timer lost to the freeze. So after a few seconds it is told
+// itself, mostly; but it can sit on "Connection lost. Reconnecting..." for good, as tabs that
+// were frozen while parked (warm.go) used to. So after a few seconds it is told
 // to reconnect at once, and a page still cut off after half a minute is loaded again. While Home
 // Assistant itself is down that reload comes back every half minute, which is all a wait is.
 type lost struct{ secs int }
