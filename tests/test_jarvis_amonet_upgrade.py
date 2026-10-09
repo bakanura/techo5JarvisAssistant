@@ -291,6 +291,14 @@ class CliTests(unittest.TestCase):
         stop = mock.Mock(side_effect=up.UpgradeError("phrase did not match; nothing was written"))
         self.assertEqual(self.run_cli(["SER"], upgrade_amonet=stop), 4)
 
+    def test_closed_stdin_answers_no_instead_of_crashing(self):
+        answers = []
+        upgrade = mock.Mock(side_effect=lambda *a, confirm, **k: answers.append(confirm("PHRASE")) or
+                            up.UpgradeResult(True, pathlib.Path("/b")))
+        with mock.patch("builtins.input", side_effect=EOFError):
+            self.run_cli(["SER"], upgrade_amonet=upgrade)
+        self.assertEqual(answers, [""])
+
 
 if __name__ == "__main__":
     unittest.main()

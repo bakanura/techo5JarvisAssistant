@@ -120,7 +120,11 @@ def amonet_upgrade(args, backups: Path) -> int:
     def confirm(phrase):
         print("WARN: this rewrites the bootloader chain: preloader, lk, tee1, tee2, expdb, recovery and swdl.")
         print("WARN: keep the Show on mains power and the USB cable in until it says PASS.")
-        return input(f"Type {phrase} to continue: ").strip()
+        try:
+            return input(f"Type {phrase} to continue: ").strip()
+        except EOFError:  # no terminal (piped or closed stdin) is a no, not a crash
+            print()
+            return ""
 
     try:
         result = upgrade_amonet(
