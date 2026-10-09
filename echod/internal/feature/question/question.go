@@ -3,7 +3,9 @@
 // Home Assistant asks it (assist_satellite.start_conversation) and opens the microphone after it, but
 // it has nothing to do with "yes": the answer is meant for this device. So the voice feature hands
 // every transcript here first while a question is open, and one that answers it is acted on here and
-// goes no further. Anything else closes the question and goes on to the assistant as usual.
+// goes no further. Anything else closes the question. Heard in the turn opened for the question, it is
+// dropped: a television answers more of these than anybody does, and the assistant has nothing to do
+// with "Untertitel im Auftrag des ZDF". Heard after a wake word, it goes on to the assistant as usual.
 package question
 
 import (
@@ -47,7 +49,11 @@ func Withdraw(what string) {
 
 // Answer takes a transcript, and reports whether it answered the open question. Saying nothing keeps
 // the question open; saying something else closes it, since the moment has passed.
-func Answer(text string) bool {
+func Answer(text string) bool { return Take(text, false) }
+
+// Take is Answer for a turn that may have been opened for the question rather than by a wake word. In
+// that one a transcript that does not answer it is dropped as well, and Take reports it as taken.
+func Take(text string, forIt bool) bool {
 	if strings.TrimSpace(text) == "" {
 		return false
 	}
@@ -66,6 +72,10 @@ func Answer(text string) bool {
 		slog.Info("question answered no", "question", q.what, "text", text)
 		safe.Go("answer "+q.what, q.no)
 	default:
+		if forIt {
+			slog.Info("not an answer to the question, dropped", "question", q.what, "text", text)
+			return true
+		}
 		slog.Info("question left unanswered", "question", q.what, "text", text)
 		return false
 	}
@@ -87,12 +97,13 @@ const (
 var (
 	yesWords = set("yes yeah yep yup sure ok okay alright go do install now absolutely course definitely " +
 		"ja jo jep jawohl klar gerne gern los sicher natürlich mach mache installier installiere installieren jetzt fall " +
+		"ausführen führ führe updaten aktualisieren aktualisiere " +
 		"oui ouais d'accord sûr sì si sí certo vale claro adelante graag prima")
 	noWords = set("no nope nah not don't dont later wait cancel never tomorrow stop " +
 		"nein nee nö ne nicht später warte morgen abbrechen stopp nie " +
 		"non pas tard dopo tardi luego después tarde niet straks")
 	fillWords = set("please thanks thank you it that the update right away ahead let's lets of maybe " +
-		"bitte danke das es die den auf jeden na doch gleich vielleicht " +
+		"bitte danke das es die den auf jeden na doch gleich vielleicht aus " +
 		"merci vas y bien va bene per favore por favor doe maar het")
 )
 

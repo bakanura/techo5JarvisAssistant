@@ -75,6 +75,7 @@ type eventKind int
 
 const (
 	evStart       eventKind = iota // a wake word fired, or something asked for a turn
+	evAsked                        // Home Assistant opens a turn after something it said
 	evHeard                        // Home Assistant has heard enough
 	evReplyText                    // a reply is coming
 	evReplyURL                     // the reply can be fetched whole
@@ -163,6 +164,13 @@ type conversation struct {
 	followUp  bool
 	followUps int
 
+	// asked says Home Assistant opened this turn after an announcement (start_conversation), which is
+	// how this device's own questions are asked: what it hears is meant as their answer. A conversation
+	// opened that way has no follow-ups of its own, nobody here having started it; byUser is whether
+	// somebody did, with a wake word or a touch, and follow-ups carry it on.
+	asked  bool
+	byUser bool
+
 	// lookHere says this turn's answer put a page on the screen (the rain map, the forecast), so it is
 	// not followed by listening again: the listening screen would cover the page asked for.
 	lookHere bool
@@ -194,6 +202,7 @@ const graceStart = 750 * time.Millisecond
 type nextTurn struct {
 	slot     int
 	followUp bool
+	asked    bool
 }
 
 // reply is which answer is being spoken, and how. Only one of them is set: a url means it is being
@@ -329,6 +338,9 @@ func (c *conversation) handle(e event) {
 	case evStart:
 		c.start(nextTurn{slot: e.slot})
 
+	case evAsked:
+		c.start(nextTurn{slot: e.slot, asked: true})
+
 	case evSpeaking:
 		if c.followUp && c.phase == phaseListening {
 			c.arm(wakeword.MaxListen(c.slot))
@@ -377,9 +389,11 @@ func (c *conversation) handle(e event) {
 				slog.Info("heard a snooze over a ring", "text", e.text, "minutes", minutes)
 				ring.SnoozeFor(minutes)
 			}
-		} else if question.Answer(e.text) {
+		} else if question.Take(e.text, c.asked) {
 			// The answer to something this device asked: acted on here, and Home Assistant's run
-			// is stopped before it can say it did not understand "yes".
+			// is stopped before it can say it did not understand "yes". In the turn opened for the
+			// question, what does not answer it is dropped the same way, so a television saying
+			// something is not taken for a request.
 			c.turn.Heard(e.text)
 			c.idle("answered here", activity.Completed)
 			break
@@ -448,9 +462,12 @@ func (c *conversation) handle(e event) {
 			c.idle("spoken", activity.Completed)
 
 			// Continual conversation: the slot keeps listening after every reply, not only the ones
-			// Home Assistant asked to continue - as many times in a row as the slot allows.
+			// Home Assistant asked to continue - as many times in a row as the slot allows. Only in
+			// a conversation somebody here started: after a question or announcement Home Assistant
+			// opened, the room was not talking to the device, and what it hears next is as likely the
+			// television as anybody.
 			limit := wakeword.FollowUps(slot)
-			if c.pending == nil && !c.lookHere && wakeword.FollowUp(slot) > 0 && (limit == 0 || c.followUps < limit) {
+			if c.pending == nil && !c.lookHere && c.byUser && wakeword.FollowUp(slot) > 0 && (limit == 0 || c.followUps < limit) {
 				slog.Info("listening again after the reply", "slot", slot+1, "for", wakeword.FollowUp(slot))
 				c.pending = &nextTurn{slot: slot, followUp: true}
 			}
@@ -561,7 +578,7 @@ func (c *conversation) start(n nextTurn) {
 
 		// Held back before the turn ends, so that ending it does not hand the speaker back to a track
 		// for the moment it takes the next turn to open.
-		c.pending = &nextTurn{slot: slot}
+		c.pending = &nextTurn{slot: slot, asked: n.asked}
 		c.idle("interrupted", activity.Canceled)
 
 		// The stopped run has yet to close, and its last events are still on their way.
@@ -591,6 +608,10 @@ func (c *conversation) start(n nextTurn) {
 
 	c.slot = slot
 	c.followUp = n.followUp
+	c.asked = n.asked
+	if !n.followUp {
+		c.byUser = !n.asked
+	}
 	c.lookHere = false
 	// Counted from the wake word: a turn it opens starts again, a follow-up is one more in a row.
 	if n.followUp {
@@ -887,6 +908,9 @@ func (c *conversation) LookHere() { c.post(event{kind: evLookHere}) }
 
 // Start asks for a turn on a slot's pipeline. Wake detection and the buttons both use it.
 func (c *conversation) Start(slot int) { c.post(event{kind: evStart, slot: slot}) }
+
+// startAsked opens the turn Home Assistant asks for after an announcement.
+func (c *conversation) startAsked() { c.post(event{kind: evAsked}) }
 
 // Cancel gives up on whatever is happening.
 func (c *conversation) Cancel() { c.post(event{kind: evCancel}) }
