@@ -50,7 +50,9 @@ func Get() *Detect {
 	return shared
 }
 
-// playingSlack is how much lower the wake threshold sits while the echo canceller is running.
+// playingSlack is how much lower the wake threshold sits while the speaker is loud enough to bury a word
+// (mic.Source.Masking). Not merely while the canceller runs: it starts on a loopback far too faint to
+// hide anything, and the slack there let a TV in the room wake the device.
 const playingSlack = 0.10
 
 // slackFloor is as low as the slack is allowed to drag a threshold, whatever it started at.
@@ -59,7 +61,7 @@ const slackFloor = 0.5
 // thresholdFor is the cutoff a slot's score is judged against. base supplies the per-slot wake word
 // threshold; stop is the stop word's own, which is configured separately.
 //
-// While the speaker plays and the canceller runs, what reaches the detector is the residual of the
+// While the speaker plays loud and the canceller runs, what reaches the detector is the residual of the
 // music plus the voice, and the word scores lower than it does in a quiet room. A little slack here
 // is worth more than the false wakes it risks: the music is the reference the canceller has, so it
 // is the one sound least able to fake the word.
@@ -68,12 +70,12 @@ const slackFloor = 0.5
 // it is the one word said while the speaker is certainly playing, because playing is what it is
 // asked to stop. Exempting it made the one word whose job is to interrupt a sound the only word
 // judged with no allowance for the sound.
-func thresholdFor(slot int, base func(int) float64, stop float64, canceling bool) float64 {
+func thresholdFor(slot int, base func(int) float64, stop float64, masking bool) float64 {
 	t := stop
 	if slot != StopSlot {
 		t = base(slot)
 	}
-	if canceling {
+	if masking {
 		t = max(t-playingSlack, slackFloor)
 	}
 	return t
@@ -85,7 +87,7 @@ func newDetect() *Detect {
 	e := New(StopSlot+1, mic.Get())
 
 	e.Threshold = func(slot int) float64 {
-		return thresholdFor(slot, wakeword.Threshold, config.Get().Wake.Stop.Threshold, mic.Get().Canceling())
+		return thresholdFor(slot, wakeword.Threshold, config.Get().Wake.Stop.Threshold, mic.Get().Masking())
 	}
 
 	e.OnDetect = func(slot int) {

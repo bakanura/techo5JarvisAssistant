@@ -26,6 +26,13 @@ const cancelMu = 0.5
 // every second, resetting the canceller each time.
 const refQuiet = 1e-7 * 32768 * 32768 / 4
 
+// refLoud is the same measure, about -54 dBFS, above which the loopback is loud enough to bury a word
+// said over it. Only then does the detector get its slack (Masking). The canceller starts far below
+// this, on a reference too faint to hide anything, and a TV in the room woke the device twice that way:
+// the run was started by a loopback at -64 and -60 dBFS, the slack dropped the cutoff by a tenth, and
+// the TV's speech crossed it.
+const refLoud = 4e-6 * 32768 * 32768
+
 // refHold is how long the filter keeps running after the loopback goes quiet, in samples.
 //
 // Speech is full of gaps, and without this the gate flaps between every word. That is not only untidy:
@@ -63,6 +70,11 @@ type canceller struct {
 
 	// active says whether the last frame had playback in it, which is when any of this happened.
 	active atomic.Bool
+
+	// loud says whether the loopback went over refLoud within the last refHold samples, which is when
+	// the detector is let off a little. loudHold counts that down. Reader-only.
+	loud     atomic.Bool
+	loudHold int
 
 	// hold counts down the samples still to filter after the loopback went quiet. Reader-only.
 	hold int
@@ -130,8 +142,17 @@ func (c *canceller) apply(raw []byte, mic []int16) []int16 {
 	c.ref = c.ref[:n]
 	referenceInto(raw, c.ref)
 
+	level := meanSquare(c.ref)
 	switch {
-	case playing(c.ref):
+	case level > refLoud:
+		c.loudHold = refHold
+	case c.loudHold > 0:
+		c.loudHold -= n
+	}
+	c.loud.Store(c.loudHold > 0)
+
+	switch {
+	case level > refQuiet:
 		c.hold = refHold
 	case c.hold > 0:
 		// Still inside the tail of what just played.
@@ -192,13 +213,16 @@ func blockDBFS(s []int16) float64 {
 	return math.Round(20*math.Log10(rms/32768)*10) / 10
 }
 
-// playing reports whether the loopback carries anything.
-func playing(ref []int16) bool {
+// meanSquare is the loopback's mean square per sample, zero for an empty block.
+func meanSquare(ref []int16) float64 {
+	if len(ref) == 0 {
+		return 0
+	}
 	var sum float64
 	for _, v := range ref {
 		sum += float64(v) * float64(v)
 	}
-	return len(ref) > 0 && sum/float64(len(ref)) > refQuiet
+	return sum / float64(len(ref))
 }
 
 // referenceInto decodes ch7, the left half of the playback loopback, into dst. ch8 is left alone: on
@@ -221,6 +245,12 @@ func referenceInto(raw []byte, dst []int16) {
 // is carrying audio.
 func (s *Source) Canceling() bool {
 	return s.cancel != nil && s.cancel.active.Load()
+}
+
+// Masking reports whether the speaker is loud enough right now to bury a word said over it. The
+// canceller runs on far less than that (Canceling), so this is what the detector's slack asks.
+func (s *Source) Masking() bool {
+	return s.cancel != nil && s.cancel.loud.Load()
 }
 
 // ERLE is how much echo the canceller is removing, in dB, or zero when it is not running.

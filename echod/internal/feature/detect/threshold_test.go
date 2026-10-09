@@ -4,7 +4,7 @@ import "testing"
 
 // The stop word is judged with the same allowance for the speaker as every other word.
 //
-// While the canceller runs, what reaches the detector is the residual and the word scores lower, so
+// While the speaker plays loud, what reaches the detector is the residual and the word scores lower, so
 // every slot's threshold drops by playingSlack. The stop word used to return before that adjustment
 // was applied, which made the one word whose job is to interrupt a sound the only word judged with
 // no allowance for the sound — and it is the one word always said over a playing speaker.
@@ -19,7 +19,7 @@ func TestTheStopWordGetsTheSlackTheOtherSlotsGet(t *testing.T) {
 
 	playing := thresholdFor(StopSlot, base, stop, true)
 	if want := stop - playingSlack; playing != want {
-		t.Errorf("stop threshold while the canceller runs is %v, want %v", playing, want)
+		t.Errorf("stop threshold while the speaker masks is %v, want %v", playing, want)
 	}
 
 	// The same drop the other slots get, so the stop word is no harder to say over a speaker than
