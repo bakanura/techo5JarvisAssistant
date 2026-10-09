@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/Android-none-3a2c22" alt="No Android">
   <img src="https://img.shields.io/badge/Alexa-none-3a2c22" alt="No Alexa">
   <img src="https://img.shields.io/badge/Home%20Assistant-ESPHome%20API-41BDF5?logo=homeassistant&logoColor=white" alt="Home Assistant">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="GPL-3.0 license"></a>
   <a href="https://buymeacoffee.com/huskerminion"><img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?logo=buymeacoffee&logoColor=black" alt="Buy Me a Coffee"></a>
 </p>
 
@@ -355,7 +355,12 @@ Android and any app on the screen keep running, silently.
 
 ## License
 
-MIT. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+GPL-3.0 or later. See [LICENSE](LICENSE). Anyone may use, change, share and sell it, as long as
+what they pass on stays open under the same terms.
+
+This fork started from [TECHO5](https://github.com/HuskerMinion/techo5) and
+[EchoLocal](https://github.com/ygelfand/echolocal), both MIT. Their code stays under their MIT
+licences, whose notices are in [NOTICE](NOTICE) along with every other part's.
 
 TECHO5 isn't affiliated with Amazon. Echo and Alexa are trademarks of Amazon.com, Inc.
 
