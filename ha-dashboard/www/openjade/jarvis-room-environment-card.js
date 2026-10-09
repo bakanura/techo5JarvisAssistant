@@ -4,7 +4,9 @@
  * Every size is a multiple of --u, one pixel of the 1280x800 screen this
  * card was laid out on. On that screen it looks as it always did; on any
  * other it keeps the same proportions, limited by whichever side is
- * shorter, so it never crowds the clock on a wide or a small panel.
+ * shorter, so it never crowds the clock on a wide or a small panel. It is
+ * as wide as the weather card in the other corner, so the two sit level
+ * and keep the same distance from the clock.
  *
  * Narrower than 294px (a 5" Show, a phone) the words go: no title, an icon
  * for each row, and bigger numbers. The card decides from its own width, so
@@ -52,7 +54,7 @@ class JarvisRoomEnvironmentCard extends HTMLElement {
           --u: min(calc(100vw / 1280), calc(100vh / 800));
 
           display: block;
-          width: calc(420 * var(--u)) !important;
+          width: calc(350 * var(--u)) !important;
           max-width: 100%;
           box-sizing: border-box;
           container-type: inline-size;
