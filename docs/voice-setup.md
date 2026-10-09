@@ -136,5 +136,16 @@ if it wakes when nobody said anything.
 
 The Show turns down what it plays itself while you talk. A separate speaker in the room playing
 music, German songs above all, is still heard, by the wake word and by Whisper. It can wake the Show,
-and words from the song can end up in the request. Until the Show turns that speaker down as well,
-pause the music or say the wake word over it loudly.
+and words from the song can end up in the request.
+
+The blueprint [turn-room-down.yaml](../blueprints/automation/turn-room-down.yaml) turns such speakers
+down while the Show listens, thinks and answers, to a quarter of their volume by default. They come
+back up once the Show has been idle for three seconds, so they stay down through a follow-up. A
+speaker that wasn't playing is left alone, and one whose volume somebody changed during the turn
+keeps the new volume. Import it in **Settings → Automations & scenes → Blueprints → Import
+blueprint** with the file's GitHub address, then make an automation from it: the Show's assist
+satellite, and the room's speakers. If Music Assistant and the speaker's own integration both have
+an entity for one speaker, pick one of them, not both.
+
+It can't help with the first word: the Show has to hear the wake word before anything is turned
+down. Saying it over loud music still takes a loud voice.

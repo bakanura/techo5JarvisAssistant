@@ -1,0 +1,124 @@
+blueprint:
+  name: Turn the room down while a Show listens
+  description: >-
+    While a voice assistant (a Jarvis Show, or any other) listens, thinks and answers, the speakers
+    you pick are turned down to a part of their volume, so the music in the room doesn't wake it or
+    end up in what it hears. They come back up once it has been quiet for a few seconds, which keeps
+    them down through follow-up questions too.
+
+    A speaker that isn't playing is left alone. One whose volume was changed during the turn, say by
+    "lauter", keeps the new volume. The Show turns down what it plays itself, so don't pick its own
+    speaker.
+  domain: automation
+  source_url: https://github.com/vardstein/techo5JarvisAssistant/blob/jarvis-crown-v1/blueprints/automation/turn-room-down.yaml
+  input:
+    satellite:
+      name: Voice assistant
+      selector:
+        entity:
+          filter:
+            - domain: assist_satellite
+    speakers:
+      name: Speakers to turn down
+      description: >-
+        The room's speakers. When Music Assistant and the speaker's own integration both have an entity
+        for the same speaker, pick only one, or it is turned down twice.
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - domain: media_player
+    part:
+      name: Turned down to
+      description: How much of its volume a speaker keeps while the assistant listens.
+      default: 25
+      selector:
+        number:
+          min: 0
+          max: 90
+          step: 5
+          unit_of_measurement: "%"
+    quiet:
+      name: Back up after
+      description: >-
+        How long the assistant has to be idle first. Shorter than the pause before a follow-up,
+        and the follow-up starts with the music up again.
+      default: 3
+      selector:
+        number:
+          min: 1
+          max: 30
+          unit_of_measurement: s
+
+# A turn that opens while the speakers are down is part of the same run.
+mode: single
+max_exceeded: silent
+
+triggers:
+  - trigger: state
+    entity_id: !input satellite
+    from: idle
+    to: listening
+
+variables:
+  satellite: !input satellite
+  speakers: !input speakers
+  part: !input part
+  quiet: !input quiet
+  was: >-
+    {% set ns = namespace(out={}) %}
+    {% for s in speakers if is_state(s, 'playing') and state_attr(s, 'volume_level') is number %}
+      {% set ns.out = dict(ns.out, **{s: state_attr(s, 'volume_level')}) %}
+    {% endfor %}
+    {{ ns.out }}
+  down: >-
+    {% set ns = namespace(out={}) %}
+    {% for s, v in was.items() %}
+      {% set ns.out = dict(ns.out, **{s: (v * part / 100) | round(2)}) %}
+    {% endfor %}
+    {{ ns.out }}
+
+conditions:
+  - condition: template
+    value_template: "{{ was | count > 0 }}"
+
+actions:
+  - repeat:
+      for_each: "{{ down | list }}"
+      sequence:
+        - action: media_player.volume_set
+          target:
+            entity_id: "{{ repeat.item }}"
+          data:
+            volume_level: "{{ down[repeat.item] }}"
+          continue_on_error: true
+  # Until it has been idle for the whole of quiet. A trigger would miss a turn that was over before
+  # this got here, so it looks at the state instead.
+  - repeat:
+      sequence:
+        - wait_template: "{{ is_state(satellite, 'idle') }}"
+          timeout:
+            minutes: 5
+        - delay:
+            seconds: "{{ quiet }}"
+      until:
+        - condition: template
+          value_template: >-
+            {{ not wait.completed or repeat.index > 20
+               or (is_state(satellite, 'idle')
+                   and (now() - states[satellite].last_changed).total_seconds() >= quiet - 0.5) }}
+  - repeat:
+      for_each: "{{ was | list }}"
+      sequence:
+        # Only if it is still where this left it: a volume somebody chose since stays.
+        - if:
+            - condition: template
+              value_template: >-
+                {{ (state_attr(repeat.item, 'volume_level') | float(-1) - down[repeat.item]) | abs < 0.02 }}
+          then:
+            - action: media_player.volume_set
+              target:
+                entity_id: "{{ repeat.item }}"
+              data:
+                volume_level: "{{ was[repeat.item] }}"
+              continue_on_error: true
