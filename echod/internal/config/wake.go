@@ -1,5 +1,7 @@
 package config
 
+import "math"
+
 // Wake is the wake word configuration, indexed by Home Assistant's wake word slot.
 type Wake struct {
 	Words []WakeWord `json:"words"`
@@ -8,6 +10,10 @@ type Wake struct {
 	// that was never set up, which starts with the default word so it is not deaf out of the box, and
 	// the choice came back undone at every start.
 	NoneChosen bool `json:"none_chosen,omitempty"`
+
+	// CutoffRaised is whether a slot left on the old default threshold has been moved to the new one:
+	// once, like Speaker.SoundsMoved, so a 0.85 chosen afterwards is kept. See raiseCutoff.
+	CutoffRaised bool `json:"cutoff_raised,omitempty"`
 
 	// Stop is the device's own word for interrupting what it is saying. It is not one of the slots
 	// above: Home Assistant does not choose it, and it opens no pipeline.
@@ -85,7 +91,10 @@ type WakeWord struct {
 }
 
 const (
-	DefaultThreshold = 0.85
+	// DefaultThreshold is ESPHome's "moderately sensitive" for Hey Jarvis; the model's own manifest
+	// asks for 0.97. At 0.85 the word woke on song lyrics and talk from another room, crossing between
+	// 0.85 and 0.91, while said on purpose it lands well above that.
+	DefaultThreshold = 0.92
 	DefaultEffect    = "Pulse"
 	DefaultTone      = ToneHA
 	DefaultDelivery  = DeliveryWhole
@@ -128,6 +137,25 @@ func defaultWords() []WakeWord {
 	w := DefaultWakeWord()
 	w.ID = DefaultWakeID
 	return []WakeWord{w}
+}
+
+// oldDefaultThreshold is what DefaultThreshold was before it was raised.
+const oldDefaultThreshold = 0.85
+
+// raiseCutoff moves a Hey Jarvis slot still on the old default threshold to the new one, which is what
+// a device that was never tuned should be on. A threshold anybody set is left alone, and so is one set
+// to 0.85 after this has run.
+func (c *Config) raiseCutoff() {
+	if c.Wake.CutoffRaised {
+		return
+	}
+	for i := range c.Wake.Words {
+		w := &c.Wake.Words[i]
+		if w.ID == DefaultWakeID && math.Abs(w.Threshold-oldDefaultThreshold) < 0.005 {
+			w.Threshold = DefaultThreshold
+		}
+	}
+	c.Wake.CutoffRaised = true
 }
 
 // Slot is one wake word slot, or an unset one with the defaults in it.
