@@ -37,7 +37,9 @@ Amonet zips are only attached to the XDA threads, and XDA's CDN answers anything
 browser with a 403 challenge page, so a script can't download them. The tool opens the attachment link
 in your default browser instead (log in to XDA if it asks) and waits up to ten minutes for the finished
 zip to show up in `~/Downloads` (or `--from DIR`). Then it checks the zip against its pin and copies it
-into the cache. With `--no-browser`, or when no browser can be opened, it prints the link and you run it
+into the cache and unpacks its `amonet/` folder to `~/.cache/jarvis-show/<board>/amonet-<board>-v2.0.1/`,
+which `jarvis-show.py` uses when `--amonet-dir` isn't given and there's no bundle in `../third_party/`.
+With `--no-browser`, or when no browser can be opened, it prints the link and you run it
 again after downloading. A package with no pin yet is not used. The tool
 compares every file in it with the public source (R0rt1z2/amonet) and sorts them into:
 

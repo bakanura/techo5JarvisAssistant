@@ -205,7 +205,7 @@ class MultiBoardTests(unittest.TestCase):
         self.assertFalse(session.twrp_flashed)
         fastboot.assert_not_called()
 
-    def test_checkers_twrp_flash_needs_explicit_pin_and_only_writes_recovery_swdl(self):
+    def test_checkers_twrp_flash_is_held_to_the_pin_and_only_writes_recovery_swdl(self):
         identity = DeviceIdentity("FAST-CHK", "CHECKERS", True, "lk")
         with tempfile.TemporaryDirectory() as td_s:
             td = pathlib.Path(td_s)
@@ -228,7 +228,7 @@ class MultiBoardTests(unittest.TestCase):
                 if argv[-1].startswith("tmp=/tmp/jarvis-boot-prefix."):
                     return cp(argv, stdout="PLAIN\n")
                 raise AssertionError(argv)
-            with self.assertRaisesRegex(recovery.RecoveryError, "not been cryptographically pinned"):
+            with self.assertRaisesRegex(recovery.RecoveryError, "TWRP image hash mismatch for checkers"):
                 recovery.ensure_twrp(identity, amonet, adb_run=lambda a, **k: cp(a, stdout="List of devices attached\n"), identify=lambda: identity, sleep=lambda _: None, wait_attempts=1)
             calls = []
             def fastboot(argv, **kwargs):

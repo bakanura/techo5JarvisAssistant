@@ -140,7 +140,10 @@ class ManualTests(unittest.TestCase):
             self.assertIn("https://xdaforums.com/attachments/x.1/", out.getvalue())
 
     def test_browser_download_is_waited_for_and_then_held_to_the_pin(self):
-        data = b"amonet zip bytes"
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            z.writestr("amonet/device.prop", b"DEVICE=checkers")
+        data = buf.getvalue()
         asset = manual_asset(hashlib.sha256(data).hexdigest(), len(data))
         with tempfile.TemporaryDirectory() as td:
             dl = pathlib.Path(td) / "dl"
@@ -232,6 +235,40 @@ class ManualTests(unittest.TestCase):
                 self.assertEqual(paths["amonet"].read_bytes(), data)
                 (dl / "amonet-test.zip").unlink()
                 self.assertEqual(self.run_fetch(td, table, check_only=True)["amonet"], paths["amonet"])
+
+    def test_pinned_package_is_unpacked_for_the_installer(self):
+        with tempfile.TemporaryDirectory() as td:
+            dl = pathlib.Path(td) / "dl"
+            dl.mkdir()
+            with zipfile.ZipFile(dl / "amonet-test.zip", "w") as z:
+                tool = zipfile.ZipInfo("amonet/bin/fastboot")
+                tool.external_attr = 0o100755 << 16
+                z.writestr(tool, b"elf")
+                z.writestr("amonet/device.prop", b"DEVICE=checkers")
+                z.writestr("META-INF/com/google/android/update-binary", b"#!/sbin/sh")
+            data = (dl / "amonet-test.zip").read_bytes()
+            table = (manual_asset(hashlib.sha256(data).hexdigest(), len(data)),)
+            with redirect_stdout(io.StringIO()):
+                paths = self.run_fetch(td, table)
+            bundle = paths["amonet_dir"]
+            self.assertEqual(bundle, assets.amonet_bundle_dir(pathlib.Path(td) / "cache", "checkers"))
+            self.assertEqual((bundle / "amonet/device.prop").read_bytes(), b"DEVICE=checkers")
+            self.assertTrue((bundle / "amonet/bin/fastboot").stat().st_mode & 0o100)
+            self.assertFalse((bundle / "amonet/device.prop").stat().st_mode & 0o111)
+            self.assertFalse((bundle / "META-INF").exists())
+            (bundle / "amonet/device.prop").write_bytes(b"changed")
+            with redirect_stdout(io.StringIO()):
+                self.run_fetch(td, table)
+            self.assertEqual((bundle / "amonet/device.prop").read_bytes(), b"changed")  # same pin: left alone
+
+    def test_unpack_refuses_paths_that_climb_out(self):
+        with tempfile.TemporaryDirectory() as td:
+            zp = write_zip(pathlib.Path(td) / "evil.zip", {"amonet/../../escape": b"x"})
+            dest = pathlib.Path(td) / "out" / "bundle"
+            with redirect_stdout(io.StringIO()), self.assertRaisesRegex(techo5lib.Fail, "unsafe path"):
+                fetcher.unpack_amonet(zp, dest, "a" * 64)
+            self.assertFalse(dest.exists())
+            self.assertFalse((pathlib.Path(td) / "escape").exists())
 
     def test_pinned_package_with_other_bytes_is_refused(self):
         with tempfile.TemporaryDirectory() as td:

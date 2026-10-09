@@ -11,7 +11,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from jarvis_crown.amonet_upgrade import AdbUpgradeClient, UpgradeError, upgrade_amonet  # noqa: E402
-from jarvis_crown.assets import asset_path, assets_for, default_cache_dir  # noqa: E402
+from jarvis_crown.assets import amonet_bundle_dir, asset_path, assets_for, default_cache_dir  # noqa: E402
 from jarvis_crown.boards import profile_for_board, profile_for_product  # noqa: E402
 from jarvis_crown.device_gate import DeviceGateError, identify_show  # noqa: E402
 from jarvis_crown.flow import FlowError, InstallInputs, run_install_flow  # noqa: E402
@@ -193,7 +193,10 @@ def main() -> int:
             print(f"FAIL: device identity gate: {exc}", file=sys.stderr)
             return 2
 
-    amonet = (args.amonet_dir or (project / "third_party" / profile.amonet_dir_name)).resolve()
+    # A bundle checked out next to the repo wins; otherwise the one fetch-show-assets unpacked from the pinned zip.
+    bundled = project / "third_party" / profile.amonet_dir_name
+    amonet = (args.amonet_dir or (bundled if bundled.is_dir()
+                                  else amonet_bundle_dir(default_cache_dir(), profile.board))).resolve()
 
     try:
         amonet_hashes = load_hash_manifest(args.amonet_hashes)

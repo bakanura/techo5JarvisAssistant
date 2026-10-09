@@ -14,14 +14,16 @@ tools/jarvis_crown/assets.py; one already there and right is not downloaded agai
 Amonet zips are only XDA attachments, and XDA's CDN answers scripts with a 403 browser challenge, so the
 download has to happen in a browser. This opens the attachment link in your default browser and waits
 for the zip to land in ~/Downloads (--no-browser just prints the link). Either way the file is then held
-to its pin like everything else. A zip nobody has pinned yet is compared file by file with the public
+to its pin like everything else, and its amonet/ folder is unpacked beside it as the installer's
+--amonet-dir default. A zip nobody has pinned yet is compared file by file with the public
 Amonet source and then refused, so the report can be reviewed before its hash goes into assets.py.
 """
 import argparse
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+import shutil
 import sys
 import time
 import urllib.error
@@ -30,7 +32,7 @@ import webbrowser
 import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from jarvis_crown.assets import AMONET_SOURCE, asset_path, assets_for, default_cache_dir  # noqa: E402
+from jarvis_crown.assets import AMONET_SOURCE, amonet_bundle_dir, asset_path, assets_for, default_cache_dir  # noqa: E402
 from jarvis_crown.recovery import TWRP_SHA256_BY_BOARD  # noqa: E402
 from jarvis_crown.unlock import AMONET_UNLOCK_SHA256  # noqa: E402
 from techo5lib import download_checked, fail, hash_file, note, repo_root, run_main, step  # noqa: E402
@@ -193,6 +195,42 @@ def take_manual(asset, path: Path, downloads: Path, *, check_only: bool, blobs_f
     return path
 
 
+UNPACKED_STAMP = '.from-zip-sha256'
+
+
+def unpack_amonet(zip_path: Path, dest: Path, sha256: str) -> Path:
+    """Unpack the amonet/ folder of a zip already held to its pin; redone only when the pin changes."""
+    stamp = dest / UNPACKED_STAMP
+    if stamp.is_file() and stamp.read_text().strip() == sha256:
+        note('%s: unpacked' % dest.name)
+        return dest
+    step('unpacking %s into %s' % (zip_path.name, dest))
+    partial = dest.with_name(dest.name + '.partial')
+    shutil.rmtree(partial, ignore_errors=True)
+    if not zipfile.is_zipfile(zip_path):
+        fail('%s is not a zip; refusing to unpack it' % zip_path.name)
+    with zipfile.ZipFile(zip_path) as z:
+        for info in z.infolist():
+            name = PurePosixPath(info.filename)
+            if name.parts[:1] != ('amonet',):
+                continue
+            if name.is_absolute() or '..' in name.parts or '\\' in info.filename:
+                shutil.rmtree(partial, ignore_errors=True)
+                fail('%s has an unsafe path %r; refusing it' % (zip_path.name, info.filename))
+            target = partial.joinpath(*name.parts)
+            if info.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with z.open(info) as src, open(target, 'wb') as out:
+                shutil.copyfileobj(src, out)
+            target.chmod(0o755 if (info.external_attr >> 16) & 0o111 else 0o644)
+    (partial / UNPACKED_STAMP).write_text(sha256 + '\n')
+    shutil.rmtree(dest, ignore_errors=True)
+    partial.rename(dest)
+    return dest
+
+
 def fetch_board(board: str, cache: Path, *, check_only: bool = False, downloads: Path | None = None,
                 blobs_for=github_blobs, history_for=github_history, browser=None) -> dict:
     if inside_repo(cache):
@@ -207,6 +245,8 @@ def fetch_board(board: str, cache: Path, *, check_only: bool = False, downloads:
                               history_for=history_for, browser=browser)
             if got is not None:
                 paths[asset.kind] = got
+                if not check_only:
+                    paths['amonet_dir'] = unpack_amonet(got, amonet_bundle_dir(cache, board), asset.sha256)
             continue
         if len(asset.sha256) != 64:
             fail('%s has no pinned sha256 in this checkout' % asset.name)
@@ -244,6 +284,8 @@ def main():
     print('boot image:  %s' % paths['boot'])
     if 'amonet' in paths:
         print('amonet zip:  %s' % paths['amonet'])
+    if 'amonet_dir' in paths:
+        print('amonet dir:  %s (install uses it by default)' % paths['amonet_dir'])
     print('use with: python3 tools/jarvis-show.py install --board %s --lineage-zip %s --boot-image %s ...'
           % (a.board, paths['lineage'], paths['boot']))
 

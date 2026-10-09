@@ -18,12 +18,15 @@ class AntiBrickContractTests(unittest.TestCase):
         self.assertEqual(PROFILES["checkers"].fastboot_product, "CHECKERS")
         self.assertIn("CRONOS", KNOWN_UNSUPPORTED_PRODUCTS)
 
-    def test_checkers_boot_is_pinned_but_twrp_and_unlock_stay_blocked(self):
+    def test_checkers_boot_and_twrp_are_pinned_but_unlock_stays_blocked(self):
         self.assertEqual(
             BOOT_SHA256_BY_BOARD["checkers"],
             "6fd696dce2592d2237a432e23ed7c032f1643bd1fe475d3094eccd9f7d2079b2",
         )
-        self.assertIsNone(TWRP_SHA256_BY_BOARD["checkers"])
+        self.assertEqual(
+            TWRP_SHA256_BY_BOARD["checkers"],
+            "dcc75bb651894c343039d45af73c4d900594762f6f55187c1ebdaf12d0ae59f5",
+        )
         unlock_source = (ROOT / "tools/jarvis_crown/unlock.py").read_text(encoding="utf-8")
         self.assertIn("Amonet bundle has not been cryptographically pinned", unlock_source)
 

@@ -7,7 +7,8 @@ when their size and SHA-256 match what is listed here. Boot hashes come from ins
 and the fetcher cannot disagree about which image is trusted.
 
 Amonet packages are only published as XDA attachments, which need a login. Those are marked manual: the
-fetcher takes them from a folder the person downloaded into (~/Downloads by default) instead of the web.
+fetcher takes them from a folder the person downloaded into (~/Downloads by default) instead of the web,
+and unpacks a pinned one next to it for the installer.
 An empty sha256 means nobody has reviewed and pinned that package yet, so it is never used, only inspected.
 """
 from __future__ import annotations
@@ -16,6 +17,7 @@ from dataclasses import dataclass
 import os
 from pathlib import Path
 
+from jarvis_crown.boards import profile_for_board
 from jarvis_crown.install import BOOT_SHA256_BY_BOARD
 
 
@@ -114,3 +116,8 @@ def assets_for(board: str) -> tuple[Asset, ...]:
 
 def asset_path(cache: Path, board: str, asset: Asset) -> Path:
     return cache / board / asset.name
+
+
+def amonet_bundle_dir(cache: Path, board: str) -> Path:
+    """Where fetch-show-assets unpacks the pinned Amonet zip; the installer's --amonet-dir default."""
+    return cache / board / profile_for_board(board).amonet_dir_name
