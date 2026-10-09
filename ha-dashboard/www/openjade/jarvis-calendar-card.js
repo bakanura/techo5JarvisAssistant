@@ -1,0 +1,217 @@
+/*
+ * The next calendar event, large, with the calendar's name and the event's
+ * day beside it.
+ *
+ * Every size is a multiple of --u, one pixel of the 1280x800 screen this
+ * card was laid out on. On that screen it looks as it always did; on any
+ * other it keeps the same proportions, limited by whichever side is
+ * shorter.
+ */
+class JarvisCalendarCard extends HTMLElement {
+  setConfig(config) {
+    if (!config.entity) {
+      throw new Error("calendar entity required");
+    }
+
+    this._config = {
+      entity: config.entity,
+      daysAhead: Number(config.daysAhead || 14),
+      title: config.title || "Kalender"
+    };
+
+    this._events = [];
+    this._loading = true;
+
+    this._render();
+
+    if (!this._timer) {
+      this._timer = setInterval(() => this._load(), 60000);
+    }
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+
+    const state = hass.states[this._config?.entity];
+    const marker = state ? state.state + "|" + state.last_updated : "";
+
+    if (marker !== this._marker) {
+      this._marker = marker;
+      this._load();
+    }
+  }
+
+  disconnectedCallback() {
+    if (this._timer) {
+      clearInterval(this._timer);
+      this._timer = null;
+    }
+  }
+
+  async _load() {
+    if (!this._hass || !this._config) {
+      return;
+    }
+
+    try {
+      const start = new Date();
+      const end = new Date(start.getTime() + this._config.daysAhead * 86400000);
+      const query = new URLSearchParams({
+        start: start.toISOString(),
+        end: end.toISOString()
+      });
+
+      const response = await this._hass.callApi(
+        "GET",
+        "calendars/" + encodeURIComponent(this._config.entity) + "?" + query.toString()
+      );
+
+      this._events = Array.isArray(response) ? response : [];
+      this._loading = false;
+    } catch (_) {
+      this._events = [];
+      this._loading = false;
+    }
+
+    this._render();
+  }
+
+  _escape(value) {
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;");
+  }
+
+  _when(event) {
+    const raw = event?.start?.dateTime || event?.start?.date;
+    if (!raw) {
+      return "";
+    }
+
+    const value = new Date(raw);
+    if (Number.isNaN(value.getTime())) {
+      return raw;
+    }
+
+    if (event?.start?.date) {
+      return new Intl.DateTimeFormat("de-DE", {
+        weekday: "short",
+        day: "2-digit",
+        month: "2-digit",
+        timeZone: "Europe/Berlin"
+      }).format(value);
+    }
+
+    return new Intl.DateTimeFormat("de-DE", {
+      weekday: "short",
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+      timeZone: "Europe/Berlin"
+    }).format(value);
+  }
+
+  _render() {
+    const event = this._events[0];
+    const eventName = this._loading ? "Lade…" : event?.summary || "Keine Termine";
+    const date = event ? this._when(event) : "Nächste 14 Tage";
+
+    this.innerHTML = `
+      <style>
+        jarvis-calendar-card {
+          --u: min(calc(100vw / 1280), calc(100vh / 800));
+
+          display: block;
+          width: 100%;
+
+          color: var(--primary-text-color, white);
+          font-family: inherit;
+        }
+
+        jarvis-calendar-card .calendar {
+          /* As wide as its words, pushed to the right. */
+          width: max-content;
+          max-width: 100%;
+          margin-left: auto;
+
+          display: grid;
+          grid-template-columns: minmax(calc(180 * var(--u)), calc(440 * var(--u))) 1px max-content;
+          grid-template-rows: auto auto;
+          column-gap: calc(23 * var(--u));
+          row-gap: calc(3 * var(--u));
+          align-items: center;
+
+          text-shadow: 0 calc(2 * var(--u)) calc(9 * var(--u)) rgba(0,0,0,.8);
+        }
+
+        jarvis-calendar-card .event-name {
+          grid-column: 1;
+          grid-row: 1 / span 2;
+          align-self: center;
+          min-width: 0;
+          text-align: right;
+
+          font-size: calc(44 * var(--u));
+          line-height: 1.12;
+          font-weight: 560;
+
+          overflow-wrap: anywhere;
+        }
+
+        jarvis-calendar-card .divider {
+          grid-column: 2;
+          grid-row: 1 / span 2;
+          align-self: stretch;
+
+          width: 1px;
+          min-height: calc(82 * var(--u));
+
+          background: rgba(255,255,255,.55);
+          box-shadow: 0 1px 4px rgba(0,0,0,.35);
+        }
+
+        jarvis-calendar-card .title {
+          grid-column: 3;
+          grid-row: 1;
+          align-self: end;
+
+          font-size: calc(27.5 * var(--u));
+          font-weight: 620;
+          letter-spacing: .09em;
+          text-transform: uppercase;
+          opacity: .72;
+          white-space: nowrap;
+        }
+
+        jarvis-calendar-card .date {
+          grid-column: 3;
+          grid-row: 2;
+          align-self: start;
+
+          font-size: calc(28.8 * var(--u));
+          font-weight: 500;
+          opacity: .88;
+          white-space: nowrap;
+        }
+      </style>
+
+      <div class="calendar">
+        <div class="event-name">${this._escape(eventName)}</div>
+        <div class="divider"></div>
+        <div class="title">${this._escape(this._config?.title || "Kalender")}</div>
+        <div class="date">${this._escape(date)}</div>
+      </div>
+    `;
+  }
+
+  getCardSize() {
+    return 2;
+  }
+}
+
+if (!customElements.get("jarvis-calendar-card")) {
+  customElements.define("jarvis-calendar-card", JarvisCalendarCard);
+}

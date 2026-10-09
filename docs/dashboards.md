@@ -119,3 +119,9 @@ Then tell the device where it is, either:
 
 The streamed page is your real dashboard, with everything on it. The device's demo mode for
 screenshots does not cover it.
+
+## A ready-made one
+
+[`ha-dashboard/`](../ha-dashboard/README.md) has the Jarvis dashboard: a big clock and the date,
+room climate, weather, the next timer and the next calendar event. It is streamed, and it scales to
+whichever screen shows it.

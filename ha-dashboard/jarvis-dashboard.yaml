@@ -1,0 +1,109 @@
+# The Jarvis dashboard: clock and date in the middle, room climate and
+# weather in the top corners, the next timer and calendar event along the
+# bottom. See README.md for what to install first.
+#
+# Replace the entity ids and the device_id with your own.
+#
+# Every size follows the screen it is shown on: the numbers are the
+# 1280x800 layout's, written as min(<px/12.8>vw, <px/8>vh), so an 8" Show
+# looks as it was designed and smaller or wider screens keep the same
+# proportions. The corner cards do the same in their own files.
+#
+# wall-clock-card's spacing values take one plain length only, no min(),
+# so they are in vh: the height is the short side on every Show.
+views:
+  - title: Jarvis
+    path: home
+    type: panel
+    cards:
+      - type: custom:wall-clock-card
+        logLevel: warn
+        appearance:
+          fontColor: '#FFFFFF'
+          fontFamily: Roboto, sans-serif
+          textShadow: 0 2px 10px rgba(0,0,0,0.95)
+          language: de
+          timeZone: Europe/Berlin
+          size: custom
+        background:
+          source: picsum
+          opacity: 0.38
+          rotationInterval: 90
+          objectFit: cover
+          blur: 6
+          grayscale: 0.05
+        layout:
+          spacing:
+            padding: 3vh
+            zoneGap: 2vh
+            widgetGap: 1vh
+          zones:
+            top-left:
+              align: start
+              widgets:
+                - type: ha-card
+                  transparent: true
+                  style:
+                    widthMode: content
+                  card:
+                    type: custom:jarvis-room-environment-card
+                    title: Wohnzimmer
+                    temperature_entity: sensor.living_room_temperature
+                    humidity_entity: sensor.living_room_humidity
+            top-right:
+              align: end
+              widgets:
+                - type: ha-card
+                  transparent: true
+                  style:
+                    widthMode: content
+                  card:
+                    type: custom:jarvis-weather-card
+                    title: Wetter
+                    entity: weather.forecast_home
+            center:
+              align: center
+              gap: 0px
+              widgets:
+                - type: clock
+                  clockSize: min(22.5vw, 36vh)
+                  timeFormat:
+                    hour: 2-digit
+                    minute: 2-digit
+                    hour12: false
+                  style:
+                    margin: min(1.875vw, 3vh) 0 0 0
+                - type: date
+                  dateSize: min(7.5vw, 12vh)
+                  dateTextAlign: center
+                  dateFormat:
+                    weekday: long
+                    day: numeric
+                    month: long
+            bottom-center:
+              direction: row
+              crossAlign: end
+              gap: min(3.125vw, 5vh)
+              widgets:
+                - type: ha-card
+                  transparent: true
+                  style:
+                    widthMode: fill
+                    grow: 1
+                  card:
+                    type: custom:jarvis-live-timer-card
+                    # The voice satellite whose timers to show: its device
+                    # id from the device page's address, and its entity.
+                    device_id: your-satellite-device-id
+                    satellite_id: assist_satellite.living_room
+                - type: ha-card
+                  transparent: true
+                  style:
+                    widthMode: fill
+                    grow: 2
+                  card:
+                    type: custom:jarvis-calendar-card
+                    entity: calendar.personal
+                    title: Kalender
+                    daysAhead: 14
+          format: grid-3x3
