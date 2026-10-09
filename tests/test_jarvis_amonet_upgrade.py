@@ -220,6 +220,14 @@ class UpgradeTests(unittest.TestCase):
         self.assertEqual(device.writes, [])
         self.assertFalse((self.dir / "backups").exists())
 
+    def test_an_image_bigger_than_its_partition_stops_everything(self):
+        device = FakeTwrp()
+        device.blocks["/dev/block/mmcblk0p11"] = b"s" * 128
+        with self.assertRaisesRegex(up.UpgradeError, r"twrp.img \(160 bytes\) does not fit mmcblk0p11"):
+            self.run_upgrade(device)
+        self.assertEqual(device.writes, [])
+        self.assertFalse((self.dir / "backups").exists())
+
     def test_bytes_that_did_not_land_are_reported_with_the_backup(self):
         device = FakeTwrp(install="bad-lk")
         with self.assertRaisesRegex(up.UpgradeError, r"mmcblk0p3 does not hold.*backed up in"):

@@ -148,6 +148,16 @@ def resolve_targets(client, board: str) -> None:
         raise UpgradeError(f"{BOOT_PARTITION} is named {name!r}, not boot; nothing was written")
 
 
+def check_fit(client, board: str, binaries: dict[str, bytes], boot: bytes) -> None:
+    """The update-binary dd's without looking at sizes; a short write to lk or tee would break the chain."""
+    writes = [("mmcblk0boot0", "preloader.img", len(binaries["preloader.img"])), (BOOT_PARTITION, "boot.img", len(boot))]
+    writes += [(part, binary, len(binaries[binary])) for _, part, binary in TARGETS[board] if binary]
+    for part, label, length in writes:
+        raw = client.shell(f"cat /sys/class/block/{part}/size").strip()
+        if not raw.isdigit() or int(raw) * 512 < length:
+            raise UpgradeError(f"{label} ({length} bytes) does not fit {part} ({raw or '?'} sectors); nothing was written")
+
+
 def _prefix_hash(client, block: str, length: int) -> str:
     out = client.shell(f"head -c {length} {block} | sha256sum").split()
     if not out or not re.fullmatch(r"[0-9a-f]{64}", out[0]):
@@ -241,6 +251,7 @@ def upgrade_amonet(
     if layout != "AMONET1":
         raise UpgradeError(f"cannot read the boot layout (probe returned {layout!r}); nothing was written")
     resolve_targets(client, board)
+    check_fit(client, board, binaries, boot)
 
     progress("backing up every partition the upgrade touches")
     identity = DeviceIdentity(client.serial, profile.fastboot_product, True, None)

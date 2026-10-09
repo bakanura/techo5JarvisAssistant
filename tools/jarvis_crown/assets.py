@@ -80,12 +80,16 @@ ASSETS: dict[str, tuple[Asset, ...]] = {
             "HuskerMinion/techo5 v1.0.1 (signed manifest)",
         ),
         # Needed only by units first unlocked with Amonet 1.x (boot starts with "microloader by xyz"):
-        # flashing this zip in TWRP moves them to the 2.x layout. Not pinned until it has been reviewed.
+        # flashing this zip in TWRP moves them to the 2.x layout (jarvis-show.py amonet-upgrade).
+        # Reviewed 2026-10-09: update-binary is byte-identical to R0rt1z2/amonet mt8163-echo-show HEAD,
+        # the other scripts match upstream (main.py/common.py as of 999f8d0ab5), fastbrick.sh and
+        # fastboot(32) are the bytes unlock.py pins, device.prop says checkers, and twrp.img is the
+        # 16.1.0-20260812-checkers build. Preloader, LK, TZ and kaeru exist only in this zip.
         Asset(
             "amonet", "amonet-checkers-v2.0.1.zip",
             f"{XDA_ATTACHMENTS}/amonet-checkers-v2-0-1-zip.6373840/",
-            "", 0,
-            "XDA thread 4762900 (R0rt1z2), needs an XDA login",
+            "770324a8ed5ab922c0383f8ba072d70fc0190cc2c879f12f67b8d6cfa3ad30ee", 63836775,
+            "XDA thread 4762900 (R0rt1z2), browser download (XDA's CDN refuses scripts)",
             manual=True,
         ),
     ),

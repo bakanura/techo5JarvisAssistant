@@ -139,6 +139,53 @@ class ManualTests(unittest.TestCase):
                 self.assertEqual(self.run_fetch(td, (manual_asset(),)), {})
             self.assertIn("https://xdaforums.com/attachments/x.1/", out.getvalue())
 
+    def test_browser_download_is_waited_for_and_then_held_to_the_pin(self):
+        data = b"amonet zip bytes"
+        asset = manual_asset(hashlib.sha256(data).hexdigest(), len(data))
+        with tempfile.TemporaryDirectory() as td:
+            dl = pathlib.Path(td) / "dl"
+            dl.mkdir()
+            part = dl / "amonet-test.zip.part"
+            ticks = iter(range(100))
+            opened = []
+
+            def open_url(url):
+                opened.append(url)
+                part.write_bytes(b"")
+                (dl / "amonet-test.zip").write_bytes(data[:4])
+                return True
+
+            def sleep(seconds):
+                if part.exists():
+                    part.unlink()
+                    (dl / "amonet-test.zip").write_bytes(data)
+
+            browser = lambda a, d: fetcher.wait_for_browser(  # noqa: E731
+                a, d, open_url=open_url, sleep=sleep, clock=lambda: next(ticks))
+            with redirect_stdout(io.StringIO()):
+                got = self.run_fetch(td, (asset,), browser=browser)
+            self.assertEqual(opened, ["https://xdaforums.com/attachments/x.1/"])
+            self.assertEqual(got["amonet"].read_bytes(), data)
+
+    def test_browser_that_never_delivers_falls_back_to_the_link(self):
+        with tempfile.TemporaryDirectory() as td:
+            (pathlib.Path(td) / "dl").mkdir()
+            ticks = iter(range(0, 10000, 100))
+            browser = lambda a, d: fetcher.wait_for_browser(  # noqa: E731
+                a, d, open_url=lambda url: True, sleep=lambda s: None, clock=lambda: next(ticks))
+            out = io.StringIO()
+            with redirect_stdout(out):
+                self.assertEqual(self.run_fetch(td, (manual_asset(),), browser=browser), {})
+            self.assertIn("did not show up", out.getvalue())
+            self.assertIn("https://xdaforums.com/attachments/x.1/", out.getvalue())
+
+    def test_check_only_never_opens_a_browser(self):
+        with tempfile.TemporaryDirectory() as td:
+            browser = mock.Mock()
+            with redirect_stdout(io.StringIO()):
+                self.run_fetch(td, (manual_asset(),), browser=browser, check_only=True)
+            browser.assert_not_called()
+
     def test_unpinned_package_is_inspected_and_refused(self):
         with tempfile.TemporaryDirectory() as td:
             dl = pathlib.Path(td) / "dl"

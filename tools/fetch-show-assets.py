@@ -11,9 +11,11 @@ The cache defaults to $JARVIS_SHOW_ASSETS, else ~/.cache/jarvis-show. These file
 folder inside the checkout is refused. A file is kept only when its size and SHA-256 match the pin in
 tools/jarvis_crown/assets.py; one already there and right is not downloaded again.
 
-Amonet zips are XDA attachments behind a login, so this never downloads them: log in, download the link
-it prints, and run it again. A zip nobody has pinned yet is compared file by file with the public Amonet
-source and then refused, so the report can be reviewed before its hash goes into assets.py.
+Amonet zips are only XDA attachments, and XDA's CDN answers scripts with a 403 browser challenge, so the
+download has to happen in a browser. This opens the attachment link in your default browser and waits
+for the zip to land in ~/Downloads (--no-browser just prints the link). Either way the file is then held
+to its pin like everything else. A zip nobody has pinned yet is compared file by file with the public
+Amonet source and then refused, so the report can be reviewed before its hash goes into assets.py.
 """
 import argparse
 import hashlib
@@ -21,8 +23,10 @@ import json
 import os
 from pathlib import Path
 import sys
+import time
 import urllib.error
 import urllib.request
+import webbrowser
 import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -135,15 +139,43 @@ def inspect_package(path: Path, asset, *, blobs_for=github_blobs, history_for=gi
     return report
 
 
+BROWSER_WAIT_SECONDS = 600
+PARTIAL_SUFFIXES = ('.part', '.crdownload', '.download')
+
+
+def wait_for_browser(asset, downloads: Path, *, open_url=webbrowser.open, sleep=time.sleep,
+                     clock=time.monotonic, timeout: float = BROWSER_WAIT_SECONDS) -> bool:
+    """Open the attachment in the user's browser and wait until the finished file is in downloads."""
+    found = downloads / asset.name
+    step('opening %s in your browser; save it to %s (waiting up to %d min)'
+         % (asset.url, downloads, timeout // 60))
+    if not open_url(asset.url):
+        note('no browser could be opened')
+        return False
+    deadline = clock() + timeout
+    last = None
+    while clock() < deadline:
+        partial = any(found.with_name(found.name + s).exists() for s in PARTIAL_SUFFIXES)
+        size = found.stat().st_size if found.is_file() else None
+        if size and not partial and size == last:
+            return True
+        last = size
+        sleep(2)
+    note('%s did not show up in %s' % (asset.name, downloads))
+    return False
+
+
 def take_manual(asset, path: Path, downloads: Path, *, check_only: bool, blobs_for=github_blobs,
-                history_for=github_history):
-    """A login-only asset: cached and right, or copied in from the downloads folder when it matches its pin."""
+                history_for=github_history, browser=None):
+    """A browser-only asset: cached and right, or copied in from the downloads folder when it matches its pin."""
     if asset.sha256 and verified(path, asset):
         note('%s: present and verified' % asset.name)
         return path
     found = downloads / asset.name
+    if not found.is_file() and not check_only and browser is not None:
+        browser(asset, downloads)
     if not found.is_file():
-        note('%s: not here. Log in to XDA, download %s and run this again (looked in %s)'
+        note('%s: not here. Download %s in a browser (XDA login) and run this again (looked in %s)'
              % (asset.name, asset.url, downloads))
         return None
     if not asset.sha256:
@@ -162,7 +194,7 @@ def take_manual(asset, path: Path, downloads: Path, *, check_only: bool, blobs_f
 
 
 def fetch_board(board: str, cache: Path, *, check_only: bool = False, downloads: Path | None = None,
-                blobs_for=github_blobs, history_for=github_history) -> dict:
+                blobs_for=github_blobs, history_for=github_history, browser=None) -> dict:
     if inside_repo(cache):
         fail('%s is inside the repository; keep these large files outside it (use --cache or '
              'JARVIS_SHOW_ASSETS)' % cache)
@@ -172,7 +204,7 @@ def fetch_board(board: str, cache: Path, *, check_only: bool = False, downloads:
         path = asset_path(cache, board, asset)
         if asset.manual:
             got = take_manual(asset, path, downloads, check_only=check_only, blobs_for=blobs_for,
-                              history_for=history_for)
+                              history_for=history_for, browser=browser)
             if got is not None:
                 paths[asset.kind] = got
             continue
@@ -199,12 +231,14 @@ def main():
     p.add_argument('--board', required=True, choices=('crown', 'checkers'))
     p.add_argument('--cache', type=Path, default=None, help='default: $JARVIS_SHOW_ASSETS or ~/.cache/jarvis-show')
     p.add_argument('--from', dest='downloads', type=Path, default=None,
-                   help='where login-only downloads (Amonet) went; default ~/Downloads')
+                   help='where browser downloads (Amonet) go; default ~/Downloads')
     p.add_argument('--check', action='store_true', help='verify what is cached; download nothing')
+    p.add_argument('--no-browser', action='store_true', help='print the Amonet link instead of opening it')
     a = p.parse_args()
     cache = (a.cache or default_cache_dir()).expanduser()
     downloads = a.downloads.expanduser() if a.downloads else None
-    paths = fetch_board(a.board, cache, check_only=a.check, downloads=downloads)
+    browser = None if a.no_browser else wait_for_browser
+    paths = fetch_board(a.board, cache, check_only=a.check, downloads=downloads, browser=browser)
     print()
     print('lineage zip: %s' % paths['lineage'])
     print('boot image:  %s' % paths['boot'])

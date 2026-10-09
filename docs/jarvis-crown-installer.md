@@ -33,10 +33,12 @@ keeps a file only when its size and SHA-256 match the pin in `tools/jarvis_crown
 the paths. It refuses a folder inside the repository: these files are hundreds of MB and never belong in
 the checkout. `--check` verifies what is cached without downloading.
 
-Amonet zips are only attached to the XDA threads, and those downloads need a login, so the tool never
-fetches them itself. It prints the attachment link instead. Download it in a browser and run the tool
-again: it takes the zip from `~/Downloads` (or `--from DIR`), checks it against its pin and copies it
-into the cache. A package with no pin yet (`amonet-checkers-v2.0.1.zip` today) is not used. The tool
+Amonet zips are only attached to the XDA threads, and XDA's CDN answers anything that isn't a real
+browser with a 403 challenge page, so a script can't download them. The tool opens the attachment link
+in your default browser instead (log in to XDA if it asks) and waits up to ten minutes for the finished
+zip to show up in `~/Downloads` (or `--from DIR`). Then it checks the zip against its pin and copies it
+into the cache. With `--no-browser`, or when no browser can be opened, it prints the link and you run it
+again after downloading. A package with no pin yet is not used. The tool
 compares every file in it with the public source (R0rt1z2/amonet) and sorts them into:
 
 - files identical to the current upstream branch;
@@ -46,7 +48,7 @@ compares every file in it with the public source (R0rt1z2/amonet) and sorts them
 - binaries only the zip carries (preloader, LK, TZ, kaeru, and so on).
 
 Then it stops. The hash goes into `tools/jarvis_crown/assets.py` only after someone has read that
-list. The crown 2.0.1 zip went through this on 2026-10-09 and is pinned.
+list. The crown and checkers 2.0.1 zips went through this on 2026-10-09 and are pinned.
 
 ### Amonet 1.x units
 
@@ -68,7 +70,8 @@ in TWRP, it goes through these steps:
 2. Resolves every partition the zip's update-binary will write, the same way the update-binary does,
    and stops unless each one is the expected block on this board. On checkers that's `lk_real` → p3,
    `tee1_real` → p4, `tee2_real` → p6, `expdb` → p7, `MISC` → p8, `recovery` → p10, `swdl` → p11, plus
-   `mmcblk0boot0` for the preloader. It also checks that p9 is named `boot`.
+   `mmcblk0boot0` for the preloader. It also checks that p9 is named `boot`, and that every image fits
+   its partition (the update-binary's `dd` doesn't check that).
 3. Backs up the same partition set as J20 to `backups/<adb serial>/before-amonet2/partitions` and
    verifies it.
 4. Asks for `UPGRADE AMONET CHECKERS`. Anything else stops here with nothing written.
