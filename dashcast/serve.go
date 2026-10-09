@@ -541,10 +541,11 @@ func merge(rects []image.Rectangle, r image.Rectangle) []image.Rectangle {
 
 // keepOnDashboards looks at where the page is every second, and takes it back to its dashboard if it
 // has got anywhere else: the page's own guard (browser.go) stops the frontend going there, and this
-// is for whatever gets past it.
+// is for whatever gets past it. It also keeps the page connected to Home Assistant (see lost).
 func keepOnDashboards(ctx context.Context, tab context.Context, home string, g *guard, name string) {
 	t := time.NewTicker(time.Second)
 	defer t.Stop()
+	var down lost
 	for {
 		select {
 		case <-ctx.Done():
@@ -552,11 +553,21 @@ func keepOnDashboards(ctx context.Context, tab context.Context, home string, g *
 		case <-t.C:
 		}
 		var where struct {
-			Origin string `json:"origin"`
-			Path   string `json:"path"`
+			Origin    string `json:"origin"`
+			Path      string `json:"path"`
+			Connected *bool  `json:"connected"`
 		}
-		if err := chromedp.Run(tab, chromedp.Evaluate(`({origin: location.origin, path: location.pathname})`, &where)); err != nil {
+		if err := chromedp.Run(tab, chromedp.Evaluate(`({origin: location.origin, path: location.pathname,
+			connected: document.querySelector("home-assistant")?.hass?.connected})`, &where)); err != nil {
 			continue
+		}
+		switch down.next(where.Connected != nil && !*where.Connected) {
+		case nudge:
+			slog.Info("the page lost Home Assistant; reconnecting it", "name", name)
+			_ = chromedp.Run(tab, chromedp.Evaluate(`document.querySelector("home-assistant")?.hass?.connection?.reconnect(true)`, nil))
+		case reload:
+			slog.Warn("the page stayed cut off from Home Assistant; reloading it", "name", name)
+			_ = chromedp.Run(tab, chromedp.Reload())
 		}
 		if where.Origin == haOrigin(g.cfg.ha) {
 			if ok, err := g.allows(ctx, where.Path); err != nil || ok {
@@ -567,4 +578,41 @@ func keepOnDashboards(ctx context.Context, tab context.Context, home string, g *
 		slog.Warn("the page left the dashboards; taking it back", "name", name, "was", path)
 		_ = chromedp.Run(tab, chromedp.Navigate(home))
 	}
+}
+
+// lost counts the seconds a page has been cut off from Home Assistant. The frontend reconnects by
+// itself, mostly; but a tab thawed after being parked (warm.go) can sit on "Connection lost.
+// Reconnecting..." for good, its retry timer lost to the freeze. So after a few seconds it is told
+// to reconnect at once, and a page still cut off after half a minute is loaded again. While Home
+// Assistant itself is down that reload comes back every half minute, which is all a wait is.
+type lost struct{ secs int }
+
+type remedy int
+
+const (
+	wait remedy = iota
+	nudge
+	reload
+)
+
+const (
+	nudgeAfter  = 3
+	reloadAfter = 30
+)
+
+// next is what to do after one more second, cut off or not.
+func (l *lost) next(cutOff bool) remedy {
+	if !cutOff {
+		l.secs = 0
+		return wait
+	}
+	l.secs++
+	switch l.secs {
+	case nudgeAfter:
+		return nudge
+	case reloadAfter:
+		l.secs = 0
+		return reload
+	}
+	return wait
 }

@@ -157,3 +157,27 @@ func TestUnknownJarvisShowBoardFailsClosed(t *testing.T) {
 		t.Fatal("unsupported board accepted")
 	}
 }
+
+func TestLostNudgesThenReloads(t *testing.T) {
+	var l lost
+	got := map[int]remedy{}
+	for s := 1; s <= 61; s++ {
+		if r := l.next(true); r != wait {
+			got[s] = r
+		}
+	}
+	want := map[int]remedy{nudgeAfter: nudge, reloadAfter: reload, reloadAfter + nudgeAfter: nudge, 2 * reloadAfter: reload}
+	if len(got) != len(want) {
+		t.Fatalf("remedies %v, want %v", got, want)
+	}
+	for s, r := range want {
+		if got[s] != r {
+			t.Fatalf("second %d: %v, want %v (all %v)", s, got[s], r, got)
+		}
+	}
+	// Back in touch starts the count again.
+	l.next(true)
+	if l.next(false) != wait || l.next(true) != wait || l.next(true) != wait || l.next(true) != nudge {
+		t.Fatal("a reconnect did not start the count again")
+	}
+}
