@@ -15,13 +15,13 @@ func mustIP(t *testing.T, s string) net.IP {
 }
 
 func TestListenerOnlyAdmitsPairedServerIP(t *testing.T) {
-	l := &listener{serverIP: mustIP(t, "192.168.8.34")}
+	l := &listener{serverIP: mustIP(t, "10.0.0.40")}
 	for _, tc := range []struct {
 		remote string
 		want   bool
 	}{
-		{"192.168.8.34:42000", true},
-		{"192.168.8.35:42000", false},
+		{"10.0.0.40:42000", true},
+		{"10.0.0.41:42000", false},
 		{"garbage", false},
 	} {
 		if got := l.allowed(tc.remote); got != tc.want {
@@ -32,13 +32,13 @@ func TestListenerOnlyAdmitsPairedServerIP(t *testing.T) {
 
 func TestUnpairedListenerAdmitsNobody(t *testing.T) {
 	var l listener
-	if l.allowed("192.168.8.34:42000") {
+	if l.allowed("10.0.0.40:42000") {
 		t.Fatal("unpaired listener admitted a peer")
 	}
 }
 
 func TestNormalizeServerIP(t *testing.T) {
-	if got, err := normalizeServerIP(" 192.168.8.34 "); err != nil || got != "192.168.8.34" {
+	if got, err := normalizeServerIP(" 10.0.0.40 "); err != nil || got != "10.0.0.40" {
 		t.Fatalf("normalize IPv4 = %q, %v", got, err)
 	}
 	if got, err := normalizeServerIP(""); err != nil || got != "" {
@@ -50,12 +50,12 @@ func TestNormalizeServerIP(t *testing.T) {
 }
 
 func TestNormalizeServerIPAcceptsOnlyLiteralAddresses(t *testing.T) {
-	for _, good := range []string{"192.168.8.34", " 192.168.8.34 ", "fd00::34"} {
+	for _, good := range []string{"10.0.0.40", " 10.0.0.40 ", "fd00::34"} {
 		if got, err := normalizeServerIP(good); err != nil || got == "" {
 			t.Errorf("normalizeServerIP(%q) = %q, %v", good, got, err)
 		}
 	}
-	for _, bad := range []string{"music-assistant.local", "https://192.168.8.34", "192.168.8.34:8928", "not-an-ip"} {
+	for _, bad := range []string{"music-assistant.local", "https://10.0.0.40", "10.0.0.40:8928", "not-an-ip"} {
 		if got, err := normalizeServerIP(bad); err == nil {
 			t.Errorf("normalizeServerIP(%q) = %q, want error", bad, got)
 		}

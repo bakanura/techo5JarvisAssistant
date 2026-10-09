@@ -56,7 +56,7 @@ At minimum, enforce these concepts after the allows above:
 3. **WAN -> Jarvis Show: deny all.** No port forwards for 22, 6053, 8181, 8928 or Dashcast 9555.
 4. **Jarvis Show -> arbitrary management services: deny.** There is no runtime need for SMB, database,
    Proxmox, Docker API or other homelab administration ports.
-5. Do not create a generic `IoT -> 192.168.8.0/24 ACCEPT` rule as a shortcut for Direct Brain.
+5. Do not create a generic `IoT -> <whole LAN> ACCEPT` rule as a shortcut for Direct Brain.
 
 ## OpenWrt rule model
 
@@ -76,8 +76,8 @@ IoT zone            -> trusted LAN        any             REJECT
 WAN                  -> IoT zone          any             REJECT
 ```
 
-For installations like the current homelab where the Shows are on `192.168.9.0/24` and service hosts are
-on `192.168.8.0/24`, write destination-IP-specific exceptions **above** the general IoT-to-LAN reject.
+For installations where the Shows are on their own IoT subnet (say `10.0.9.0/24`) and service hosts are
+on the LAN (say `10.0.0.0/24`), write destination-IP-specific exceptions **above** the general IoT-to-LAN reject.
 The precise Music Assistant and optional SIP/Direct-Brain endpoints must be filled from the deployment;
 do not guess them in firmware or broaden the rule because they are unknown.
 

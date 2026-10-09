@@ -16,13 +16,13 @@ func TestBrainAndListeningRoundTripThroughHTTP(t *testing.T) {
 		"what":     {"brain"},
 		"tab":      {"sound"},
 		"mode":     {""},
-		"stt":      {"192.168.8.205:10300"},
-		"tts":      {"192.168.8.205:10200"},
+		"stt":      {"10.0.0.20:10300"},
+		"tts":      {"10.0.0.20:10200"},
 		"voice":    {"de_DE-thorsten-medium"},
 		"language": {"de"},
 		"llm":      {"https://ollama.example.test/v1/"},
 		"model":    {"qwen-test"},
-		"search":   {"http://192.168.8.250:8888/"},
+		"search":   {"http://10.0.0.30:8888/"},
 		"prompt":   {"Keep answers concise."},
 		"key":      {"test-key-not-a-real-secret"},
 	})
@@ -31,7 +31,7 @@ func TestBrainAndListeningRoundTripThroughHTTP(t *testing.T) {
 	}
 	b := config.Get().Brain
 	if b.Mode != config.BrainHomeAssistant || b.Language != "de" || b.Model != "qwen-test" ||
-		b.LLM != "https://ollama.example.test/v1" || b.Search != "http://192.168.8.250:8888" ||
+		b.LLM != "https://ollama.example.test/v1" || b.Search != "http://10.0.0.30:8888" ||
 		b.Key != "test-key-not-a-real-secret" {
 		t.Fatalf("brain did not round-trip: %+v", b)
 	}
@@ -67,18 +67,18 @@ func TestDashboardRoundTripThroughHTTP(t *testing.T) {
 	to := post(t, f, c, url.Values{
 		"what":    {"dashboard"},
 		"tab":     {"connections"},
-		"address": {"https://192.168.8.250:9555/something"},
+		"address": {"https://10.0.0.30:9555/something"},
 		"key":     {"dashcast-test-key"},
 	})
 	if to.Query().Get("problem") != "" {
 		t.Fatalf("dashboard save returned %s", to)
 	}
 	d := config.Get().Dashboard
-	if d.Server != "192.168.8.250:9555" || d.Key != "dashcast-test-key" {
+	if d.Server != "10.0.0.30:9555" || d.Key != "dashcast-test-key" {
 		t.Fatalf("dashboard did not round-trip: %+v", d)
 	}
 	body := get(f, "/setup?tab=connections", c).Body.String()
-	if !strings.Contains(body, `value="192.168.8.250:9555"`) || !strings.Contains(body, "A key is saved") {
+	if !strings.Contains(body, `value="10.0.0.30:9555"`) || !strings.Contains(body, "A key is saved") {
 		t.Fatalf("connections tab did not show saved dashboard state: %s", first(body))
 	}
 	if strings.Contains(body, "dashcast-test-key") {
