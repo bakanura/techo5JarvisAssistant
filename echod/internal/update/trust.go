@@ -15,7 +15,7 @@ import (
 // manifest.json into manifest.json.sig). An update installs as root, so a manifest is believed only
 // when this key signed it: HTTPS alone would let anything that can present a certificate the device
 // accepts, or a device told to skip certificate checks, hand it a root filesystem.
-var releaseKey = "MIKd5Pm5qmv1aSWDiO8isqqJXoZzyk/cCH4VEIyzg2I="
+var releaseKey = "hGZ6WbvLSUjOM09c79iktfAl5StTTFH3Dtps2iyy1nY="
 
 // client is the updater's own HTTP client. The diagnostics switch that skips certificate checks
 // changes http.DefaultTransport for media and models; it never reaches here.

@@ -13,13 +13,19 @@ Both manifests require a detached Ed25519 signature at `manifest.json.sig`. The 
 trust only the Jarvis Show v1 release key below:
 
 ```text
-MIKd5Pm5qmv1aSWDiO8isqqJXoZzyk/cCH4VEIyzg2I=
+hGZ6WbvLSUjOM09c79iktfAl5StTTFH3Dtps2iyy1nY=
 ```
 
-The private 32-byte Ed25519 seed is generated outside the Git repository and must never be committed,
-printed in CI logs, included in an artifact, or copied into a rootfs. In this development checkpoint it
-is stored outside `src/` under the sandbox project's private directory with mode 0600. Production CI
-should store the same seed as a protected repository secret.
+The private 32-byte Ed25519 seed (base64) is generated outside the Git repository and must never be
+committed, printed in CI logs, included in an artifact, or copied into a rootfs. It lives in two places:
+
+- the maintainer's keyring, entry "Jarvis Show release signing key"
+  (`secret-tool lookup application jarvis-show secret release-signing-key`)
+- the repository Actions secret `JARVIS_SHOW_SIGN_KEY`, which the release workflow signs with
+
+This key replaced the first v1 key in October 2026, after that key's seed was lost. Releases signed with
+the old key are no longer trusted by new firmware, and devices still running firmware that trusts the old
+key need one install of a build that trusts this key (the installer, not OTA).
 
 The device release base is compiled in. A development/mirror build may override the Go string variable
 `github.com/HuskerMinion/techo5/echod/internal/update.releases` with `-ldflags -X`; there is deliberately
