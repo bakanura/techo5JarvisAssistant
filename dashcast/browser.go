@@ -87,16 +87,19 @@ const kioskScript = `
   };
   const dress = (el) => {
     const rule = css[el.tagName.toLowerCase()];
-    if (!rule || !el.shadowRoot || el.shadowRoot.getElementById("techo5-kiosk")) return;
+    if (!rule || !el.shadowRoot || el.shadowRoot.getElementById("techo5-kiosk")) return false;
     const s = document.createElement("style");
     s.id = "techo5-kiosk";
     s.textContent = rule;
     el.shadowRoot.appendChild(s);
+    return true;
   };
   const look = () => {
     const main = document.querySelector("home-assistant")?.shadowRoot?.querySelector("home-assistant-main")?.shadowRoot;
     if (!main) return;
+    let moved = false;
     if (!main.getElementById("jarvis-show-shell")) {
+      moved = true;
       const shell = document.createElement("style");
       shell.id = "jarvis-show-shell";
       shell.textContent = ":host{--header-height:0px!important;--safe-area-inset-top:0px!important;min-height:100vh!important;height:100vh!important} ha-sidebar{display:none!important;width:0!important;min-width:0!important} #view,.view{padding-left:0!important;margin-left:0!important;padding-top:0!important;margin-top:0!important;min-height:100vh!important;height:100vh!important}";
@@ -104,11 +107,15 @@ const kioskScript = `
     }
     for (const panel of main.querySelectorAll("*")) {
       if (!panel.tagName.toLowerCase().startsWith("ha-panel-") || !panel.shadowRoot) continue;
-      for (const el of panel.shadowRoot.querySelectorAll("hui-root, ha-top-app-bar-fixed")) dress(el);
+      for (const el of panel.shadowRoot.querySelectorAll("hui-root, ha-top-app-bar-fixed")) moved = dress(el) || moved;
       for (const inner of panel.shadowRoot.querySelectorAll("*")) {
-        if (inner.shadowRoot) for (const el of inner.shadowRoot.querySelectorAll("hui-root, ha-top-app-bar-fixed")) dress(el);
+        if (inner.shadowRoot) for (const el of inner.shadowRoot.querySelectorAll("hui-root, ha-top-app-bar-fixed")) moved = dress(el) || moved;
       }
     }
+    // A card that measured the room it had while the bar was still there keeps that size until the
+    // window changes: wall-clock-card sets its max-height to the height below its top edge, and kept
+    // 56px of the screen empty at the bottom. Telling the page the window changed has it measure again.
+    if (moved) requestAnimationFrame(() => dispatchEvent(new Event("resize")));
   };
   setInterval(look, 1000);
   addEventListener("load", look);`

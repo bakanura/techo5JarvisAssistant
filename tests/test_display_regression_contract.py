@@ -59,6 +59,13 @@ class DisplayRegressionContractTests(unittest.TestCase):
         self.assertIn('Name: "dashboard_reload"', dashboard)
         self.assertIn('hello["cold"] = true', stream)
 
+    def test_cards_measure_again_once_the_header_is_gone(self):
+        # wall-clock-card sizes itself to the room below its top edge when it is drawn; drawn under
+        # the header, it left the header's 56px empty at the bottom until the window changed.
+        script = kiosk_script()
+        self.assertIn('dispatchEvent(new Event("resize"))', script)
+        self.assertIn("if (moved)", script)
+
     def test_no_external_header_hack_is_part_of_the_product_source(self):
         # The old live deployment used HA-side kiosk_mode / jarvis-edge-to-edge workarounds. The
         # product source must not depend on those: Dashcast is the single owner of browser chrome.
