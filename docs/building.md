@@ -81,7 +81,7 @@ already running TECHO5: turn on its SSH switch in Home Assistant with a key sent
 `ssh_keys` action, copy the binary over, and bind it in place until the next reboot:
 
 ```
-scp bin/echod-arm root@<address>:/tmp/echod-test
+scp -O bin/echod-arm root@<address>:/tmp/echod-test
 ssh root@<address> 'mount --bind /tmp/echod-test /usr/local/bin/techo5 && killall techo5'
 ```
 
