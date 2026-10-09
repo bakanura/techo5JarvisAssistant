@@ -34,6 +34,20 @@ Set `HA_URL` in `docker-compose.yml` to Home Assistant's address as seen from th
 About 150 to 250 MB of memory per screen showing a dashboard, and very little CPU once a page has
 loaded: nothing is sent while nothing changes.
 
+### Updating a container you started by hand
+
+If dashcast runs as a plain `docker run` container rather than from the compose file,
+`update.sh` builds a given commit of this repository and swaps it in, with the running container's
+address and port, shared memory, restart policy and settings:
+
+```sh
+sh update.sh <commit>
+```
+
+The container it replaces is stopped and kept as `dashcast-previous`, and the script ends with the
+two commands that bring it back. With compose, `docker compose pull && docker compose up -d` does
+the same.
+
 ## Pointing a device at it
 
 Tell the device where the server is and what its key is, either on the device's **setup page**

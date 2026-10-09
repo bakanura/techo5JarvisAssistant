@@ -363,6 +363,9 @@ the Show uses; nothing about it is set on the Show, and changing the pipeline in
 changes every Show set to it. "preferred" follows whichever pipeline Home Assistant marks as
 preferred.
 
+The pipeline we run with our own Shows, and what made the difference (the model's context window,
+Whisper's initial prompt, the wake word sensitivity), is in [voice-setup.md](voice-setup.md).
+
 A Show can also answer without Home Assistant. On its setup page (`http://<show>:8181/setup`) the mode is one of:
 
 - **Home Assistant** (the default): every turn goes through the pipeline above.
