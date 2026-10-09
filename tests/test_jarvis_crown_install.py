@@ -185,6 +185,34 @@ class JarvisCrownInstallTests(unittest.TestCase):
         with self.assertRaisesRegex(InstallError, "exit code 9"):
             execute_install(plan, run=run)
 
+    def test_plan_passes_show_settings_as_switches_and_files(self):
+        with tempfile.TemporaryDirectory() as td:
+            rootfs = make_rootfs(td)
+            backup = make_backup(td)
+            token = pathlib.Path(td) / "ha_token"
+            key = pathlib.Path(td) / "dashcast_key"
+            common = dict(
+                repo_root=ROOT, adb_serial="CROWN123", name="Living Room", backup_root=backup,
+                work_dir=pathlib.Path(td) / "work", boot_image=PINNED_BOOT, rootfs=rootfs,
+                rootfs_sha256=sha256(rootfs), confirmation=FINAL_CONFIRM_PHRASE,
+            )
+            argv = list(make_install_plan(
+                **common, ha_url="http://ha.example:8123", ha_token_file=token,
+                dashcast="10.0.0.5:9555", dashcast_key_file=key, music_assistant="10.0.0.6",
+            ).argv)
+            self.assertEqual(argv[argv.index("--ha-url") + 1], "http://ha.example:8123")
+            self.assertEqual(argv[argv.index("--ha-token-file") + 1], str(token))
+            self.assertEqual(argv[argv.index("--dashcast") + 1], "10.0.0.5:9555")
+            self.assertEqual(argv[argv.index("--dashcast-key-file") + 1], str(key))
+            self.assertEqual(argv[argv.index("--music-assistant") + 1], "10.0.0.6")
+            plain = list(make_install_plan(**common).argv)
+            for flag in ("--ha-url", "--dashcast", "--music-assistant"):
+                self.assertNotIn(flag, plain)
+            with self.assertRaises(InstallError):
+                make_install_plan(**common, ha_url="http://ha.example:8123")
+            with self.assertRaises(InstallError):
+                make_install_plan(**common, dashcast_key_file=key)
+
 
 if __name__ == "__main__":
     unittest.main()

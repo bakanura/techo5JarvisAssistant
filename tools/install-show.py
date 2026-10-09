@@ -45,6 +45,7 @@ recovery; flash the LineageOS zip and the LineageOS boot image.
 """
 import argparse
 import hashlib
+import json
 import os
 import re
 import sys
@@ -78,6 +79,75 @@ BOARDS = {
 
 def quote(s):
     return "'" + s.replace("'", "'\\''") + "'"
+
+
+STATE_PATH = '/data/misc/techo5/state.json'
+HASS_PATH = '/data/misc/techo5/hass.json'
+
+
+def read_secret(path, what):
+    """A secret from a file: the line's end goes, nothing else; never printed."""
+    try:
+        with open(os.path.expanduser(path)) as f:
+            value = f.read().rstrip('\r\n').strip()
+    except OSError as e:
+        fail('cannot read the %s file: %s' % (what, e.strerror))
+    if not value:
+        fail('the %s file is empty' % what)
+    return value
+
+
+def device_settings(a):
+    """--ha-url, --dashcast and --music-assistant with their secrets, checked the way the daemon checks
+    them, so nothing reaches the unit that it would refuse later."""
+    from jarvis_crown.home_assistant import (check_dashcast_key, check_token, normalize_dashcast,
+                                             normalize_ha_url, normalize_music_assistant)
+    out = {}
+    try:
+        if a.ha_url or a.ha_token_file:
+            if not (a.ha_url and a.ha_token_file):
+                fail('--ha-url and --ha-token-file go together')
+            out['ha_url'] = normalize_ha_url(a.ha_url)
+            out['ha_token'] = check_token(read_secret(a.ha_token_file, 'Home Assistant token'), 'the Home Assistant token')
+        if a.dashcast or a.dashcast_key_file:
+            if not (a.dashcast and a.dashcast_key_file):
+                fail('--dashcast and --dashcast-key-file go together')
+            out['dashcast'] = normalize_dashcast(a.dashcast)
+            out['dashcast_key'] = check_dashcast_key(read_secret(a.dashcast_key_file, 'DashCast key'))
+        if a.music_assistant:
+            out['music_assistant'] = normalize_music_assistant(a.music_assistant)
+    except ValueError as e:
+        fail(str(e))
+    return out
+
+
+def initial_state(ssh, settings):
+    """The daemon's first state.json: only what was asked for; it fills in its own defaults."""
+    state = {}
+    if ssh:
+        state['security'] = {'ssh': True}
+    if settings.get('dashcast'):
+        state['dashboard'] = {'server': settings['dashcast'], 'key': settings['dashcast_key']}
+    if settings.get('music_assistant'):
+        state['sendspin'] = {'enabled': True, 'server_ip': settings['music_assistant']}
+    return state
+
+
+def describe_settings(ssh, settings):
+    out = []
+    if ssh:
+        out.append('SSH on')
+    if settings.get('dashcast'):
+        out.append('DashCast %s' % settings['dashcast'])
+    if settings.get('music_assistant'):
+        out.append('Music Assistant %s' % settings['music_assistant'])
+    return out
+
+
+def write_once_cmd(path, text):
+    """A shell command that writes text to path, private, unless the file is there already."""
+    return ("if [ -e %s ]; then echo WRITE-KEPT; else (umask 077; printf '%%s\\n' %s > %s) && echo WRITE-OK; fi"
+            % (path, quote(text), path))
 
 
 # The partitions saved from a unit in TWRP before anything is written: the bootloader chain, the logo,
@@ -409,6 +479,11 @@ def main():
     ap.add_argument('--jarvis-crown-version', help=argparse.SUPPRESS)
     ap.add_argument('--wifi', help="a Wi-Fi network to join (its passphrase is asked for); otherwise LineageOS's saved one, or the Show's screen")
     ap.add_argument('--wifi-passphrase-file', help='a file holding the --wifi passphrase, for running from a script')
+    ap.add_argument('--ha-url', help="Home Assistant's address as the Show reaches it, e.g. http://192.168.1.20:8123")
+    ap.add_argument('--ha-token-file', help="a file holding the Show's own long-lived Home Assistant token (with --ha-url)")
+    ap.add_argument('--dashcast', help='the DashCast server, host[:port] (port 9555 when left out)')
+    ap.add_argument('--dashcast-key-file', help='a file holding the DashCast server key (with --dashcast)')
+    ap.add_argument('--music-assistant', help="the Music Assistant server's IP address, which the Sendspin player pairs with")
     ap.add_argument('--amazon-logo', action='store_true',
                     help="from TWRP on a Show 5 2nd gen or a Show 8: keep Amazon's logo at boot rather than put TECHO5's in")
     ap.add_argument('--dry-run', action='store_true', help='download and check the release; write nothing')
@@ -462,6 +537,7 @@ def main():
     for f in (a.boot, a.rootfs):
         if f and not os.path.exists(f):
             fail('no file at %s' % f)
+    settings = device_settings(a)
     state = adb.state()
     if twrp and state != 'recovery':
         fail("adb does not see %s in TWRP (state '%s'): the pre-staged Show install path requires recovery here"
@@ -724,7 +800,6 @@ def main():
         prov += " && printf 'jarvis-%s-v1\\n' > /data/misc/techo5/profile" % a.jarvis_show_board
     if pub:
         prov += (" && mkdir -p -m 700 /data/misc/techo5/ssh && (umask 077; printf '%%s\\n' %s > /data/misc/techo5/ssh/authorized_keys)"
-                 " && { [ -e /data/misc/techo5/state.json ] || (umask 077; printf '{\"security\":{\"ssh\":true}}\\n' > /data/misc/techo5/state.json); }"
                  % quote(pub))
     if wifi:
         prov += (" && mkdir -p -m 700 /data/techo5-linux && chmod 700 /data/techo5-linux"
@@ -734,6 +809,23 @@ def main():
     if 'PROV-OK' not in (o or ''):
         fail('provisioning failed:\n%s' % o)
     note("name '%s' and Home Assistant key%s%s written" % (a.name, ', SSH key' if pub else '', ', Wi-Fi' if wifi else ''))
+    # The daemon's settings, each its own short command: a line typed into the console's shell has a
+    # length limit, and the token alone is a couple of hundred characters.
+    first = initial_state(bool(pub), settings)
+    if first:
+        o = console.run(write_once_cmd(STATE_PATH, json.dumps(first, separators=(',', ':'))) + ' && sync', 15) or ''
+        if 'WRITE-KEPT' in o:
+            note('%s was already there and is kept: give the settings through Home Assistant (jarvis-show.py home-assistant)' % STATE_PATH)
+        elif 'WRITE-OK' not in o:
+            fail('writing the settings failed:\n%s' % o)
+        else:
+            note('settings written: %s' % ', '.join(describe_settings(bool(pub), settings)))
+    if settings.get('ha_url'):
+        hass = json.dumps({'url': settings['ha_url'], 'token': settings['ha_token']}, separators=(',', ':'))
+        o = console.run("(umask 077; printf '%%s\\n' %s > %s) && sync && echo HASS-OK" % (quote(hass), HASS_PATH), 15) or ''
+        if 'HASS-OK' not in o:
+            fail('writing Home Assistant access failed:\n%s' % o)
+        note('Home Assistant access written: %s' % settings['ha_url'])
     console.run('sync; (sleep 2; /bin/busybox.static reboot -f) >/dev/null 2>&1 &', 3)
 
     # ------------------------------------------------------------------------------------ 7. watch
@@ -751,9 +843,16 @@ def main():
     o = console.run('ip -4 addr show wlan0 | sed -n "s/.*inet \\([0-9.]*\\).*/\\1/p"; cat /etc/techo5-release', 8) or ''
     for line in o.split('\n'):
         note(line)
+    # The address, for jarvis-show.py home-assistant when Home Assistant has not discovered the unit.
+    addr = (o.split('\n') or [''])[0].strip()
+    if re.fullmatch(r'\d{1,3}(\.\d{1,3}){3}', addr):
+        with open(os.path.join(backup, 'address'), 'w') as f:
+            f.write(addr + '\n')
 
     print("\nDone. '%s' runs TECHO5 %s from slot a; the slot commits itself after five healthy minutes." % (a.name, version))
     print('Home Assistant finds it as an ESPHome device. When it asks for the encryption key, paste:\n\n    %s\n\n(kept in %s)' % (psk, key_file))
+    if settings:
+        print('Ready for: %s.' % ', '.join(describe_settings(False, settings) + (['Home Assistant at %s' % settings['ha_url']] if settings.get('ha_url') else [])))
     if twrp and not wifi:
         print('It has no Wi-Fi yet: the Show opens its Wi-Fi picker automatically after boot. You can also use Settings -> Connections -> Wi-Fi.')
         print('USB fallback: python3 tools/jarvis-show.py wifi --wifi YOUR_NETWORK [--serial DEVICE_SERIAL]')

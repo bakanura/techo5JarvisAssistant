@@ -16,7 +16,7 @@ class WifiRecoveryContractTests(unittest.TestCase):
 
     def test_one_frontend_exposes_usb_wifi_recovery(self):
         src = self.read("tools/jarvis-show.py")
-        self.assertIn('"wifi"]', src)
+        self.assertRegex(src, r'choices=\[[^]]*"wifi"')
         self.assertIn('wifi recovery requires --wifi NETWORK', src)
         self.assertIn('tools" / "show-wifi.py"', src)
         self.assertIn('"--serial"', src)

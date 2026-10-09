@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 
@@ -15,6 +17,8 @@ from jarvis_crown.assets import amonet_bundle_dir, asset_path, assets_for, defau
 from jarvis_crown.boards import profile_for_board, profile_for_product  # noqa: E402
 from jarvis_crown.device_gate import DeviceGateError, identify_show  # noqa: E402
 from jarvis_crown.flow import FlowError, InstallInputs, run_install_flow  # noqa: E402
+from jarvis_crown import home_assistant as ha_api  # noqa: E402
+from jarvis_crown.settings import Asker, Settings, SettingsError, gather, save_defaults, secret_files  # noqa: E402
 from jarvis_crown.preflight import preflight_ok, print_checks, run_preflight  # noqa: E402
 from jarvis_crown.recovery import RecoveryError, adb_recovery_serials, identify_recovery_show  # noqa: E402
 from jarvis_crown.unlock import UnlockError, unlock_show  # noqa: E402
@@ -24,7 +28,7 @@ SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="jarvis-show")
-    parser.add_argument("command", choices=["preflight", "identify", "unlock", "install", "amonet-upgrade", "wifi"], nargs="?", default="preflight")
+    parser.add_argument("command", choices=["preflight", "identify", "unlock", "install", "amonet-upgrade", "wifi", "home-assistant"], nargs="?", default="preflight")
     parser.add_argument("--board", choices=("crown", "checkers"), help="optional first-gen board cross-check; install/identify auto-detect by default")
     parser.add_argument("--amonet-dir", type=Path)
     parser.add_argument("--amonet-zip", type=Path, help="amonet-upgrade: the pinned Amonet 2.x zip; default from the asset cache")
@@ -42,6 +46,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wifi-passphrase-file", type=Path)
     parser.add_argument("--serial", help="TECHO5 USB serial for offline Wi-Fi recovery; auto-selected when exactly one Show is attached")
     parser.add_argument("--ssh-key", type=Path)
+    setup = parser.add_argument_group("what the Show is ready with (asked for when left out)")
+    setup.add_argument("--ha-url", help="Home Assistant's address as the Show reaches it")
+    setup.add_argument("--ha-token-file", type=Path, help="the Show's own long-lived Home Assistant token")
+    setup.add_argument("--ha-admin-token-file", type=Path, help="an admin token, used once to add the Show to Home Assistant")
+    setup.add_argument("--dashcast", help="the DashCast server, host[:port]")
+    setup.add_argument("--dashcast-key-file", type=Path)
+    setup.add_argument("--music-assistant", help="the Music Assistant server's IP address or name")
+    setup.add_argument("--wake-word", default=ha_api.DEFAULT_WAKE_WORD, help="set in Home Assistant; '' leaves it alone")
+    setup.add_argument("--assistant", default=ha_api.DEFAULT_ASSISTANT, help="the Assist pipeline; '' leaves it alone")
+    setup.add_argument("--no-questions", action="store_true", help="ask nothing; take switches and the keyring only")
+    hass = parser.add_argument_group("home-assistant: add an installed Show to Home Assistant")
+    hass.add_argument("--host", help="the Show's address, when Home Assistant has not discovered it")
+    hass.add_argument("--key-file", type=Path, help="its encryption key (default backups/<serial>/home-assistant.key)")
     return parser.parse_args()
 
 
@@ -101,6 +118,92 @@ def _detect_profile(board: str | None, *, allow_recovery: bool = False):
 def _cached(board: str, kind: str) -> Path:
     asset = next(a for a in assets_for(board) if a.kind == kind)
     return asset_path(default_cache_dir(), board, asset)
+
+
+def _asker(args) -> Asker:
+    return Asker(interactive=not args.no_questions and not os.environ.get("TECHO5_NO_PROMPT")
+                 and sys.stdin.isatty() and sys.stdout.isatty())
+
+
+def _find_host(name: str):
+    """The Show's address over mDNS, for when Home Assistant has not discovered it on its own."""
+    tool = shutil.which("avahi-resolve-host-name")
+
+    def find():
+        if not tool:
+            return None
+        try:
+            out = subprocess.run([tool, "-4", ha_api.node_slug(name) + ".local"], capture_output=True,
+                                 text=True, timeout=8, check=False).stdout.split()
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        return out[1] if len(out) == 2 else None
+    return find
+
+
+def _key_file(args, backups: Path) -> Path | None:
+    if args.key_file:
+        return args.key_file
+    if args.serial:
+        return backups / args.serial / "home-assistant.key"
+    keys = sorted(backups.glob("*/home-assistant.key"))
+    return keys[0] if len(keys) == 1 else None
+
+
+def deploy_to_home_assistant(settings: Settings, args, *, name: str, key_file: Path, host: str | None,
+                             wait_seconds: float) -> int:
+    """Adds the Show to Home Assistant and hands it its settings through its own actions."""
+    if not (settings.ha_url and settings.ha_admin_token):
+        print("INFO: no Home Assistant admin token, so add the Show by hand:")
+        print(f"INFO:   Settings -> Devices & services -> ESPHome, with the key in {key_file}")
+        print(f"INFO:   or later: python3 tools/jarvis-show.py home-assistant --name {name!r}")
+        return 0
+    try:
+        psk = key_file.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        print(f"FAIL: cannot read the Show's encryption key: {exc.strerror}", file=sys.stderr)
+        return 1
+    if not host:
+        saved = key_file.parent / "address"
+        if saved.is_file():
+            host = saved.read_text(encoding="utf-8").strip() or None
+    opts = ha_api.DeployOptions(
+        name=name, psk=psk, host=host, wake_word=args.wake_word or None, assistant=args.assistant or None,
+        settings=ha_api.DeviceSettings(dashcast=settings.dashcast, dashcast_key=settings.dashcast_key,
+                                       ha_url=settings.ha_url, ha_token=settings.ha_token,
+                                       music_assistant=settings.music_assistant),
+        wait_seconds=wait_seconds)
+    print(f"INFO: adding {name!r} to Home Assistant at {settings.ha_url}")
+    try:
+        ha_api.deploy(ha_api.HomeAssistant(settings.ha_url, settings.ha_admin_token), opts,
+                      progress=lambda text: print(f"INFO: {text}"), find_host=_find_host(name))
+    except ha_api.HomeAssistantError as exc:
+        print(f"FAIL: Home Assistant: {exc}", file=sys.stderr)
+        return 5
+    print(f"PASS: {name!r} is in Home Assistant and set up")
+    return 0
+
+
+def home_assistant_command(args, backups: Path) -> int:
+    if not args.name:
+        print("FAIL: home-assistant requires --name, the Show's name as installed", file=sys.stderr)
+        return 1
+    key_file = _key_file(args, backups)
+    if key_file is None:
+        print("FAIL: say which Show with --serial or --key-file", file=sys.stderr)
+        return 1
+    try:
+        settings = gather(args, _asker(args), want_wifi=False)
+    except SettingsError as exc:
+        print(f"FAIL: {exc}", file=sys.stderr)
+        return 1
+    save_defaults(settings)
+    if not settings.ha_admin_token:
+        print("FAIL: adding the Show needs a Home Assistant admin token "
+              "(--ha-admin-token-file, the keyring, or the question)", file=sys.stderr)
+        return 1
+    return deploy_to_home_assistant(settings, args, name=args.name, key_file=key_file, host=args.host,
+                                    wait_seconds=120)
 
 
 def amonet_upgrade(args, backups: Path) -> int:
@@ -169,6 +272,9 @@ def main() -> int:
     if args.command == "amonet-upgrade":
         return amonet_upgrade(args, backups)
 
+    if args.command == "home-assistant":
+        return home_assistant_command(args, backups)
+
     # identify/unlock require fastboot. install can resume from a verified TWRP
     # session only when an explicit board cross-check is supplied.
     if args.command == "identify":
@@ -227,6 +333,16 @@ def main() -> int:
             print(f"FAIL: {exc}", file=sys.stderr)
             return 1
 
+        # Everything the Show starts with, asked before anything on it is touched.
+        try:
+            settings = gather(args, _asker(args))
+        except SettingsError as exc:
+            print(f"FAIL: {exc}", file=sys.stderr)
+            return 1
+        save_defaults(settings)
+        for line in settings.summary():
+            print(f"INFO: {line}")
+
         def confirm_unlock(p):
             build = identity.lk_build_desc if identity is not None else None
             print(f"WARN: unlocking {p.model} runs the board-specific Amonet exploit.")
@@ -239,38 +355,51 @@ def main() -> int:
             print("WARN: the verified recovery backup already exists; do not disconnect power/USB during these writes.")
             return input(f"Type {p.install_confirmation} to continue: ").strip()
 
-        inputs = InstallInputs(
-            board=profile.board,
-            repo_root=root,
-            amonet_dir=amonet,
-            lineage_zip=args.lineage_zip.resolve(),
-            work_dir=work,
-            backups_dir=backups,
-            name=args.name,
-            boot_image=args.boot_image.resolve(),
-            boot_sha256=boot_sha256,
-            rootfs=args.rootfs.resolve(),
-            rootfs_sha256=rootfs_sha256,
-            twrp_sha256=twrp_sha256,
-            amonet_hashes=amonet_hashes,
-            wifi=args.wifi,
-            wifi_passphrase_file=args.wifi_passphrase_file.resolve() if args.wifi_passphrase_file else None,
-            ssh_key=args.ssh_key.resolve() if args.ssh_key else None,
-            expected_fastboot_serial=identity.serial if identity is not None else None,
-        )
-        try:
-            result = run_install_flow(
-                inputs,
-                confirm_unlock=confirm_unlock,
-                confirm_install=confirm_install,
-                progress=lambda stage: print(f"INFO: stage={stage}"),
-                initial_identity=identity if identity_source == "recovery" else None,
+        with secret_files(settings) as files:
+            inputs = InstallInputs(
+                board=profile.board,
+                repo_root=root,
+                amonet_dir=amonet,
+                lineage_zip=args.lineage_zip.resolve(),
+                work_dir=work,
+                backups_dir=backups,
+                name=args.name,
+                boot_image=args.boot_image.resolve(),
+                boot_sha256=boot_sha256,
+                rootfs=args.rootfs.resolve(),
+                rootfs_sha256=rootfs_sha256,
+                twrp_sha256=twrp_sha256,
+                amonet_hashes=amonet_hashes,
+                wifi=settings.wifi,
+                wifi_passphrase_file=files.get("wifi_passphrase") or (
+                    args.wifi_passphrase_file.resolve() if args.wifi_passphrase_file and settings.wifi else None),
+                ha_url=settings.ha_url if settings.ha_token else None,
+                ha_token_file=files.get("ha_token") if settings.ha_url else None,
+                dashcast=settings.dashcast,
+                dashcast_key_file=files.get("dashcast_key") if settings.dashcast else None,
+                music_assistant=settings.music_assistant,
+                ssh_key=args.ssh_key.resolve() if args.ssh_key else None,
+                expected_fastboot_serial=identity.serial if identity is not None else None,
             )
-        except (FlowError, DeviceGateError, UnlockError, RuntimeError) as exc:
-            print(f"FAIL: install stopped: {exc}", file=sys.stderr)
-            return 4
+            try:
+                result = run_install_flow(
+                    inputs,
+                    confirm_unlock=confirm_unlock,
+                    confirm_install=confirm_install,
+                    progress=lambda stage: print(f"INFO: stage={stage}"),
+                    initial_identity=identity if identity_source == "recovery" else None,
+                )
+            except (FlowError, DeviceGateError, UnlockError, RuntimeError) as exc:
+                print(f"FAIL: install stopped: {exc}", file=sys.stderr)
+                return 4
         print(f"PASS: {result.profile.product_id} installation flow completed")
-        return 0
+        if not settings.wifi:
+            print("INFO: join Wi-Fi on the Show's screen, then add it to Home Assistant with:")
+            print(f"INFO:   python3 tools/jarvis-show.py home-assistant --name {args.name!r}")
+            return 0
+        key_file = backups / result.recovery.adb_serial / "home-assistant.key"
+        return deploy_to_home_assistant(settings, args, name=args.name, key_file=key_file, host=None,
+                                        wait_seconds=300)
 
     checks = run_preflight(
         repo_root=root,

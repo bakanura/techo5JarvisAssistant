@@ -264,6 +264,11 @@ is built on, runs on the unlocked Dot's Fire OS 6 with its own installer, and is
 
 ## After installing (every device)
 
+A Jarvis Show installed with `tools/jarvis-show.py` and a Home Assistant admin token has steps 1 to 3
+done already, along with its DashCast and Music Assistant servers; see
+[Ready at first boot](jarvis-crown-installer.md#ready-at-first-boot-home-assistant-dashcast-music-assistant).
+For any other device:
+
 1. **Add it.** Home Assistant discovers it as an ESPHome device (Settings → Devices & services).
    Paste the encryption key the installer printed. It's also saved in
    `backups/<serial>/home-assistant.key` (a Show or Spot installed before 2026-09-19:

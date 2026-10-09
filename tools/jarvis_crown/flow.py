@@ -50,6 +50,11 @@ class InstallInputs:
     wifi: str | None = None
     wifi_passphrase_file: Path | None = None
     ssh_key: Path | None = None
+    ha_url: str | None = None
+    ha_token_file: Path | None = None
+    dashcast: str | None = None
+    dashcast_key_file: Path | None = None
+    music_assistant: str | None = None
     expected_fastboot_serial: str | None = None
 
 
@@ -197,6 +202,11 @@ def run_install_flow(
         wifi=inputs.wifi,
         wifi_passphrase_file=inputs.wifi_passphrase_file,
         ssh_key=inputs.ssh_key,
+        ha_url=inputs.ha_url,
+        ha_token_file=inputs.ha_token_file,
+        dashcast=inputs.dashcast,
+        dashcast_key_file=inputs.dashcast_key_file,
+        music_assistant=inputs.music_assistant,
     )
 
     phrase = confirm_install(profile)

@@ -207,6 +207,11 @@ def make_install_plan(
     wifi: str | None = None,
     wifi_passphrase_file: Path | None = None,
     ssh_key: Path | None = None,
+    ha_url: str | None = None,
+    ha_token_file: Path | None = None,
+    dashcast: str | None = None,
+    dashcast_key_file: Path | None = None,
+    music_assistant: str | None = None,
 ) -> InstallPlan:
     profile = profile_for_board(board)
     if confirmation != profile.install_confirmation:
@@ -254,6 +259,17 @@ def make_install_plan(
         raise InstallError("--wifi-passphrase-file requires a Wi-Fi network name")
     if ssh_key:
         argv.extend(["--ssh-key", str(ssh_key.resolve())])
+    # What the Show is ready with at first boot. Secrets travel as files, never as arguments.
+    if bool(ha_url) != bool(ha_token_file):
+        raise InstallError("Home Assistant access needs both its address and a token file")
+    if ha_url and ha_token_file:
+        argv.extend(["--ha-url", ha_url, "--ha-token-file", str(ha_token_file)])
+    if bool(dashcast) != bool(dashcast_key_file):
+        raise InstallError("the DashCast server needs both its address and a key file")
+    if dashcast and dashcast_key_file:
+        argv.extend(["--dashcast", dashcast, "--dashcast-key-file", str(dashcast_key_file)])
+    if music_assistant:
+        argv.extend(["--music-assistant", music_assistant])
 
     required = {
         "--jarvis-show-prestaged",

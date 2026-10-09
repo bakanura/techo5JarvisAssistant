@@ -235,7 +235,8 @@ mounts/checks the vendor modules once more and then enters the same upstream flo
 7. converts only `mmcblk0p12` (`system`) into the A/B slot store;
 8. installs rootfs slot A and copies the vendor tree into that slot;
 9. provisions the device name, encrypted Home Assistant API key, optional SSH public key and optional
-   Wi-Fi credentials;
+   Wi-Fi credentials, plus whatever of Home Assistant access, DashCast and Music Assistant was given
+   (see "Ready at first boot" below);
 10. writes `/data/misc/techo5/profile` as `jarvis-crown-v1` and boots slot A.
 
 Jarvis Crown forces `--amazon-logo` on this internal handoff.  That is intentionally named after the
@@ -253,3 +254,76 @@ other product defaults) is compiled into the Jarvis Crown rootfs.  J22 intention
 large `state.json` that would freeze today's defaults forever; it writes only persistent identity/
 credentials and the profile marker.  Future OTA updates therefore retain user settings while still
 allowing new defaults to apply correctly to genuinely fresh devices.
+
+## Ready at first boot: Home Assistant, DashCast, Music Assistant
+
+`jarvis-show.py install` asks, before it touches the Show, for everything a unit needs to be useful
+the moment it boots:
+
+```
+Wi-Fi (the Show joins it on first boot):
+   network [Home]:
+   passphrase for 'Home' (hidden; Enter to skip):
+Home Assistant:
+   address, as the Show reaches it [http://192.168.8.125:8123]:
+   the Show's own long-lived token (photos, weather, cameras) (hidden; Enter to skip):
+   an admin token, used once to add the Show to Home Assistant (hidden; Enter to skip):
+DashCast (the streamed dashboard):
+   server, host[:port] [192.168.8.250:9555]:
+   the DashCast key (hidden; Enter to skip):
+Music Assistant (the Sendspin player):
+   server IP or name [192.168.8.125]:
+```
+
+Enter takes the value in brackets, `-` leaves a setting out. The addresses are remembered in
+`~/.config/jarvis-show/defaults.json`, so the second Show is mostly Enter. Secrets are never
+remembered by this tool and never put on a command line. Each secret is taken from the first of
+these that has it:
+
+1. its switch (`--ha-token-file`, `--ha-admin-token-file`, `--dashcast-key-file`,
+   `--wifi-passphrase-file`);
+2. the desktop keyring, through `secret-tool` (or `$JARVIS_SHOW_SECRET_TOOL`);
+3. a hidden question.
+
+To keep them in the keyring:
+
+```
+secret-tool store --label="Jarvis Show: HA token" application jarvis-show secret ha-token
+secret-tool store --label="Jarvis Show: HA admin token" application jarvis-show secret ha-admin-token
+secret-tool store --label="Jarvis Show: DashCast key" application jarvis-show secret dashcast-key
+secret-tool store --label="Jarvis Show: Wi-Fi" application jarvis-show secret wifi network "Home"
+```
+
+The addresses have switches too (`--ha-url`, `--dashcast`, `--music-assistant`), and
+`--no-questions` (or `TECHO5_NO_PROMPT=1`, or no terminal) asks nothing at all.
+
+What happens with the answers:
+
+- **On the Show, at install.** The secrets reach `install-show.py` as owner-only files in a temporary
+  folder that is gone when the install ends. It checks each value the way the daemon does, then
+  writes `/data/misc/techo5/hass.json` (address and token) and a small first `state.json` with only
+  the DashCast server and key and the Music Assistant address (Sendspin on). The daemon fills in
+  every other default itself. A `state.json` that is already there is kept as it is.
+- **In Home Assistant, right after.** With an admin token and Wi-Fi, the tool waits up to five
+  minutes for the Show to come up, then over Home Assistant's REST API:
+  1. adds it as an ESPHome device with its encryption key (from the discovery Home Assistant already
+     has, or by its address);
+  2. turns on "Allow the device to perform Home Assistant actions";
+  3. sets the assistant to `Jarvis` and the wake word to `Hey Jarvis` (`--assistant`, `--wake-word`;
+     `''` leaves one alone);
+  4. hands it the DashCast server, Home Assistant access and Music Assistant address again through
+     its own actions, and turns its Sendspin switch on.
+
+  The admin token is used for this and kept nowhere. Each step looks first at what is already
+  there, so running it again changes only what is missing.
+
+Without Wi-Fi at install (it is picked on the Show's screen instead) or without an admin token, the
+tool says how to finish later. The same steps run on their own for a Show that is already installed:
+
+```
+python3 tools/jarvis-show.py home-assistant --name "Kitchen Show"
+```
+
+It finds the encryption key in `backups/<serial>/home-assistant.key` (`--serial` or `--key-file`
+when there is more than one), and the Show's address in `backups/<serial>/address`, through mDNS,
+or from `--host`.
