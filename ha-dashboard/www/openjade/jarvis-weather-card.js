@@ -7,6 +7,11 @@
  * card was laid out on. On that screen it looks as it always did; on any
  * other it keeps the same proportions, limited by whichever side is
  * shorter.
+ *
+ * Narrower than 245px (a 5" Show, a phone) the words go: the condition's
+ * icon and the temperature, then humidity and wind with an icon each. The
+ * card decides from its own width, so the same config works everywhere and
+ * a resized window switches live.
  */
 class JarvisWeatherCard extends HTMLElement {
   setConfig(config) {
@@ -100,6 +105,7 @@ class JarvisWeatherCard extends HTMLElement {
           width: calc(350 * var(--u)) !important;
           max-width: 100%;
           box-sizing: border-box;
+          container-type: inline-size;
 
           color: var(--primary-text-color, white);
           font-family: inherit;
@@ -206,6 +212,46 @@ class JarvisWeatherCard extends HTMLElement {
           line-height: 1.2;
           font-weight: 590;
         }
+
+        jarvis-weather-card .metric-icon {
+          display: none;
+          --mdc-icon-size: calc(38 * var(--u));
+          opacity: .8;
+        }
+
+        @container (max-width: 244px) {
+          jarvis-weather-card .title,
+          jarvis-weather-card .condition-block,
+          jarvis-weather-card .metric-label {
+            display: none;
+          }
+
+          jarvis-weather-card .metric-icon {
+            display: block;
+          }
+
+          jarvis-weather-card .current {
+            grid-template-columns: auto minmax(0, 1fr);
+            margin-bottom: calc(4 * var(--u));
+          }
+
+          jarvis-weather-card .current ha-icon {
+            --mdc-icon-size: calc(54 * var(--u));
+          }
+
+          jarvis-weather-card .temperature {
+            font-size: calc(44 * var(--u));
+            text-align: right;
+          }
+
+          jarvis-weather-card .metric {
+            min-height: calc(42 * var(--u));
+          }
+
+          jarvis-weather-card .metric-value {
+            font-size: calc(32 * var(--u));
+          }
+        }
       </style>
 
       <div class="glass">
@@ -227,6 +273,7 @@ class JarvisWeatherCard extends HTMLElement {
         </div>
 
         <div class="metric">
+          <ha-icon class="metric-icon" icon="mdi:water-percent"></ha-icon>
           <div class="metric-label">Luftfeuchtigkeit</div>
           <div class="metric-value">
             ${humidity !== undefined ? this._escape(humidity) + " %" : "—"}
@@ -234,6 +281,7 @@ class JarvisWeatherCard extends HTMLElement {
         </div>
 
         <div class="metric">
+          <ha-icon class="metric-icon" icon="mdi:weather-windy"></ha-icon>
           <div class="metric-label">Wind</div>
           <div class="metric-value">
             ${wind !== undefined ? this._escape(wind) + " " + this._escape(windUnit) : "—"}

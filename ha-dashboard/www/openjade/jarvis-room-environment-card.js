@@ -5,6 +5,10 @@
  * card was laid out on. On that screen it looks as it always did; on any
  * other it keeps the same proportions, limited by whichever side is
  * shorter, so it never crowds the clock on a wide or a small panel.
+ *
+ * Narrower than 294px (a 5" Show, a phone) the words go: no title, an icon
+ * for each row, and bigger numbers. The card decides from its own width, so
+ * the same config works everywhere and a resized window switches live.
  */
 class JarvisRoomEnvironmentCard extends HTMLElement {
   setConfig(config) {
@@ -51,6 +55,7 @@ class JarvisRoomEnvironmentCard extends HTMLElement {
           width: calc(420 * var(--u)) !important;
           max-width: 100%;
           box-sizing: border-box;
+          container-type: inline-size;
 
           color: var(--primary-text-color, white);
           font-family: inherit;
@@ -118,12 +123,38 @@ class JarvisRoomEnvironmentCard extends HTMLElement {
           font-size: .78em;
           opacity: .7;
         }
+
+        jarvis-room-environment-card .icon {
+          display: none;
+          --mdc-icon-size: calc(46 * var(--u));
+          opacity: .8;
+        }
+
+        @container (max-width: 293px) {
+          jarvis-room-environment-card .title,
+          jarvis-room-environment-card .label {
+            display: none;
+          }
+
+          jarvis-room-environment-card .icon {
+            display: block;
+          }
+
+          jarvis-room-environment-card .row {
+            padding: calc(6 * var(--u)) 0;
+          }
+
+          jarvis-room-environment-card .value {
+            font-size: calc(42 * var(--u));
+          }
+        }
       </style>
 
       <div class="glass">
         <div class="title">${this._escape(this._config?.title)}</div>
 
         <div class="row">
+          <ha-icon class="icon" icon="mdi:thermometer"></ha-icon>
           <div class="label">Temperatur</div>
           <div class="value">
             ${this._escape(tempValue)}
@@ -132,6 +163,7 @@ class JarvisRoomEnvironmentCard extends HTMLElement {
         </div>
 
         <div class="row">
+          <ha-icon class="icon" icon="mdi:water-percent"></ha-icon>
           <div class="label">Luftfeuchtigkeit</div>
           <div class="value">
             ${this._escape(humidityValue)}

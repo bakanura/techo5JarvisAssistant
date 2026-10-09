@@ -38,8 +38,13 @@ views:
             zoneGap: 2vh
             widgetGap: 1vh
           zones:
-            top-left:
+            # Both corner cards share one zone. Alone on its row, top-center
+            # spans the whole width; as top-left and top-right they would get
+            # only what the date line leaves over, and change size with it.
+            top-center:
+              direction: row
               align: start
+              crossAlign: start
               widgets:
                 - type: ha-card
                   transparent: true
@@ -50,13 +55,11 @@ views:
                     title: Wohnzimmer
                     temperature_entity: sensor.living_room_temperature
                     humidity_entity: sensor.living_room_humidity
-            top-right:
-              align: end
-              widgets:
                 - type: ha-card
                   transparent: true
                   style:
                     widthMode: content
+                    margin: 0 0 0 auto
                   card:
                     type: custom:jarvis-weather-card
                     title: Wetter

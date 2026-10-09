@@ -8,6 +8,11 @@ It scales to the screen it is on. It was laid out on a 1280×800 Echo Show 8, an
 written relative to the viewport, so a Show 5 (960×480) or a browser window gets the same picture,
 just smaller. The shorter side decides, so nothing runs into the clock on a wide screen.
 
+On a small screen the two top cards drop their words: no titles or labels, just an icon next to
+each number (temperature and humidity on the left; the weather, humidity and wind on the right).
+Each card decides from its own width, so there is nothing to configure, and a browser window
+switches back and forth as you resize it.
+
 It uses custom cards, so the Show has to **stream** it (dashcast). Drawn mode would show placeholder
 tiles. See [docs/dashboards.md](../docs/dashboards.md).
 
@@ -44,7 +49,9 @@ formatted for de-DE. Change the strings in the card files if you need another la
      type: module
    ```
 
-   When you update a card file later, raise its `?v=` so browsers fetch the new one.
+   When you update a card file later, raise its `?v=`. Home Assistant tells browsers to keep these
+   files for a month, so without a new `?v=` a browser that has the old one keeps showing it,
+   dashcast's included.
 4. **Settings → Dashboards → Add dashboard → New dashboard from scratch**, open it, **⋮ → Edit
    dashboard → ⋮ → Raw configuration editor**, and paste `jarvis-dashboard.yaml`.
 5. Put your own entities in: the two room sensors, your weather entity, your calendar, and for the
