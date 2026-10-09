@@ -322,9 +322,11 @@ What happens with the answers:
   2. turns on "Allow the device to perform Home Assistant actions";
   3. picks the assistant (which of Home Assistant's Assist pipelines the Show talks to) and the wake
      word. The tool lists what is really there, the pipelines this Home Assistant has and the wake
-     words this Show has, and you pick one or press Enter to keep the current one. `--assistant` and
-     `--wake-word` answer ahead of time; `''` leaves one alone. With nobody at the terminal and no
-     switch, both stay as they are;
+     words this Show has, and you pick one or press Enter to keep the current one. The pipeline Home
+     Assistant has as preferred is marked "(default)", and "preferred" says which one it means
+     today. When that is the only pipeline there is, nothing is asked: both choices do the same.
+     `--assistant` and `--wake-word` answer ahead of time; `''` leaves one alone. With nobody at
+     the terminal and no switch, both stay as they are;
   4. asks which room (Home Assistant area) it stands in and puts its device there, over the
      websocket API since REST has no device registry. The room is how the Show finds the Music
      Assistant speaker whose music it shows, when it is the only one in that area. `--room` answers
@@ -372,3 +374,66 @@ A Show can also answer without Home Assistant. On its setup page (`http://<show>
   instructions. The model acts through the Show's own abilities as tools.
 
 The installer does not set the direct pipeline; it is set on the Show.
+
+## Commands and switches
+
+`python3 tools/jarvis-show.py <command> [switches]`, and `--help` lists the same. Every switch is
+optional unless a command says it needs it; what is left out is asked for, taken from the keyring, or
+has the default given here.
+
+| Command | What it does | Needs |
+| --- | --- | --- |
+| `preflight` (the default) | Checks this computer and the input files. Touches no Show. With a Show on fastboot it also says which board it is. | nothing |
+| `identify` | Reads the Show on fastboot, read-only: board, serial, whether it is unlocked. | a Show on fastboot |
+| `unlock` | Runs Amonet on the Show on fastboot, after you type the confirmation. Does nothing on a unit that is already unlocked. | a Show on fastboot |
+| `install` | The whole install: unlock if needed, recovery backup, LineageOS's drivers, Jarvis, and then Home Assistant (below). Asks everything before it writes. | `--lineage-zip`, `--name`, `--boot-image`, `--rootfs`, `--rootfs-sha256` |
+| `amonet-upgrade` | Moves a unit that still has Amonet 1.x to 2.x, from TWRP ([Amonet 1.x units](#amonet-1x-units)). | `--board`, one Show in TWRP |
+| `wifi` | Puts an installed Show on a Wi-Fi network over its USB cable, for when it is offline. | `--wifi` |
+| `home-assistant` | Adds an installed Show to Home Assistant and sets it up: steps 1 to 5 above. Safe to run again. | `--name` |
+| `boot-logo` | Puts the OpenJade logo in place of Amazon's at boot, over SSH ([boot logos](../tools/boot-logo/README.md)). | `--name` |
+
+### The Show and its files
+
+| Switch | Used by | Meaning |
+| --- | --- | --- |
+| `--name NAME` | install, home-assistant, boot-logo | The Show's name, as Home Assistant shows it. The installer records it in `backups/<serial>/show.json`, and the other commands find the unit by it. |
+| `--board crown\|checkers` | all | Cross-checks the board. Normally it is detected; `amonet-upgrade` needs it, and `install` needs it to carry on from TWRP. |
+| `--serial SERIAL` | wifi, home-assistant | Which unit. `wifi` talks to that Show on USB (not needed when only one is attached); `home-assistant` takes its key from `backups/<serial>/`. |
+| `--host ADDRESS` | home-assistant, boot-logo | The Show's address, when `backups/<serial>/address`, mDNS and Home Assistant cannot find it (a Show on another VLAN, say). |
+| `--key-file FILE` | home-assistant | The Show's ESPHome encryption key. Default `backups/<serial>/home-assistant.key`. |
+| `--lineage-zip ZIP` | install, amonet-upgrade, preflight | LineageOS 18.1 for this board. `tools/fetch-show-assets.py` downloads it and prints the path. `amonet-upgrade` takes the cached one when this is left out. |
+| `--boot-image FILE` | install | The board's boot image, also from `fetch-show-assets.py`. |
+| `--boot-sha256 HASH` | install | Its SHA-256, only for a boot image the installer has no pin for. |
+| `--rootfs FILE` | install | The Jarvis root filesystem, from a release. |
+| `--rootfs-sha256 HASH` | install | Its SHA-256, from the same release. |
+| `--amonet-dir DIR` | install, unlock, preflight | The unpacked Amonet 2.x package. Default `../third_party/<board>`, else the asset cache. |
+| `--amonet-zip ZIP` | amonet-upgrade | The Amonet 2.x zip. Default the cached one. |
+| `--amonet-hashes JSON` | install, unlock | SHA-256s for an Amonet package with no pin built in. |
+| `--twrp-sha256 HASH` | install | The same for TWRP. |
+| `--work-dir DIR` | install, preflight | Scratch space. Default `../work` next to the repo. |
+| `--backup-dir DIR` | all | Each unit's backups, key, name and address. Default `../backups`. Keep it: `boot-logo` needs the saved expdb from here. |
+| `--ssh-key FILE` | install | An SSH public key root accepts from the first boot. SSH is switched on with it. |
+| `--amazon-logo` | boot-logo | Puts Amazon's logo back instead. |
+
+### What the Show is ready with
+
+These answer the installer's questions ahead of time. All of them work for `install`; `home-assistant`
+uses the Home Assistant, DashCast, Music Assistant and choice switches.
+
+| Switch | Meaning |
+| --- | --- |
+| `--wifi SSID` | The network it joins on first boot. Left out: asked, and Enter leaves it to the Show's screen. |
+| `--wifi-passphrase-file FILE` | A file holding its passphrase. Default the keyring, then a hidden question. |
+| `--ha-url URL` | Home Assistant's address, as the Show reaches it. |
+| `--ha-token-file FILE` | A file holding the Show's own long-lived token. |
+| `--ha-admin-token-file FILE` | A file holding an admin token, used once to add the Show and kept nowhere. |
+| `--dashcast HOST[:PORT]` | The DashCast server. |
+| `--dashcast-key-file FILE` | A file holding the DashCast key. |
+| `--music-assistant HOST` | The Music Assistant server. |
+| `--assistant NAME` | The Assist pipeline it talks to, or `preferred`. `''` leaves it alone. |
+| `--wake-word NAME` | One of the wake words the Show offers. `''` leaves it alone. |
+| `--room NAME` | The Home Assistant area it stands in, by name or id. `''` leaves it alone. |
+| `--no-questions` | Asks nothing. Only switches and the keyring count. `TECHO5_NO_PROMPT=1`, or running without a terminal, does the same. |
+
+Secrets only ever come from files, the keyring or a hidden question, never from a switch's value
+([where each secret comes from](#ready-at-first-boot-home-assistant-dashcast-music-assistant)).

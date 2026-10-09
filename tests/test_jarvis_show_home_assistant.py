@@ -9,6 +9,7 @@ import stat
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 TOOLS = ROOT / "tools"
@@ -84,6 +85,7 @@ class FakeHA:
         self.areas = {"living_room": "Wohnzimmer", "kitchen": "Küche"}
         self.area = ""
         self.ws_calls = []
+        self.pipelines = None
         self.states = {
             "select.jarvis_show_5_assistant": {"state": "preferred", "attributes": {"options": ["preferred", "Jarvis"]}},
             "select.jarvis_show_5_wake_word": {"state": "Okay Nabu", "attributes": {"options": ["Okay Nabu", "Hey Jarvis"]}},
@@ -141,6 +143,10 @@ class FakeHA:
         raise AssertionError(f"unexpected {method} {path}")
 
     def ws(self, message):
+        if message["type"] == "assist_pipeline/pipeline/list":
+            if self.pipelines is None:
+                raise ha.HomeAssistantError("unknown command")
+            return self.pipelines
         self.ws_calls.append(message)
         if message["type"] == "config/device_registry/update":
             self.area = message["area_id"]
@@ -206,7 +212,7 @@ class DeployTests(unittest.TestCase):
         fake = FakeHA()
         offered = {}
 
-        def choose(label, current, options):
+        def choose(label, current, options, names=None):
             offered[label] = (current, options)
             return options[-1] if label == "assistant" else None
         _, log = run_deploy(fake, choose=choose, host="10.0.0.9")
@@ -216,6 +222,40 @@ class DeployTests(unittest.TestCase):
         self.assertEqual(fake.states["select.jarvis_show_5_assistant"]["state"], "Jarvis")
         self.assertEqual(fake.states["select.jarvis_show_5_wake_word"]["state"], "Okay Nabu")
         self.assertTrue(any("left at Okay Nabu" in line for line in log))
+
+    def test_one_assistant_that_is_the_default_is_not_asked_about(self):
+        fake = FakeHA()
+        fake.pipelines = {"pipelines": [{"id": "p1", "name": "Jarvis"}], "preferred_pipeline": "p1"}
+        asked = []
+        _, log = run_deploy(fake, choose=lambda label, *_: asked.append(label), host="10.0.0.9")
+        self.assertNotIn("assistant", asked)
+        self.assertTrue(any("Jarvis is the only assistant" in line for line in log))
+        self.assertEqual(fake.states["select.jarvis_show_5_assistant"]["state"], "preferred")
+
+    def test_the_default_assistant_is_marked(self):
+        fake = FakeHA()
+        fake.states["select.jarvis_show_5_assistant"]["attributes"]["options"] = ["preferred", "Jarvis", "Basic"]
+        fake.pipelines = {"pipelines": [{"id": "p1", "name": "Jarvis"}, {"id": "p2", "name": "Basic"}],
+                          "preferred_pipeline": "p1"}
+        shown = {}
+
+        def choose(label, current, options, names=None):
+            shown[label] = names
+            return None
+        run_deploy(fake, choose=choose, host="10.0.0.9")
+        self.assertEqual(shown["assistant"]["Jarvis"], "Jarvis (default)")
+        self.assertIn("now Jarvis", shown["assistant"]["preferred"])
+        self.assertNotIn("Basic", shown["assistant"])
+
+    def test_the_installer_shows_what_home_assistant_names(self):
+        args = argparse.Namespace(assistant=None, wake_word=None, room=None, no_questions=False)
+        said = []
+        asker = Asker(interactive=True, ask=lambda _: "", say=said.append)
+        with mock.patch.object(show_cli, "_asker", return_value=asker):
+            picked = show_cli._chooser(args)("assistant", "preferred", ["preferred", "Jarvis", "Basic"],
+                                                {"Jarvis": "Jarvis (default)"})
+        self.assertEqual(picked, "Jarvis")
+        self.assertIn("     2) Jarvis (default)", said)
 
     def test_known_show_is_only_brought_up_to_date(self):
         fake = FakeHA(entry=True, allowed=True)
@@ -274,7 +314,7 @@ class RoomTests(unittest.TestCase):
         fake = FakeHA()
         offered = {}
 
-        def choose(label, current, options):
+        def choose(label, current, options, names=None):
             offered[label] = (current, options)
             return "Wohnzimmer" if label == "room" else None
         _, log = run_deploy(fake, choose=choose, host="10.0.0.9")
@@ -368,7 +408,7 @@ def args(**kw):
         fake = FakeHA(unconfigured=3)
         offered = {}
 
-        def choose(label, current, options):
+        def choose(label, current, options, names=None):
             offered[label] = (current, options)
             return None
         _, log = run_deploy(fake, choose=choose, host="10.0.0.9")

@@ -30,30 +30,30 @@ SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="jarvis-show")
-    parser.add_argument("command", choices=["preflight", "identify", "unlock", "install", "amonet-upgrade", "wifi", "home-assistant", "boot-logo"], nargs="?", default="preflight")
+    parser.add_argument("command", help="what to do (default preflight); docs/jarvis-crown-installer.md, \"Commands and switches\"", choices=["preflight", "identify", "unlock", "install", "amonet-upgrade", "wifi", "home-assistant", "boot-logo"], nargs="?", default="preflight")
     parser.add_argument("--board", choices=("crown", "checkers"), help="optional first-gen board cross-check; install/identify auto-detect by default")
-    parser.add_argument("--amonet-dir", type=Path)
+    parser.add_argument("--amonet-dir", type=Path, help="the unpacked Amonet 2.x package; default ../third_party/<board> or the asset cache")
     parser.add_argument("--amonet-zip", type=Path, help="amonet-upgrade: the pinned Amonet 2.x zip; default from the asset cache")
     parser.add_argument("--amonet-hashes", type=Path, help="trusted JSON SHA-256 map for a board whose Amonet bytes are not built-in")
     parser.add_argument("--twrp-sha256", help="trusted board-specific TWRP SHA-256 when not built-in")
-    parser.add_argument("--lineage-zip", type=Path)
-    parser.add_argument("--work-dir", type=Path)
-    parser.add_argument("--backup-dir", type=Path)
-    parser.add_argument("--name")
-    parser.add_argument("--boot-image", type=Path)
+    parser.add_argument("--lineage-zip", type=Path, help="install, amonet-upgrade: the LineageOS 18.1 zip for this board (fetch-show-assets.py prints it)")
+    parser.add_argument("--work-dir", type=Path, help="scratch space for the install; default ../work next to the repo")
+    parser.add_argument("--backup-dir", type=Path, help="where each unit's backups, key and name are kept; default ../backups")
+    parser.add_argument("--name", help="the Show's name, as Home Assistant shows it; install, home-assistant and boot-logo find it by this")
+    parser.add_argument("--boot-image", type=Path, help="install: the board's boot image (fetch-show-assets.py prints it)")
     parser.add_argument("--boot-sha256", help="trusted board-specific boot image SHA-256 when not built-in")
-    parser.add_argument("--rootfs", type=Path)
-    parser.add_argument("--rootfs-sha256")
-    parser.add_argument("--wifi")
-    parser.add_argument("--wifi-passphrase-file", type=Path)
-    parser.add_argument("--serial", help="TECHO5 USB serial for offline Wi-Fi recovery; auto-selected when exactly one Show is attached")
-    parser.add_argument("--ssh-key", type=Path)
+    parser.add_argument("--rootfs", type=Path, help="install: the Jarvis root filesystem from a release")
+    parser.add_argument("--rootfs-sha256", help="install: its SHA-256, from the release notes")
+    parser.add_argument("--wifi", help="install, wifi: the network (SSID) it joins; default: ask, or pick it on the Show's screen")
+    parser.add_argument("--wifi-passphrase-file", type=Path, help="a file holding its passphrase; default the keyring, then ask")
+    parser.add_argument("--serial", help="the unit's serial: wifi talks to that Show on USB (found when only one is attached); home-assistant takes its key from backups/<serial>")
+    parser.add_argument("--ssh-key", type=Path, help="install: an SSH public key root accepts from the first boot (SSH is switched on)")
     setup = parser.add_argument_group("what the Show is ready with (asked for when left out)")
     setup.add_argument("--ha-url", help="Home Assistant's address as the Show reaches it")
-    setup.add_argument("--ha-token-file", type=Path, help="the Show's own long-lived Home Assistant token")
-    setup.add_argument("--ha-admin-token-file", type=Path, help="an admin token, used once to add the Show to Home Assistant")
+    setup.add_argument("--ha-token-file", type=Path, help="a file holding the Show's own long-lived Home Assistant token")
+    setup.add_argument("--ha-admin-token-file", type=Path, help="a file holding an admin token, used once to add the Show to Home Assistant")
     setup.add_argument("--dashcast", help="the DashCast server, host[:port]")
-    setup.add_argument("--dashcast-key-file", type=Path)
+    setup.add_argument("--dashcast-key-file", type=Path, help="a file holding the DashCast key; default the keyring, then ask")
     setup.add_argument("--music-assistant", help="the Music Assistant server's IP address or name")
     setup.add_argument("--wake-word", help="the wake word, one the Show offers (default: ask; '' leaves it alone)")
     setup.add_argument("--assistant", help="the Assist pipeline it talks to, by name (default: ask; '' leaves it alone)")
@@ -164,10 +164,11 @@ def _chooser(args):
         return None
     given = {"assistant": args.assistant, "wake word": args.wake_word, "room": args.room}
 
-    def choose(label: str, current: str, options: list[str]) -> str | None:
+    def choose(label: str, current: str, options: list[str], shown: dict[str, str] | None = None) -> str | None:
         if given.get(label) is not None:
             return None
         question, names, liked = QUESTIONS.get(label, (label, {}, ()))
+        names = {**names, **(shown or {})}
         default = next((o for want in liked for o in options if o.casefold() == want), None) or \
             next((o for o in options if any(want in o.casefold() for want in liked)), None)
         return asker.pick(question, current, options, default=default, names=names)

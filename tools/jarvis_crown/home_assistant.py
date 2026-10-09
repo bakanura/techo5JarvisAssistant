@@ -469,7 +469,21 @@ def entry_entities(ha: HomeAssistant, entry_id: str) -> list[str]:
     return [line.strip() for line in str(text or "").splitlines() if line.strip()]
 
 
-Chooser = Callable[[str, str, list[str]], "str | None"]
+# choose(label, current, options, names): names says how to show an option, where it is not its own name.
+Chooser = Callable[[str, str, list[str], "dict[str, str]"], "str | None"]
+
+
+def _preferred_pipeline(ha: HomeAssistant) -> str | None:
+    """The name of the Assist pipeline Home Assistant has as preferred, the one the option "preferred" means."""
+    try:
+        listed = ha.ws({"type": "assist_pipeline/pipeline/list"})
+    except HomeAssistantError:
+        return None
+    if not isinstance(listed, dict):
+        return None
+    want = listed.get("preferred_pipeline")
+    return next((str(p.get("name")) for p in listed.get("pipelines") or []
+                 if isinstance(p, dict) and want and p.get("id") == want and p.get("name")), None)
 
 
 def _select(ha: HomeAssistant, entities: list[str], suffix: str, option: str | None,
@@ -486,7 +500,16 @@ def _select(ha: HomeAssistant, entities: list[str], suffix: str, option: str | N
     if option is None:
         options = [str(o) for o in (state.get("attributes") or {}).get("options") or []]
         current = str(state.get("state") or "")
-        option = choose(suffix.lstrip("_").replace("_", " "), current, options) if choose and options else None
+        names: dict[str, str] = {}
+        if suffix == "_assistant" and choose and options:
+            # "preferred" and the pipeline it points at do the same thing; say which that is.
+            pref = _preferred_pipeline(ha)
+            if pref and [o for o in options if o != "preferred"] == [pref]:
+                return f"{entity} left at {current}: {pref} is the only assistant, and Home Assistant's default"
+            if pref in options:
+                names = {"preferred": f"Home Assistant's default, whichever that is (now {pref})",
+                         pref: f"{pref} (default)"}
+        option = choose(suffix.lstrip("_").replace("_", " "), current, options, names) if choose and options else None
         if option is None or option == current:
             return f"{entity} left at {current or 'its default'}"
     if state.get("state") == option:
@@ -553,7 +576,7 @@ def _room(ha: HomeAssistant, entities: list[str], room: str | None, choose: Choo
         return "this Home Assistant has no rooms (areas) yet; the Show is in none"
     if room is None:
         names = sorted(areas.values(), key=str.casefold)
-        picked = choose("room", areas.get(current, ""), names) if choose else None
+        picked = choose("room", areas.get(current, ""), names, {}) if choose else None
         room = next((a for a, n in areas.items() if n == picked), None) if picked else None
         if room is None:
             return f"the Show left in {areas.get(current, 'no room')}"
