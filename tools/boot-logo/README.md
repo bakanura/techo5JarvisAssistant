@@ -23,3 +23,20 @@ here is that slot with another picture in it.
 and the slot is bytes 335308 to 341413 of the result. 64 flat colours keep the mark's shading and
 compress to 5124 bytes. `make-lockup.py` needs fontTools with brotli; `checkers-kaeru.bin` is the one in
 amonet-checkers v2.0.1. The slot is the same in Crown's kaeru, so one file serves both.
+
+## The other themes
+
+The website has four jade themes, and `openjade/` has each one's mark (`openjade-<theme>-jade.svg`).
+`openjade/themes/` holds the lockup in every one of them, 315×170 like the boot slot:
+
+- `lockup-<theme>-dark.svg`: on black, "Jade" in the theme's colour lifted towards white, as the
+  boot logo has it. `lockup-white-dark.svg` is `lockup.svg`.
+- `lockup-<theme>-light.svg`: on the theme's page colour, in the hero's colours.
+- `lockup-<theme>-transparent.svg`: the hero's colours with no ground, to put on something light.
+
+The themes are `white`, `sakura`, `leafgreen` and `ember`. One of them, made again:
+
+    openjade/make-lockup.py FiraCode-VF.woff2 openjade/openjade-sakura-jade.svg out.svg \
+        --theme sakura --ground light [--transparent]
+
+`--size` and `--width` give another canvas and width, if a different size is wanted.
