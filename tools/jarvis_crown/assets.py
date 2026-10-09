@@ -55,6 +55,16 @@ ASSETS: dict[str, tuple[Asset, ...]] = {
             BOOT_SHA256_BY_BOARD["crown"] or "", 13154304,
             "HuskerMinion/techo5 v0.8.0",
         ),
+        # Reviewed 2026-10-09: scripts match R0rt1z2/amonet (main.py/common.py as of 999f8d0ab5), and
+        # fastbrick.sh, profile.sh, device.prop, fastbrick.img, fastboot(32) and twrp.img are the bytes
+        # unlock.py and recovery.py already pin. Extract it and pass the folder as --amonet-dir.
+        Asset(
+            "amonet", "amonet-crown-v2.0.1.zip",
+            f"{XDA_ATTACHMENTS}/amonet-crown-v2-0-1-zip.6373841/",
+            "5db974c321ae2f4586f7c51c95b7bdffb61ef85bde05ce7e62f78196a984c24f", 44233517,
+            "XDA thread 4762900 (R0rt1z2), needs an XDA login",
+            manual=True,
+        ),
     ),
     "checkers": (
         Asset(

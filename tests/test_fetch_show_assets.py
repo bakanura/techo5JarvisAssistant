@@ -38,6 +38,10 @@ def no_blobs(repo, branches):
     return {}
 
 
+def no_history(repo, branches, path, blob):
+    return None
+
+
 def local_asset(td, name, data, *, sha256=None, size=None):
     src = pathlib.Path(td) / ("src-" + name)
     src.write_bytes(data)
@@ -123,6 +127,7 @@ class FetchTests(unittest.TestCase):
 class ManualTests(unittest.TestCase):
     def run_fetch(self, td, table, **kw):
         kw.setdefault("blobs_for", no_blobs)
+        kw.setdefault("history_for", no_history)
         with mock.patch.object(fetcher, "assets_for", lambda board: table):
             return fetcher.fetch_board("checkers", pathlib.Path(td) / "cache",
                                        downloads=pathlib.Path(td) / "dl", **kw)
@@ -138,23 +143,35 @@ class ManualTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             dl = pathlib.Path(td) / "dl"
             dl.mkdir()
-            script, binary, changed = b"echo hi\n", b"\x00lk", b"echo changed\n"
+            script, binary, changed, old = b"echo hi\n", b"\x00lk", b"echo changed\n", b"old\n"
             write_zip(dl / "amonet-test.zip", {
                 "amonet/fastbrick.sh": script,
                 "amonet/bin/lk.bin": binary,
                 "amonet/modules/main.py": changed,
+                "amonet/modules/common.py": old,
             })
             upstream = {
                 fetcher.git_blob_sha(script): [("mt8163-echo-show", "fastbrick.sh")],
                 fetcher.git_blob_sha(b"original\n"): [("mt8163-echo-show", "modules/main.py")],
+                fetcher.git_blob_sha(b"newer\n"): [("mt8163-echo-show", "modules/common.py")],
             }
+
+            def history(repo, branches, path, blob):
+                if path == "modules/common.py" and blob == fetcher.git_blob_sha(old):
+                    return "mt8163-echo-show", "999f8d0ab5" + "0" * 30
+                return None
+
             out = io.StringIO()
             with redirect_stdout(out), self.assertRaisesRegex(techo5lib.Fail, "no pinned sha256"):
-                self.run_fetch(td, (manual_asset(),), blobs_for=lambda repo, branches: upstream)
+                self.run_fetch(td, (manual_asset(),), blobs_for=lambda repo, branches: upstream,
+                               history_for=history)
             text = out.getvalue()
             self.assertIn("1 files match", text)
+            self.assertIn("older upstream copy: amonet/modules/common.py (as on mt8163-echo-show at 999f8d0ab5)",
+                          text)
             self.assertIn("DIFFERS from every upstream copy: amonet/modules/main.py", text)
             self.assertIn("only in the zip: amonet/bin/lk.bin", text)
+            self.assertNotIn("already pins", text)
             self.assertFalse((pathlib.Path(td) / "cache").exists())
 
     def test_pinned_package_is_taken_from_downloads_and_then_reused(self):
@@ -178,6 +195,17 @@ class ManualTests(unittest.TestCase):
             with redirect_stdout(io.StringIO()), self.assertRaisesRegex(techo5lib.Fail, "does not match"):
                 self.run_fetch(td, table)
             self.assertFalse((pathlib.Path(td) / "cache" / "checkers" / "amonet-test.zip").exists())
+
+    def test_report_names_files_the_installer_already_pins(self):
+        with tempfile.TemporaryDirectory() as td:
+            twrp = b"twrp"
+            path = write_zip(pathlib.Path(td) / "p.zip", {"amonet/bin/twrp.img": twrp, "amonet/bin/lk.bin": b"lk"})
+            pins = {hashlib.sha256(twrp).hexdigest(): "crown TWRP"}
+            out = io.StringIO()
+            with mock.patch.object(fetcher, "installer_pins", lambda: pins), redirect_stdout(out):
+                report = fetcher.inspect_package(path, manual_asset(), blobs_for=no_blobs, history_for=no_history)
+            self.assertEqual(report["pinned"], [("amonet/bin/twrp.img", "crown TWRP")])
+            self.assertIn("installer already pins (crown TWRP): amonet/bin/twrp.img", out.getvalue())
 
     def test_upstream_path_strips_package_folders(self):
         self.assertEqual(fetcher.upstream_path("amonet/modules/main.py"), "modules/main.py")

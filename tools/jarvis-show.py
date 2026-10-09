@@ -10,11 +10,13 @@ import subprocess
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from jarvis_crown.amonet_upgrade import AdbUpgradeClient, UpgradeError, upgrade_amonet  # noqa: E402
+from jarvis_crown.assets import asset_path, assets_for, default_cache_dir  # noqa: E402
 from jarvis_crown.boards import profile_for_board, profile_for_product  # noqa: E402
 from jarvis_crown.device_gate import DeviceGateError, identify_show  # noqa: E402
 from jarvis_crown.flow import FlowError, InstallInputs, run_install_flow  # noqa: E402
 from jarvis_crown.preflight import preflight_ok, print_checks, run_preflight  # noqa: E402
-from jarvis_crown.recovery import RecoveryError, identify_recovery_show  # noqa: E402
+from jarvis_crown.recovery import RecoveryError, adb_recovery_serials, identify_recovery_show  # noqa: E402
 from jarvis_crown.unlock import UnlockError, unlock_show  # noqa: E402
 
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -22,9 +24,10 @@ SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="jarvis-show")
-    parser.add_argument("command", choices=["preflight", "identify", "unlock", "install", "wifi"], nargs="?", default="preflight")
+    parser.add_argument("command", choices=["preflight", "identify", "unlock", "install", "amonet-upgrade", "wifi"], nargs="?", default="preflight")
     parser.add_argument("--board", choices=("crown", "checkers"), help="optional first-gen board cross-check; install/identify auto-detect by default")
     parser.add_argument("--amonet-dir", type=Path)
+    parser.add_argument("--amonet-zip", type=Path, help="amonet-upgrade: the pinned Amonet 2.x zip; default from the asset cache")
     parser.add_argument("--amonet-hashes", type=Path, help="trusted JSON SHA-256 map for a board whose Amonet bytes are not built-in")
     parser.add_argument("--twrp-sha256", help="trusted board-specific TWRP SHA-256 when not built-in")
     parser.add_argument("--lineage-zip", type=Path)
@@ -95,6 +98,50 @@ def _detect_profile(board: str | None, *, allow_recovery: bool = False):
     return identity, profile, source
 
 
+def _cached(board: str, kind: str) -> Path:
+    asset = next(a for a in assets_for(board) if a.kind == kind)
+    return asset_path(default_cache_dir(), board, asset)
+
+
+def amonet_upgrade(args, backups: Path) -> int:
+    """Amonet 1.x -> 2.x for a unit already in TWRP; see jarvis_crown/amonet_upgrade.py."""
+    if not args.board:
+        print("FAIL: amonet-upgrade requires --board", file=sys.stderr)
+        return 1
+    try:
+        serials = adb_recovery_serials()
+    except RecoveryError as exc:
+        print(f"FAIL: {exc}", file=sys.stderr)
+        return 2
+    if len(serials) != 1:
+        print(f"FAIL: expected exactly one Show in TWRP, found {len(serials)} (adb reboot recovery first)", file=sys.stderr)
+        return 2
+
+    def confirm(phrase):
+        print("WARN: this rewrites the bootloader chain: preloader, lk, tee1, tee2, expdb, recovery and swdl.")
+        print("WARN: keep the Show on mains power and the USB cable in until it says PASS.")
+        return input(f"Type {phrase} to continue: ").strip()
+
+    try:
+        result = upgrade_amonet(
+            AdbUpgradeClient(serials[0]),
+            args.board,
+            (args.amonet_zip or _cached(args.board, "amonet")).resolve(),
+            (args.lineage_zip or _cached(args.board, "lineage")).resolve(),
+            backups / serials[0],
+            confirm=confirm,
+            progress=lambda text: print(f"INFO: {text}"),
+        )
+    except (UpgradeError, RecoveryError, ValueError) as exc:
+        print(f"FAIL: amonet-upgrade stopped: {exc}", file=sys.stderr)
+        return 4
+    if result.upgraded:
+        print(f"PASS: Amonet 2.x installed and boot is plain; backup of the old state in {result.backup}")
+    else:
+        print("PASS: no Amonet 1.x microloader on boot; nothing to do")
+    return 0
+
+
 def main() -> int:
     args = parse_args()
     root = Path(__file__).resolve().parents[1]
@@ -114,6 +161,9 @@ def main() -> int:
         if args.wifi_passphrase_file:
             cmd += ["--passphrase-file", str(args.wifi_passphrase_file.resolve())]
         return subprocess.call(cmd)
+
+    if args.command == "amonet-upgrade":
+        return amonet_upgrade(args, backups)
 
     # identify/unlock require fastboot. install can resume from a verified TWRP
     # session only when an explicit board cross-check is supplied.

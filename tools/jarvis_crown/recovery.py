@@ -101,6 +101,19 @@ def _adb_shell(serial: str, command: str, *, run: Callable = subprocess.run) -> 
     return result.stdout.strip()
 
 
+BOOT_LAYOUT_PROBE = (
+    "tmp=/tmp/jarvis-boot-prefix.$$; "
+    "if dd if=/dev/block/mmcblk0p9 of=$tmp bs=512 count=2 2>/dev/null; then "
+    "if grep -qa microloader $tmp; then echo AMONET1; else echo PLAIN; fi; "
+    "else echo READ-FAIL; fi; rm -f $tmp"
+)
+
+
+def boot_layout(shell: Callable[[str], str]) -> str:
+    """AMONET1 when boot starts with the Amonet 1.x microloader, PLAIN when not, READ-FAIL otherwise."""
+    return shell(BOOT_LAYOUT_PROBE).strip()
+
+
 def verify_twrp_board(serial: str, board: str, *, run: Callable = subprocess.run) -> None:
     product = _adb_shell(serial, "getprop ro.product.device", run=run).strip().lower()
     if product != board:
@@ -121,18 +134,11 @@ def verify_twrp_board(serial: str, board: str, *, run: Callable = subprocess.run
     # image must never be flashed until that retired layout is gone. This is
     # especially important for an already-unlocked unit, where Jarvis skips
     # its own pinned Amonet 2.x stage.
-    layout = _adb_shell(
-        serial,
-        "tmp=/tmp/jarvis-boot-prefix.$$; "
-        "if dd if=/dev/block/mmcblk0p9 of=$tmp bs=512 count=2 2>/dev/null; then "
-        "if grep -qa microloader $tmp; then echo AMONET1; else echo PLAIN; fi; "
-        "else echo READ-FAIL; fi; rm -f $tmp",
-        run=run,
-    ).strip()
+    layout = boot_layout(lambda command: _adb_shell(serial, command, run=run))
     if layout == "AMONET1":
         raise RecoveryError(
             "legacy Amonet 1.x boot microloader detected; its boot layout is incompatible "
-            "with Jarvis Show. Upgrade to Amonet 2.0.1+ and a plain Lineage boot image first "
+            "with Jarvis Show. Upgrade it first with: jarvis-show.py amonet-upgrade --board <board> "
             "(tools/fetch-show-assets.py picks up and checks the Amonet zip)"
         )
     if layout != "PLAIN":

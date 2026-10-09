@@ -37,14 +37,52 @@ Amonet zips are only attached to the XDA threads, and those downloads need a log
 fetches them itself. It prints the attachment link instead. Download it in a browser and run the tool
 again: it takes the zip from `~/Downloads` (or `--from DIR`), checks it against its pin and copies it
 into the cache. A package with no pin yet (`amonet-checkers-v2.0.1.zip` today) is not used. The tool
-compares every file in it with the public source (R0rt1z2/amonet), lists the ones that match, the ones
-that differ, and the binaries only the zip carries (preloader, LK, TZ, kaeru, TWRP), then stops. Its
-hash goes into `tools/jarvis_crown/assets.py` only after someone has reviewed that list.
+compares every file in it with the public source (R0rt1z2/amonet) and sorts them into:
+
+- files identical to the current upstream branch;
+- files identical to an older upstream commit (the report names branch and commit);
+- files that differ from every upstream copy it checked;
+- binaries the installer already pins elsewhere (unlock payloads, the board's TWRP);
+- binaries only the zip carries (preloader, LK, TZ, kaeru, and so on).
+
+Then it stops. The hash goes into `tools/jarvis_crown/assets.py` only after someone has read that
+list. The crown 2.0.1 zip went through this on 2026-10-09 and is pinned.
+
+### Amonet 1.x units
 
 A Show 5 first unlocked with Amonet 1.x has `microloader by xyz` at the start of its boot partition, and
-the TWRP gate refuses it. The upgrade the XDA thread gives for that is flashing the 2.x zip in TWRP.
-That rewrites the preloader, `lk_real`, `tee1_real`, `tee2_real`, `expdb` and recovery, so it is a
-bootloader write and only ever uses the pinned zip.
+the TWRP gate refuses it. The upgrade the XDA thread gives for that is flashing the 2.x zip in TWRP, and
+the installer has a separate command for it:
+
+```sh
+adb reboot recovery
+python3 tools/jarvis-show.py amonet-upgrade --board checkers
+```
+
+It takes the pinned Amonet zip and the pinned LineageOS zip from the cache (`--amonet-zip` and
+`--lineage-zip` override that) and refuses either one if it doesn't match its pin. With exactly one Show
+in TWRP, it goes through these steps:
+
+1. Checks `ro.product.device` and root, then reads the boot partition. If there's no microloader there,
+   it stops with PASS and changes nothing.
+2. Resolves every partition the zip's update-binary will write, the same way the update-binary does,
+   and stops unless each one is the expected block on this board. On checkers that's `lk_real` → p3,
+   `tee1_real` → p4, `tee2_real` → p6, `expdb` → p7, `MISC` → p8, `recovery` → p10, `swdl` → p11, plus
+   `mmcblk0boot0` for the preloader. It also checks that p9 is named `boot`.
+3. Backs up the same partition set as J20 to `backups/<adb serial>/before-amonet2/partitions` and
+   verifies it.
+4. Asks for `UPGRADE AMONET CHECKERS`. Anything else stops here with nothing written.
+5. Pushes the zip, checks its SHA-256 on the device and runs `twrp install`. The update-binary writes
+   the preloader, LK, both TEE images, kaeru, TWRP to recovery and swdl, wipes misc and reboots to
+   recovery. If TWRP comes back with the same boot id, the update-binary stopped early and the command
+   says so.
+6. Reads back every written partition and compares it with the bytes in the zip.
+7. Writes the `boot.img` from the LineageOS zip straight to p9. The Lineage updater-script writes to
+   `by-name/boot`, which doesn't exist while the 1.x renames are in place. The command then checks
+   that p9 holds those bytes and that the microloader is gone.
+
+If anything fails after the backup, the error names the backup folder. After a PASS, the normal
+`install` flow runs as usual.
 
 The Amonet package stays a local/user-supplied dependency rather than a Jarvis Crown release asset.
 Later installer stages must not weaken or bypass this gate.
