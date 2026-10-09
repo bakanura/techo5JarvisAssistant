@@ -342,6 +342,11 @@ func (c *conversation) handle(e event) {
 		c.start(nextTurn{slot: e.slot, asked: true})
 
 	case evSpeaking:
+		// From Home Assistant, or from the device hearing somebody start on a follow-up, which says
+		// which turn it means.
+		if e.text != "" && (c.turn == nil || e.text != c.turn.ID()) {
+			return
+		}
 		if c.followUp && c.phase == phaseListening {
 			c.arm(wakeword.MaxListen(c.slot))
 		}
@@ -957,6 +962,28 @@ func (c *conversation) stopStreaming() {
 	c.send("end of audio", c.be.End)
 }
 
+// preRoll is how much of the audio before a follow-up's onset is sent with it.
+const preRoll = mic.Rate / 2
+
+// followGate holds a follow-up's audio back until somebody starts talking.
+type followGate struct {
+	onset  endpoint.Onset
+	before []int16
+}
+
+// pass takes audio and returns what to send: nothing while the room is all there is, then on the
+// onset the last preRoll of it at once. After that the gate is done with, and frames go straight out.
+func (g *followGate) pass(samples []int16) []int16 {
+	g.before = append(g.before, samples...)
+	if len(g.before) > preRoll {
+		g.before = g.before[len(g.before)-preRoll:]
+	}
+	if !g.onset.Feed(samples) {
+		return nil
+	}
+	return g.before
+}
+
 // stream sends microphone frames until it is told to stop.
 func (c *conversation) stream(ctx context.Context, be backend, slot int, followUp bool, id string) {
 	frames, unlisten := c.source.Listen("turn")
@@ -1004,6 +1031,21 @@ func (c *conversation) stream(ctx context.Context, be backend, slot int, followU
 			}
 		}
 	}
+
+	// A follow-up opens on nothing, so it sends nothing until somebody starts talking (endpoint.Onset).
+	// Streamed from the start, Home Assistant's detector would close the turn on the quiet a second or
+	// two in, and speech to text would make words out of the room. While it waits it keeps the last
+	// moment of audio, because that is where the first word starts: an onset is only sure of itself a
+	// couple of windows in.
+	var gate *followGate
+	if followUp {
+		gate = &followGate{}
+		if pre = gate.pass(pre); pre != nil {
+			gate = nil
+		}
+	}
+	waitedFrom := time.Now()
+
 	see(pre)
 
 	if len(pre) > 0 {
@@ -1031,6 +1073,10 @@ func (c *conversation) stream(ctx context.Context, be backend, slot int, followU
 	var energy float64
 	defer func() {
 		if samples == 0 {
+			if gate != nil {
+				slog.Info("nobody spoke up", "slot", slot+1,
+					"listened_s", math.Round(time.Since(waitedFrom).Seconds()*10)/10)
+			}
 			return
 		}
 		rms := math.Sqrt(energy / float64(samples))
@@ -1062,6 +1108,16 @@ func (c *conversation) stream(ctx context.Context, be backend, slot int, followU
 				}
 				sounding = time.Time{}
 				slog.Debug("held the tone back", "ms", held*1000/mic.Rate)
+			}
+
+			if gate != nil {
+				if frame = gate.pass(frame); frame == nil {
+					continue
+				}
+				gate = nil
+				slog.Info("somebody spoke up", "slot", slot+1,
+					"waited_s", math.Round(time.Since(waitedFrom).Seconds()*10)/10)
+				c.post(event{kind: evSpeaking, text: id})
 			}
 
 			buf = buf[:0]
