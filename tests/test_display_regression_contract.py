@@ -88,8 +88,9 @@ class DisplayRegressionContractTests(unittest.TestCase):
             self.skipTest("Chromium is not available")
         # Some stripped CI/sandbox Chromium packages never complete even a trivial --dump-dom. Do
         # not turn that host defect into a product failure; the Dashcast image CI sets its own hard
-        # real-browser requirement.
-        with tempfile.TemporaryDirectory() as td:
+        # real-browser requirement. A timed-out Chromium leaves helpers writing into its profile after
+        # the main process is killed, so the folder may not empty cleanly; that is not a failure either.
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             smoke = Path(td) / "smoke.html"
             smoke.write_text(
                 "<!doctype html><body>before<script>document.body.textContent='JARVIS-CHROMIUM-JS-OK';</script>",
@@ -107,7 +108,7 @@ class DisplayRegressionContractTests(unittest.TestCase):
                 self.skipTest("local Chromium dump-dom does not execute JavaScript")
         script = kiosk_script()
         for width, height in ((1280, 800), (960, 480)):
-            with self.subTest(width=width, height=height), tempfile.TemporaryDirectory() as td:
+            with self.subTest(width=width, height=height), tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
                 page = Path(td) / "ha.html"
                 fixture = """<!doctype html><meta charset=utf-8><style>html,body{margin:0;width:100%;height:100%}</style>
 <body><home-assistant></home-assistant><script>
