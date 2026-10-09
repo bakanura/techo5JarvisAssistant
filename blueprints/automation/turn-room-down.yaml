@@ -2,9 +2,9 @@ blueprint:
   name: Turn the room down while a Show listens
   description: >-
     While a voice assistant (a Jarvis Show, or any other) listens, thinks and answers, the speakers
-    you pick are turned down to a part of their volume, so the music in the room doesn't wake it or
-    end up in what it hears. They come back up once it has been quiet for a few seconds, which keeps
-    them down through follow-up questions too.
+    you pick are turned almost all the way down, so the music in the room doesn't end up in what it
+    hears and you can hear the answer. They stay down for the whole conversation, follow-up
+    questions included, and come back up once it has been quiet for a few seconds.
 
     A speaker that isn't playing is left alone. One whose volume was changed during the turn, say by
     "lauter", keeps the new volume. The Show turns down what it plays itself, so don't pick its own
@@ -30,8 +30,10 @@ blueprint:
             - domain: media_player
     part:
       name: Turned down to
-      description: How much of its volume a speaker keeps while the assistant listens.
-      default: 25
+      description: >-
+        How much of its volume a speaker keeps during the conversation. 10 % leaves the music just
+        audible; 0 mutes it.
+      default: 10
       selector:
         number:
           min: 0
