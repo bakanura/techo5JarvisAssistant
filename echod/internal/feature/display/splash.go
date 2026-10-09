@@ -13,9 +13,9 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/metrics"
 )
 
-// The Jarvis Show mark, drawn while the device comes up. It deliberately uses the active screen
-// palette rather than embedding an upstream TECHO5 bitmap, so a fresh White Jade device has one
-// visual identity from the first daemon-rendered frame onward. Under the mark a bar fills through the
+// The Jarvis Show mark, drawn while the device comes up: the Genbu mark (splash_mark.go) over the
+// wordmark, both in the active screen palette rather than an upstream TECHO5 bitmap, so a fresh White
+// Jade device has one visual identity from the first daemon-rendered frame onward. Under the mark a bar fills through the
 // steps of coming up, the same way JODS shows its setup, with one line saying which step it is on.
 
 const (
@@ -73,7 +73,8 @@ type splash struct {
 }
 
 func newSplash(w, h int) *splash {
-	cy := float64(h)/2 - 22
+	// Below the middle, leaving the top of the panel to the Genbu mark.
+	cy := float64(h)/2 + 18
 	return &splash{
 		cx:     float64(w) / 2,
 		cy:     cy,
@@ -90,6 +91,7 @@ func (r *renderer) drawSplash(s *splash, elapsed time.Duration, step bootStep) {
 		r.text(r.title, mark, (r.w-r.width(r.title, mark))/2, r.h/2, cream)
 		return
 	}
+	r.drawMark(s)
 	mark := "JARVIS"
 	r.text(r.title, mark, (r.w-r.width(r.title, mark))/2, s.titleY, cream)
 	sub := "SHOW"
