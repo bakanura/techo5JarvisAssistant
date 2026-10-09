@@ -317,6 +317,8 @@ var de = lang{
 		"Check now":                                      "Jetzt suchen",
 		"Checking…":                                      "Suche…",
 		"{next} is ready · this is {current}":            "{next} ist bereit · installiert ist {current}",
+		"Downloading {version} · {percent}%":             "{version} wird geladen · {percent}%",
+		"Installing {version}…":                          "{version} wird installiert…",
 		"Install":                                        "Installieren",
 		"Couldn't check: the clock isn't set yet":        "Suche nicht möglich: Die Uhrzeit ist noch nicht gestellt",
 		"Couldn't reach the update server · this is {current}": "Update-Server nicht erreichbar · installiert ist {current}",

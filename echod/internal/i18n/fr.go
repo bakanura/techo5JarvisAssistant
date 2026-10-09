@@ -319,6 +319,8 @@ var fr = lang{
 		"Check now":                                      "Rechercher",
 		"Checking…":                                      "Recherche…",
 		"{next} is ready · this is {current}":            "{next} est prête · version actuelle {current}",
+		"Downloading {version} · {percent}%":             "Téléchargement de {version} · {percent} %",
+		"Installing {version}…":                          "Installation de {version}…",
 		"Install":                                        "Installer",
 		"Couldn't check: the clock isn't set yet":        "Recherche impossible : l'heure n'est pas encore réglée",
 		"Couldn't reach the update server · this is {current}": "Serveur de mises à jour injoignable · version actuelle {current}",

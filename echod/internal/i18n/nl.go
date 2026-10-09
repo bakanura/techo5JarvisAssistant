@@ -311,6 +311,8 @@ var nl = lang{
 		"Check now":                                      "Nu zoeken",
 		"Checking…":                                      "Zoeken…",
 		"{next} is ready · this is {current}":            "{next} staat klaar · dit is {current}",
+		"Downloading {version} · {percent}%":             "{version} downloaden · {percent}%",
+		"Installing {version}…":                          "{version} installeren…",
 		"Install":                                        "Installeren",
 		"Couldn't check: the clock isn't set yet":        "Zoeken lukt niet: de klok staat nog niet goed",
 		"Couldn't reach the update server · this is {current}": "Updateserver niet bereikbaar · dit is {current}",

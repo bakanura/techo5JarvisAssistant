@@ -324,6 +324,8 @@ var es = lang{
 		"Check now":                                      "Buscar ahora",
 		"Checking…":                                      "Buscando…",
 		"{next} is ready · this is {current}":            "{next} está lista · esta es {current}",
+		"Downloading {version} · {percent}%":             "Descargando {version} · {percent}%",
+		"Installing {version}…":                          "Instalando {version}…",
 		"Install":                                        "Instalar",
 		"Couldn't check: the clock isn't set yet":        "No se pudo buscar: el reloj aún no está en hora",
 		"Couldn't reach the update server · this is {current}": "No se pudo contactar con el servidor · esta es {current}",

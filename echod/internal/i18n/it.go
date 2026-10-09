@@ -319,6 +319,8 @@ var it = lang{
 		"Check now":                                      "Controlla ora",
 		"Checking…":                                      "Controllo…",
 		"{next} is ready · this is {current}":            "{next} è pronto · questa è {current}",
+		"Downloading {version} · {percent}%":             "Download di {version} · {percent}%",
+		"Installing {version}…":                          "Installazione di {version}…",
 		"Install":                                        "Installa",
 		"Couldn't check: the clock isn't set yet":        "Impossibile controllare: l'ora non è ancora impostata",
 		"Couldn't reach the update server · this is {current}": "Server degli aggiornamenti non raggiungibile · questa è {current}",

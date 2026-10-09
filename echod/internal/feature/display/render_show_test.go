@@ -154,6 +154,10 @@ func TestShowScenesDraw(t *testing.T) {
 	alerts := home.AlertView{Here: []home.Alert{storm, wind}, Near: []home.Alert{storm, wind}}
 	scenes["clock-alert"] = scene{now: at, phase: "idle", weather: sky, alerts: alerts}
 	scenes["clock-alert-muted"] = scene{now: at, phase: "idle", weather: sky, alerts: alerts, muted: true}
+	// An update on its way in: the download with its bar, then the slot being written with the sweep,
+	// under the microphone's pill when that is up too.
+	scenes["install-download"] = scene{now: at, phase: "idle", weather: sky, install: "Downloading 1.0.2 · 42%", installAt: 0.42}
+	scenes["install-writing-muted"] = scene{now: at, phase: "idle", weather: sky, muted: true, install: "Installing 1.0.2…", installAt: -1}
 	later := wind
 	later.ID, later.Onset, later.Ends = "c", at.Add(26*time.Hour), at.Add(40*time.Hour)
 	scenes["alert-page-later"] = scene{now: at, phase: "idle", showAlert: true, alerts: home.AlertView{Here: []home.Alert{later}}}

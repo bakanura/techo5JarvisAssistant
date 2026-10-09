@@ -174,6 +174,10 @@ type scene struct {
 	missed string
 	// update is an update that is ready to install, said in the footer when nothing was missed.
 	update string
+	// install is an update being installed, said in a pill at the top of every page, and installAt
+	// how far its download has got: -1 once that is done and the other slot is being written.
+	install   string
+	installAt float32
 
 	// strip is the music in a strip at the foot of the clock page, rather than on its own page; faved
 	// is the star having been pressed for what is playing.
@@ -364,6 +368,10 @@ func (r *renderer) draw(s scene) {
 		return
 	}
 	draw.Draw(r.dst, r.dst.Rect, image.NewUniform(walnut), image.Point{}, draw.Src)
+
+	// Before the header's, so it runs after it and knows where the microphone's pill went. Not on the
+	// red night clock above: an install started at night still says so on every other page.
+	defer r.installPill(s)
 
 	// Registered first so it runs last: the header goes over every page, including the ones below
 	// that return early.

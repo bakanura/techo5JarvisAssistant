@@ -1831,6 +1831,7 @@ func (d *Display) frame() time.Duration {
 	if s.missed == "" {
 		s.update = updateNote(false)
 	}
+	s.install, s.installAt, _ = installNote()
 
 	if boring {
 		s.slideshow = home.Get().SlideshowBackground()
@@ -1868,6 +1869,9 @@ func (d *Display) frame() time.Duration {
 
 	if s.redClock && s.redStyle == nightStyleFlip && d.r.flipBusy(time.Now()) {
 		return flipFrame // a card is flipping
+	}
+	if s.install != "" {
+		return installFrame // the spinner turns until the restart takes the screen
 	}
 	if s.showCamera {
 		return 250 * time.Millisecond // frames arrive as they are fetched; this keeps up

@@ -1,8 +1,10 @@
 package display
 
 import (
-	"github.com/HuskerMinion/techo5/echod/internal/i18n"
+	"strconv"
 	"time"
+
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 
 	"github.com/HuskerMinion/techo5/echod/internal/feature/firmware"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/ring"
@@ -19,6 +21,25 @@ func updateNote(short bool) string {
 		return "Update ready"
 	}
 	return i18n.F("Update ready: {version} · Settings › Updates", "version", v)
+}
+
+// installNote says how far an install has got, or ok is false when none is running. at is the
+// download's fraction, and -1 once the download is done: checking it and writing the other slot report
+// nothing of their own, so that part gets a spinner and no percentage.
+//
+// Before this the screen said nothing at all from the press of Install to the reboot, which on a slow
+// link is minutes of a device that looks like it ignored the tap.
+func installNote() (line string, at float32, ok bool) {
+	running, at := firmware.Get().Installing()
+	if !running {
+		return "", 0, false
+	}
+	v := firmware.Get().Offered()
+	if at < 1 {
+		pct := strconv.Itoa(int(max(at, 0) * 100))
+		return i18n.F("Downloading {version} · {percent}%", "version", v, "percent", pct), at, true
+	}
+	return i18n.F("Installing {version}…", "version", v), -1, true
 }
 
 // missedNote is the line that says a ring fell due and never sounded, or nothing. The latest one by

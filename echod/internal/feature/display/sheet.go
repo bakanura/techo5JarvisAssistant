@@ -200,6 +200,11 @@ func generalRows(sv sheetView) []settingRow {
 	default:
 		updates.sub = i18n.F("Up to date · {current} · checked {time}", "current", st.version, "time", clockText(at))
 	}
+	// The button goes while it runs: a second Install would be turned away anyway, and a button there
+	// says the first press did nothing.
+	if line, _, ok := installNote(); ok {
+		updates.sub, updates.button = line, ""
+	}
 	restart := settingRow{id: "restart", label: "Restart", sub: "Back in about a minute", kind: ctlDanger, button: "Restart"}
 	if !st.restartArm.IsZero() && st.now.Sub(st.restartArm) < restartWindow {
 		restart.sub, restart.button = "Tap again to restart now", "Confirm"
