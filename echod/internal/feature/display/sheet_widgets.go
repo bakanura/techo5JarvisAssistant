@@ -109,6 +109,15 @@ func (r *paint) text(face font.Face, s string, x, baseline int, c color.Color) {
 	if face == nil {
 		return
 	}
+	// Nothing runs off the panel. A line that would, centred wider than the panel or set too far
+	// right, starts inside the edge and is cut there with an ellipsis.
+	if r.w > 0 && s != "" {
+		if w := r.width(face, s); x < 0 || x+w > r.w {
+			edge := r.s(textEdge)
+			x = max(x, edge)
+			s = r.fit(face, s, r.w-edge-x)
+		}
+	}
 	if r.over.record {
 		if face.Metrics().Height.Ceil() <= r.s(scrimTallest) {
 			r.over.noteText(face, s, x, baseline)
@@ -123,6 +132,27 @@ func (r *paint) text(face font.Face, s string, x, baseline int, c color.Color) {
 	}
 	d := &font.Drawer{Dst: r.dst, Src: image.NewUniform(c), Face: face, Dot: fixed.P(x, baseline)}
 	d.DrawString(s)
+}
+
+// textEdge is how close to the panel's side a line that had to be pulled in may come.
+const textEdge = 8
+
+// message draws text centred on the panel around cy, wrapped to the margins, as many lines as fit.
+func (r *paint) message(face font.Face, msg string, margin, cy int, c color.Color) {
+	if face == nil || msg == "" {
+		return
+	}
+	lead := face.Metrics().Height.Ceil()
+	lines := r.wrapLines(face, msg, r.w-2*margin)
+	if most := max(1, (r.h-2*margin)/max(lead, 1)); len(lines) > most {
+		lines = lines[:most]
+		lines[most-1] = r.fit(face, lines[most-1]+"…", r.w-2*margin)
+	}
+	y := cy - (len(lines)-1)*lead/2
+	for _, line := range lines {
+		r.text(face, line, (r.w-r.width(face, line))/2, y, c)
+		y += lead
+	}
 }
 
 func (r *paint) width(face font.Face, s string) int {

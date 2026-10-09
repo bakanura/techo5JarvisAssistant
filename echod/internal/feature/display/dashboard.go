@@ -252,10 +252,10 @@ func (r *renderer) dashboardPage(s scene) {
 		return
 	}
 	if !drawn {
-		r.text(r.small, msg, (r.w-r.width(r.small, msg))/2, r.h/2, dim)
+		r.message(r.small, msg, r.margin, r.h/2, dim)
 		return
 	}
 	// Over the picture: the last one stays up, with what went wrong along the foot.
 	draw.Draw(r.dst, image.Rect(0, r.h-r.s(36), r.w, r.h), image.NewUniform(shade), image.Point{}, draw.Over)
-	r.text(r.tiny, msg, r.margin, r.h-r.s(11), dim)
+	r.text(r.tiny, r.fit(r.tiny, msg, r.w-2*r.margin), r.margin, r.h-r.s(11), dim)
 }

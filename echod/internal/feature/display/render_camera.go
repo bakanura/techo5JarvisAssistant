@@ -37,7 +37,7 @@ func (r *renderer) cameraView(s scene, v home.CameraView) {
 		if v.Error != "" {
 			msg = name + ": " + v.Error
 		}
-		r.text(r.small, msg, (r.w-r.width(r.small, msg))/2, r.h/2, dim)
+		r.message(r.small, msg, r.margin, r.h/2, dim)
 	}
 	// Corners on a dark strip so they read over any picture.
 	draw.Draw(r.dst, image.Rect(0, 0, r.w, 44), image.NewUniform(shade), image.Point{}, draw.Over)
