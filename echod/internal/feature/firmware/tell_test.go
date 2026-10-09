@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/HuskerMinion/techo5/echod/internal/config"
+	"github.com/HuskerMinion/techo5/echod/internal/feature/question"
 	"github.com/HuskerMinion/techo5/echod/internal/update"
 )
 
@@ -16,10 +17,11 @@ import (
 // remindEvery while it waits; with automatic installs on, only once.
 func TestUpdateIsSaidAndRepeated(t *testing.T) {
 	config.Use(filepath.Join(t.TempDir(), "state.json"))
-	oldSay, oldCan, oldQuiet := say, canSay, quiet
-	t.Cleanup(func() { say, canSay, quiet = oldSay, oldCan, oldQuiet })
+	oldSay, oldAsk, oldCan, oldQuiet := say, ask, canSay, quiet
+	t.Cleanup(func() { say, ask, canSay, quiet = oldSay, oldAsk, oldCan, oldQuiet })
 	var said []string
 	say = func(words string) { said = append(said, words) }
+	ask = func(string) bool { return false } // no Home Assistant: said, not asked
 	able, hush := false, true
 	canSay = func() bool { return able }
 	quiet = func() bool { return hush }
@@ -62,6 +64,45 @@ func TestUpdateIsSaidAndRepeated(t *testing.T) {
 	u.tellOf("v1.0.1-dev.8", at.Add(5*remindEvery))
 	if len(said) != 4 || !strings.Contains(said[3], "tonight") {
 		t.Fatalf("with automatic installs, want dev.8 said once and dev.7 not repeated: %q", said)
+	}
+}
+
+// With Home Assistant to ask through, the notice is a question: yes installs, no waits for the next
+// reminder, and either is answered out loud.
+func TestUpdateIsAsked(t *testing.T) {
+	config.Use(filepath.Join(t.TempDir(), "state.json"))
+	oldSay, oldAsk, oldCan, oldQuiet, oldInstall := say, ask, canSay, quiet, install
+	t.Cleanup(func() { say, ask, canSay, quiet, install = oldSay, oldAsk, oldCan, oldQuiet, oldInstall })
+	said := make(chan string, 4)
+	installed := make(chan bool, 1)
+	var asked []string
+	say = func(words string) { said <- words }
+	ask = func(words string) bool { asked = append(asked, words); return true }
+	canSay = func() bool { return true }
+	quiet = func() bool { return false }
+	install = func(*Firmware) { installed <- true }
+
+	u := &Firmware{}
+	at := time.Date(2026, 10, 9, 18, 0, 0, 0, time.Local)
+	u.tellOf("v1.0.1-dev.6", at)
+	if want := "An update for this Show is ready, version 1.0.1 dev 6. Want me to install it now?"; len(asked) != 1 || asked[0] != want {
+		t.Fatalf("asked %q, want %q", asked, want)
+	}
+	if !question.Answer("not now") || <-said != "Okay, I'll remind you later." {
+		t.Fatal("no was not answered")
+	}
+
+	u.tellOf("v1.0.1-dev.6", at.Add(remindEvery))
+	if len(asked) != 2 {
+		t.Fatalf("not asked again after %s: %q", remindEvery, asked)
+	}
+	if !question.Answer("yes, sure") || <-said != "Okay, installing it now." || !<-installed {
+		t.Fatal("yes did not install")
+	}
+	select {
+	case w := <-said:
+		t.Fatalf("also said %q", w)
+	default:
 	}
 }
 

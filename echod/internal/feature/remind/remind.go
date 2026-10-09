@@ -263,6 +263,21 @@ func sayThroughHA(label string) {
 	})
 }
 
+// Ask has Home Assistant say a question on this device and open the microphone after it, for a
+// question this device answers itself (see feature/question). It reports false when Home Assistant is
+// not there to ask through.
+func Ask(question string) bool {
+	if !hass.Get().Ready() {
+		return false
+	}
+	component.CallService.Emit(component.Call{
+		Service:   "assist_satellite.start_conversation",
+		Data:      map[string]string{"entity_id": satellite(), "start_message": question},
+		Templates: map[string]string{"preannounce": "{{ false }}"},
+	})
+	return true
+}
+
 // satellite is this device's assist satellite in Home Assistant: the one named for it, found the way
 // the radio finds its media player, since an entity id does not follow a renamed device. The id it
 // would have is the answer when Home Assistant cannot be asked.

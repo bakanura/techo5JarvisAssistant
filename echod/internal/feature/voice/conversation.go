@@ -17,6 +17,7 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/feature/light"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/media"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/mute"
+	"github.com/HuskerMinion/techo5/echod/internal/feature/question"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/recording"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/ring"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/wakeword"
@@ -376,6 +377,12 @@ func (c *conversation) handle(e event) {
 				slog.Info("heard a snooze over a ring", "text", e.text, "minutes", minutes)
 				ring.SnoozeFor(minutes)
 			}
+		} else if question.Answer(e.text) {
+			// The answer to something this device asked: acted on here, and Home Assistant's run
+			// is stopped before it can say it did not understand "yes".
+			c.turn.Heard(e.text)
+			c.idle("answered here", activity.Completed)
+			break
 		}
 		c.turn.Heard(e.text)
 		if c.phase == phaseListening {

@@ -1,11 +1,13 @@
 package firmware
 
 import (
+	"context"
 	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/HuskerMinion/techo5/echod/internal/config"
+	"github.com/HuskerMinion/techo5/echod/internal/feature/question"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/remind"
 	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/safe"
@@ -16,14 +18,24 @@ import (
 // the update is installed, so it cannot be missed. Not in quiet hours, and not when there is nothing to
 // say it with; the next check tries again, so a version found at night is said in the morning. With
 // automatic installs on there is nothing for anybody to do, so that is said once.
+//
+// Otherwise it is asked, through Home Assistant, which opens the microphone after the question: "yes"
+// installs it there and then, and "not now" leaves it for the next reminder. With no Home Assistant to
+// ask through, it is only said.
 var (
-	say    = func(words string) { safe.Go("update notice", func() { remind.Say(words) }) }
-	canSay = remind.CanSay
-	quiet  = config.Quiet
+	say     = func(words string) { safe.Go("update notice", func() { remind.Say(words) }) }
+	ask     = remind.Ask
+	canSay  = remind.CanSay
+	quiet   = config.Quiet
+	install = func(u *Firmware) { safe.Go("update install", func() { u.Install(context.Background()) }) }
 )
 
-// remindEvery is how long after saying an update is ready it is said again, while it still waits.
-const remindEvery = 4 * time.Hour
+const (
+	// remindEvery is how long after saying an update is ready it is said again, while it still waits.
+	remindEvery = 4 * time.Hour
+	// answerWithin is how long the question waits for its answer.
+	answerWithin = time.Minute
+)
 
 func (u *Firmware) tell() { u.tellOf(u.Offered(), time.Now()) }
 
@@ -42,6 +54,19 @@ func (u *Firmware) tellOf(v string, now time.Time) {
 		return
 	}
 	slog.Info("saying an update is ready", "version", v, "again", v == c.Told)
+	if !auto {
+		question.Ask("update", answerWithin, func() {
+			slog.Info("installing the update, as asked", "version", v)
+			say(i18n.T("Okay, installing it now."))
+			install(u)
+		}, func() {
+			say(i18n.T("Okay, I'll remind you later."))
+		})
+		if ask(i18n.F("An update for this Show is ready, version {version}. Want me to install it now?", "version", spoken(v))) {
+			return
+		}
+		question.Withdraw("update")
+	}
 	say(notice(v, auto))
 }
 
