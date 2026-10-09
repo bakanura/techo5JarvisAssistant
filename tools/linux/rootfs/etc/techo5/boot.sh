@@ -154,7 +154,7 @@ t5_bt_up "$BT_MODULE" /var/log
 			if ! ip route show default 2>/dev/null | grep -q default; then
 				log "network: address but no default route; renewing the lease"
 				killall udhcpc 2>/dev/null
-				udhcpc -i wlan0 -b -R -t 10 -p /run/udhcpc.pid -s "${UDHCPC_SCRIPT:-/usr/share/udhcpc/default.script}" > /tmp/udhcpc.log 2>&1
+				udhcpc -i wlan0 -b -R -O ntpsrv -t 10 -p /run/udhcpc.pid -s "${UDHCPC_SCRIPT:-/usr/share/udhcpc/default.script}" > /tmp/udhcpc.log 2>&1
 			fi
 			# The clock is set once there is an address. When Wi-Fi takes longer than the boot
 			# script to come up, that happens here: without it the clock stays years behind,

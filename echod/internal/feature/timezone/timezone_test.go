@@ -140,11 +140,10 @@ func restartAsked() string {
 }
 
 func TestClockSetFromHomeAssistantOnlyWhileUnset(t *testing.T) {
-	oldUnset, oldSet, oldRTC := clockUnset, setSysClock, saveRTC
-	t.Cleanup(func() { clockUnset, setSysClock, saveRTC = oldUnset, oldSet, oldRTC })
+	oldUnset, oldSet := clockUnset, setSysClock
+	t.Cleanup(func() { clockUnset, setSysClock = oldUnset, oldSet })
 	var got []time.Time
 	setSysClock = func(at time.Time) error { got = append(got, at); return nil }
-	saveRTC = func() {}
 
 	unset := true
 	clockUnset = func() bool { return unset }

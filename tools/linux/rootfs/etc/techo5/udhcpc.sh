@@ -21,6 +21,17 @@ bound|renew)
 		[ -n "$domain" ] && echo "search $domain"
 		for d in $dns; do echo "nameserver $d"; done
 	} > "$RESOLV.tmp" && mv -f "$RESOLV.tmp" "$RESOLV"
+	# The time servers this network names (DHCP option 42), for t5_ntp_peers. When
+	# they change, a running ntpd is asking the last network's: stop it, and the
+	# network keeper in boot.sh starts it again with these within a minute.
+	mkdir -p /run/techo5
+	echo $ntpsrv > /run/techo5/ntp-servers.tmp
+	if ! cmp -s /run/techo5/ntp-servers.tmp /run/techo5/ntp-servers; then
+		mv -f /run/techo5/ntp-servers.tmp /run/techo5/ntp-servers
+		killall ntpd 2>/dev/null
+	else
+		rm -f /run/techo5/ntp-servers.tmp
+	fi
 	;;
 esac
 exit 0

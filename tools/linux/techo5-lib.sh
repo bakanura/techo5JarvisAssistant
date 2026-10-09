@@ -248,7 +248,7 @@ t5_wifi_up() {
 	# The lease client is started too, in the background: a network joined from the screen asks it for
 	# an address (lib/wifi renews it), and it keeps trying until there is one.
 	if ! grep -q '^network={' "$conf"; then
-		pidof udhcpc >/dev/null || udhcpc -i wlan0 -b -R -p /run/udhcpc.pid -s "${UDHCPC_SCRIPT:-/usr/share/udhcpc/default.script}" > /tmp/udhcpc.log 2>&1
+		pidof udhcpc >/dev/null || udhcpc -i wlan0 -b -R -O ntpsrv -p /run/udhcpc.pid -s "${UDHCPC_SCRIPT:-/usr/share/udhcpc/default.script}" > /tmp/udhcpc.log 2>&1
 		log "wifi: no network saved yet"
 		return 1
 	fi
@@ -261,7 +261,7 @@ t5_wifi_up() {
 		return 1
 	fi
 	if ! pidof udhcpc >/dev/null; then
-		udhcpc -i wlan0 -b -R -t 10 -p /run/udhcpc.pid -s "${UDHCPC_SCRIPT:-/usr/share/udhcpc/default.script}" > /tmp/udhcpc.log 2>&1
+		udhcpc -i wlan0 -b -R -O ntpsrv -t 10 -p /run/udhcpc.pid -s "${UDHCPC_SCRIPT:-/usr/share/udhcpc/default.script}" > /tmp/udhcpc.log 2>&1
 	fi
 	n=0; while [ $n -lt 30 ]; do
 		IP=$(ip -4 addr show wlan0 2>/dev/null | sed -n 's/.*inet \([0-9.]*\).*/\1/p' | head -1)
@@ -345,13 +345,20 @@ t5_wifi_prefer5() {
 	echo $((now + 1800)) > /run/techo5/prefer5-after
 }
 
-# t5_ntp_peers: ntpd's -p arguments: the NTP server, and the default gateway.
-# A network that keeps devices off the internet (an IoT VLAN) often still lets
-# them ask the router for the time; one that does not answer costs nothing.
+# t5_ntp_peers: ntpd's -p arguments, best first: the servers the network names
+# in its DHCP lease (option 42, written by udhcpc.sh), the NTP server
+# (pool.ntp.org unless NTP_SERVER says otherwise), and the default gateway.
+# A network that keeps devices off the internet usually still says where the
+# time is, or answers for it on the router. One that does not answer costs
+# nothing.
 t5_ntp_peers() {
-	echo "-p ${NTP_SERVER:-pool.ntp.org}"
-	gw=$(ip route show default 2>/dev/null | awk '/^default/ {print $3; exit}')
-	[ -n "$gw" ] && echo "-p $gw"
+	seen=" "
+	for p in $(cat /run/techo5/ntp-servers 2>/dev/null) "${NTP_SERVER:-pool.ntp.org}" \
+		$(ip route show default 2>/dev/null | awk '/^default/ {print $3; exit}'); do
+		case "$seen" in *" $p "*) continue ;; esac
+		seen="$seen$p "
+		echo "-p $p"
+	done
 }
 
 # t5_ntp: set the clock once from NTP (the RTC is not trusted), then write it

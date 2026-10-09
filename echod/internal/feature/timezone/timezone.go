@@ -14,11 +14,9 @@ import (
 	"io/fs"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 	"time"
 
 	esphome "github.com/ygelfand/go-esphome-device"
@@ -27,6 +25,7 @@ import (
 
 	"github.com/HuskerMinion/techo5/echod/internal/component"
 	"github.com/HuskerMinion/techo5/echod/internal/layout"
+	"github.com/HuskerMinion/techo5/echod/internal/lib/sysclock"
 	"github.com/HuskerMinion/techo5/echod/internal/update"
 )
 
@@ -81,13 +80,8 @@ func (z *Zone) Handle(ctx context.Context, c *esphome.Conn, msg proto.Message) e
 // and plenty for a certificate. It is used only while the clock is plainly unset, so it never fights
 // NTP over a few hundred milliseconds.
 var (
-	clockUnset  = func() bool { return time.Now().Year() < 2025 }
-	setSysClock = func(t time.Time) error {
-		tv := syscall.NsecToTimeval(t.UnixNano())
-		return syscall.Settimeofday(&tv)
-	}
-	// saveRTC writes the clock to the RTC, so the next boot starts from a date that is at least close.
-	saveRTC = func() { _ = exec.Command("hwclock", "-w").Run() }
+	clockUnset  = sysclock.Unset
+	setSysClock = sysclock.Set
 )
 
 // setClock sets the clock from Home Assistant's time when the clock is unset and that time is sane.
@@ -103,7 +97,6 @@ func setClock(epoch uint32) {
 		slog.Warn("setting the clock from home assistant failed", "err", err)
 		return
 	}
-	saveRTC()
 	slog.Info("clock set from home assistant", "now", t.UTC().Format(time.RFC3339))
 }
 

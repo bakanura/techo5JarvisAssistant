@@ -52,10 +52,11 @@ M5, then "Help" as a wake word, and the smoke alarm last as research rather than
 
 Checked in the code, not remembered:
 
-- **The clock.** `ntpd` against `pool.ntp.org` sets the time at boot (`boot.sh`, with `NTP_SERVER`
-  overriding the pool), and it free-runs from there. Needs the internet, not Home Assistant. What is
-  missing is not the time but the **zone**, below; and a network that blocks outbound 123 or runs its
-  own server has nowhere to say so, so the NTP server wants to be a setting alongside the zone.
+- **The clock.** `ntpd` sets the time at boot and keeps it (`boot.sh`). It asks, in order, the
+  servers the network names in its DHCP lease (option 42), `pool.ntp.org` (or `NTP_SERVER`), and the
+  router. A network that answers none of them still leaves two ways: Home Assistant's time, taken when
+  it connects, and the update server's, taken by the update check. Either is used only while the clock
+  is plainly unset (before 2025). What is missing is not the time but the **zone**, below.
 - **Alarms.** Set on the screen, kept in the device's own config, and rung from the device's own
   clock — `feature/alarm` says so in as many words, and it was built that way on purpose.
 - **Updates.** `update.Fetch` reads the release from GitHub directly. The update entity is a Home

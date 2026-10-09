@@ -100,17 +100,19 @@ const maxManifest = 64 << 10
 //
 // The manifest is believed only with its signature (trust.go): the file beside it, manifest.json.sig,
 // must be the release key's signature over exactly the bytes served. And nothing is fetched on a clock
-// that has not been set, which is how a device that just booted would otherwise meet certificates.
+// that has not been set, which is how a device that just booted would otherwise meet certificates:
+// the clock is first asked of the manifest's host (clock.go), and the check waits only when that fails.
 func Fetch(ctx context.Context, c Channel) (Manifest, error) {
 	var m Manifest
-	if !clockSet() {
-		return m, ErrClock
-	}
-
 	ctx, cancel := context.WithTimeout(ctx, manifestTimeout)
 	defer cancel()
 
 	url := channelURL(c)
+	if !clockSet() {
+		if err := clockFromServer(ctx, url); err != nil {
+			return m, fmt.Errorf("%w (%v)", ErrClock, err)
+		}
+	}
 	body, err := get(ctx, url, maxManifest)
 	if err != nil {
 		return m, err
