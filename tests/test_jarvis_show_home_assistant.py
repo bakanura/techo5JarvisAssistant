@@ -270,7 +270,7 @@ class GatherTests(unittest.TestCase):
         self.assertEqual((s.wifi_passphrase, s.ha_token, s.dashcast_key), ("wifi-pass", TOKEN, DASH_KEY))
 
     def test_bad_answer_is_asked_again(self):
-        asker, said = self.asker(["-", "ha.example", "http://ha.example", "-", "nope.example", "10.0.0.6"], ["", ""])
+        asker, said = self.asker(["-", "ftp://ha.example", "http://ha.example", "-", "nope.example", "10.0.0.6"], ["", ""])
         s = gather(args(), asker, defaults={}, lookup=lambda *a, **k: None,
                    resolve=lambda h: (_ for _ in ()).throw(OSError("no such host")))
         self.assertEqual((s.wifi, s.ha_url, s.ha_token, s.dashcast, s.music_assistant),
