@@ -30,7 +30,12 @@ class DummyAdb:
         if command == "twrp format data":
             return "Done."
         if command == "twrp reboot recovery":
+            self.rebooted = True
             return ""
+        if command == "cat /proc/sys/kernel/random/boot_id":
+            return "boot-after" if getattr(self, "rebooted", False) else "boot-before"
+        if command.startswith("getprop sys.usb.config;"):
+            return getattr(self, "usb", "mtp,adb\nmtp,ffs")
         if command == "mount":
             return "/dev/block/foo on /data type ext4 (rw)"
         if command.startswith("touch /data/.jarvis-crown-write-test"):

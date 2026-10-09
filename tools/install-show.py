@@ -232,14 +232,46 @@ def put_logo(adb, parts, board):
          '   and check it with: adb shell sha256sum %s' % (n, expdb_backup, part, part))
 
 
-def twrp_data_ready(adb):
-    """True only after TWRP is back and /data can actually be written.
+def twrp_boot_id(adb):
+    """The kernel's id for the boot TWRP is running in: a new one on every restart."""
+    return adb.sh('cat /proc/sys/kernel/random/boot_id')
+
+
+TWRP_USB_FUNCTIONS = '/sys/class/android_usb/android0/functions'
+
+
+def twrp_usb_settled(adb):
+    """True once TWRP's USB gadget is in the configuration TWRP asked for.
+
+    TWRP comes up as adb alone (18d1:d001, sys.usb.config empty), then a second or two later starts
+    MTP: sys.usb.config becomes mtp,adb and init rewrites the gadget, which drops and re-enumerates
+    USB (18d1:4ee2). Everything else looks ready in between, and a push started there is cut off with
+    "failed to read copy response". The gadget lists adb as its ffs function. That this check came
+    back over adb at all means the link is up again after the switch.
+    """
+    out = adb.sh('getprop sys.usb.config; f=%s; if [ -r $f ]; then cat $f; else getprop sys.usb.config; fi'
+                 % TWRP_USB_FUNCTIONS).splitlines()
+    if len(out) < 2 or not out[0].strip():
+        return False
+
+    def functions(line):
+        return sorted('adb' if f.strip() == 'ffs' else f.strip() for f in line.split(',') if f.strip())
+    return functions(out[0]) == functions(out[1])
+
+
+def twrp_data_ready(adb, previous_boot_id):
+    """True only after TWRP is back, its USB link has settled, and /data can actually be written.
 
     A generic `adb reboot recovery` proved unreliable on Crown after formatting data.  TWRP's own
     reboot command is used instead, and merely seeing /data in `mount` is not enough: the installer
-    must be able to create and remove a file before it sends the LineageOS zip there.
+    must be able to create and remove a file before it sends the LineageOS zip there.  `twrp reboot`
+    returns before TWRP goes down, and the TWRP that formatted userdata still has /data mounted and
+    writable, so the restart itself is proven by a new boot id.
     """
-    if adb.state() != 'recovery' or ' /data ' not in adb.sh('mount'):
+    if adb.state() != 'recovery':
+        return False
+    boot_id = twrp_boot_id(adb)
+    if not boot_id or boot_id == previous_boot_id or not twrp_usb_settled(adb) or ' /data ' not in adb.sh('mount'):
         return False
     return adb.sh('touch /data/.jarvis-crown-write-test && rm -f /data/.jarvis-crown-write-test && echo OK') == 'OK'
 
@@ -251,8 +283,12 @@ def install_lineage(adb, zip_path):
     out = adb.sh('twrp format data')
     if 'Done' not in out:
         fail('formatting userdata in TWRP failed:\n%s' % out)
+    boot_id = twrp_boot_id(adb)
+    if not boot_id:
+        fail('TWRP did not report its boot id, so its restart after formatting userdata cannot be proven')
     adb.sh('twrp reboot recovery')
-    wait_for('TWRP after formatting userdata', TWRP_DATA_REBOOT_TIMEOUT_SECONDS, lambda: twrp_data_ready(adb), 3)
+    wait_for('TWRP after formatting userdata', TWRP_DATA_REBOOT_TIMEOUT_SECONDS,
+             lambda: twrp_data_ready(adb, boot_id), 3)
     note('userdata formatted; /data mounted and writable after TWRP reboot')
     adb.push(zip_path, '/data/lineage.zip')
     with open(zip_path, 'rb') as f:

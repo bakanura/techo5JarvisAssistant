@@ -39,7 +39,12 @@ class FakeAdb:
         if command.startswith("touch /data/.jarvis-crown-write-test"):
             return "OK" if self.data_writable else ""
         if command == "twrp reboot recovery":
+            self.rebooted = True
             return ""
+        if command == "cat /proc/sys/kernel/random/boot_id":
+            return "boot-after" if getattr(self, "rebooted", False) else "boot-before"
+        if command.startswith("getprop sys.usb.config;"):
+            return getattr(self, "usb", "mtp,adb\nmtp,ffs")
         if command.startswith("sha256sum /data/lineage.zip"):
             return (self.remote_hash or "") + "  /data/lineage.zip"
         if command == "twrp install /data/lineage.zip":
@@ -88,12 +93,62 @@ class LineageStagingTests(unittest.TestCase):
 
     def test_data_ready_requires_recovery_mount_and_write(self):
         adb = FakeAdb()
-        self.assertTrue(install.twrp_data_ready(adb))
+        self.assertTrue(install.twrp_data_ready(adb, "boot-older"))
         adb.state_value = "device"
-        self.assertFalse(install.twrp_data_ready(adb))
+        self.assertFalse(install.twrp_data_ready(adb, "boot-older"))
         adb.state_value = "recovery"
         adb.data_writable = False
-        self.assertFalse(install.twrp_data_ready(adb))
+        self.assertFalse(install.twrp_data_ready(adb, "boot-older"))
+
+    def test_data_ready_requires_twrp_to_have_restarted(self):
+        # The TWRP that formatted userdata still has /data writable until its restart lands.
+        adb = FakeAdb()
+        self.assertFalse(install.twrp_data_ready(adb, "boot-before"))
+        adb.sh("twrp reboot recovery")
+        self.assertTrue(install.twrp_data_ready(adb, "boot-before"))
+
+    def test_data_ready_waits_for_twrp_usb_to_settle(self):
+        # Seen on CROWN: the restarted TWRP has /data writable while still adb-only, before MTP
+        # re-enumerates USB and cuts off any push in flight.
+        adb = FakeAdb()
+        adb.usb = "\nffs"
+        self.assertFalse(install.twrp_data_ready(adb, "boot-older"))
+        adb.usb = "mtp,adb\nffs"
+        self.assertFalse(install.twrp_data_ready(adb, "boot-older"))
+        adb.usb = "mtp,adb\nmtp,ffs"
+        self.assertTrue(install.twrp_data_ready(adb, "boot-older"))
+        adb.usb = "adb\nffs"
+        self.assertTrue(install.twrp_data_ready(adb, "boot-older"))
+
+    def test_zip_is_not_pushed_before_twrp_restarts(self):
+        with tempfile.TemporaryDirectory() as td:
+            adb = FakeAdb()
+            adb.sh = mock.Mock(side_effect=lambda c, sh=adb.sh: "" if c == "twrp reboot recovery" else sh(c))
+            original_wait, original_fail = install.wait_for, install.fail
+            install.wait_for = lambda label, timeout, predicate, interval: (
+                predicate() or install.fail("timed out waiting for %s" % label))
+            install.fail = lambda message: (_ for _ in ()).throw(RuntimeError(message))
+            try:
+                with self.assertRaisesRegex(RuntimeError, "timed out"):
+                    install.install_lineage(adb, str(self.make_zip(td)))
+            finally:
+                install.wait_for, install.fail = original_wait, original_fail
+            self.assertEqual(adb.pushed, [])
+
+    def test_unreadable_boot_id_stops_before_reboot(self):
+        with tempfile.TemporaryDirectory() as td:
+            adb = FakeAdb()
+            adb.sh = mock.Mock(side_effect=lambda c, sh=adb.sh: (
+                "" if c == "cat /proc/sys/kernel/random/boot_id" else sh(c)))
+            original_fail = install.fail
+            install.fail = lambda message: (_ for _ in ()).throw(RuntimeError(message))
+            try:
+                with self.assertRaisesRegex(RuntimeError, "boot id"):
+                    install.install_lineage(adb, str(self.make_zip(td)))
+            finally:
+                install.fail = original_fail
+            self.assertNotIn("twrp reboot recovery", adb.commands)
+            self.assertEqual(adb.pushed, [])
 
     def test_prestaged_vendor_path_never_formats_or_reinstalls_lineage(self):
         adb = FakeAdb()
