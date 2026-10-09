@@ -45,6 +45,20 @@ non-commercial; usable only filtered to CC0 and CC BY), WHAM! (licence not found
 [non-commercial and commercial licences](https://auditory.org/postings/2019/686.html)), and any room
 impulse response set until we have picked one with a licence that allows it.
 
+## Or openWakeWord
+
+The Show runs openWakeWord classifiers too, next to microWakeWord. Its front end (the mel model and
+Google's speech embedding) is Apache 2.0 and already ships, see NOTICE. A classifier on top of that
+embedding needs much less training data than a microWakeWord model, because the embedding already
+knows what speech sounds like, so it's the quicker first "Hey Genbu".
+
+The licence question is the same, though. openWakeWord's own pre-trained models are CC BY-NC-SA
+4.0, and so are the ready-made negative features its training notebook downloads
+([openwakeword_features](https://huggingface.co/datasets/davidscripka/openwakeword_features), built
+from ACAV100M). A classifier we publish gets its negatives from the table above, run through the
+same front end. The community models in NOTICE (fwartner's collection) don't say what they were
+trained on, which is one more reason to train our own.
+
 ## The phrase
 
 "Hey Genbu" rather than "Genbu" alone: three syllables are much harder to hear by accident than two,
@@ -57,7 +71,7 @@ and "Okay Nabu" and "Hey Jarvis" are that length for the same reason.
 2. Record real "Hey Genbu"s from the people who will use it, with their OK. A few dozen each makes
    a clear difference over synthetic voices alone.
 3. Build the negative features from the sources above, and from a few hours of our own rooms.
-4. Train with micro-wake-word, then test on the Show itself: false wakes per hour with the TV and
+4. Train with openWakeWord first (quick), micro-wake-word if that isn't good enough, then test on the Show itself: false wakes per hour with the TV and
    German music on, and how many real tries it catches, from the `wake detected` and
    `wake near miss` lines in its log.
 5. Ship it next to Okay Nabu with a list of the CC BY sources it was trained from.
