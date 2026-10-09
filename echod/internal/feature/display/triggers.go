@@ -16,9 +16,10 @@ import (
 // same sentences, so the words live in lib/triggers once rather than in each. Which language's words
 // are used is the Screen language setting; unset, every language is matched.
 
-// The Screen language row's choices. Match all is first, and is what a device comes up in.
+// The Screen language row's choices. Match Assistant is first, and is what a device comes up in: the
+// screen in whatever language the voice assistant is set to in Home Assistant (i18n.Lang).
 var (
-	langOptions = []string{"Match all", "English", "Deutsch", "Español", "Français", "Italiano", "Nederlands"}
+	langOptions = []string{"Match Assistant", "English", "Deutsch", "Español", "Français", "Italiano", "Nederlands"}
 	langCodes   = []string{triggers.MatchAll, "en", "de", "es", "fr", "it", "nl"}
 )
 

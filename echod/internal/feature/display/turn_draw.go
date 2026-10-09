@@ -35,6 +35,9 @@ func equalizerOn() bool { return hasEqualizer && turnStyles[turnStyleIndex()].va
 // waveOn is whether the equalizer is drawn as the wave rather than the bars.
 func waveOn() bool { return turnStyles[turnStyleIndex()].value == "wave" }
 
+// glowOn is whether the equalizer is drawn as the glow (turn_glow.go).
+func glowOn() bool { return turnStyles[turnStyleIndex()].value == "glow" }
+
 // turnStyleSelect is the Home Assistant setting.
 func turnStyleSelect(wake func()) *esphome.Select {
 	s := &esphome.Select{
@@ -64,6 +67,8 @@ type eqView struct {
 	night       bool
 	quiet       bool // every bar has fallen: nothing left to animate
 	wave        bool // drawn as the wave rather than the bars
+	glow        bool // drawn as the glow
+	thinking    bool // the answer is being worked out: the glow runs rather than following a voice
 }
 
 var (
@@ -106,7 +111,7 @@ func eqThinking(now time.Time, level, peak []float64) {
 
 // eqFor is the view for a turn's phase at now.
 func eqFor(phase string, night bool, now time.Time) *eqView {
-	v := &eqView{night: night}
+	v := &eqView{night: night, thinking: phase == "thinking"}
 	switch phase {
 	case "listening":
 		v.level, v.peak = spectrum.Mic.Bands(eqBands, now)

@@ -75,9 +75,10 @@ type Screen struct {
 	// back to its clock with the music in a strip at the foot; none keeps the full page.
 	MusicStrip int `json:"music_strip,omitempty"`
 
-	// Language is which words the screen listens for in a turn — "en", "de", "es", "fr", "it",
-	// "nl" — empty for all of them. It has nothing to do with what the assistant understands or
-	// says, which is Home Assistant's pipeline; it decides only which pages a sentence brings up.
+	// Language is the screen's language and which words it listens for in a turn — "en", "de",
+	// "es", "fr", "it", "nl". Empty is "Match Assistant": the screen in the language Home
+	// Assistant's voice pipeline is set to, and the words of every language. It has nothing to do
+	// with what the assistant understands or says, which is the pipeline's own setting.
 	Language string `json:"language,omitempty"`
 }
 

@@ -80,6 +80,14 @@ func (r *renderer) wave(s scene) {
 	r.eqText(lines, bot+under, bottom)
 }
 
+// glow draws the whole turn page in the glow style.
+func (r *renderer) glow(s scene) {
+	draw.Draw(r.dst, r.dst.Rect, image.NewUniform(eqGround), image.Point{}, draw.Src)
+	top, bot, under, bottom, lines := r.eqLayout(s, 56)
+	drawGlow(r.dst, image.Rect(r.s(28), top, r.w-r.s(28), bot), s.eq, eqGround, s.now)
+	r.eqText(lines, bot+under, bottom)
+}
+
 // eqLayout splits the page between the picture and the words: the picture takes the top part (pct of
 // the height) and gives way to a long answer down to a quarter of the screen. It returns the picture's
 // top and bottom, the gap under it, the words' last baseline, and the words.

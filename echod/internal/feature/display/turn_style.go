@@ -10,8 +10,9 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/config"
 )
 
-// What a voice turn looks like on the screen: Classic, the title and the words, or Equalizer, bars
-// moving with the voice being heard and the answer being spoken. Classic until somebody chooses.
+// What a voice turn looks like on the screen: Classic, the title and the words, or a picture moving
+// with the voice being heard and the answer being spoken: Glow, a bar of light, Wave, a weave of lines,
+// or Bars, an LED equalizer. Classic until somebody chooses.
 
 // turnStyles are the choices, with what the config keeps for each; Classic is kept as nothing.
 var turnStyles = []struct {
@@ -19,6 +20,7 @@ var turnStyles = []struct {
 	value string
 }{
 	{"Classic", ""},
+	{"Glow", "glow"},
 	{"Wave", "wave"},
 	{"Bars", "equalizer"},
 }

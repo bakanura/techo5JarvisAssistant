@@ -1129,6 +1129,7 @@ func (d *Display) frame() time.Duration {
 	if equalizerOn() && (s.phase == "listening" || s.phase == "thinking" || s.phase == "replying" || s.phase == "lingering") {
 		s.eq = eqFor(s.phase, inNight(now), now)
 		s.eq.wave = waveOn()
+		s.eq.glow = glowOn()
 	}
 	s.muted, _ = mute.Get().Muted()
 	// A stream this player is carrying is the room's when it is what is being heard: the face names it,

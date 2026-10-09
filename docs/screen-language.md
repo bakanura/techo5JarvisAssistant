@@ -4,6 +4,13 @@ Settings → Display → Screen language picks the language the screen is in. Th
 language by its own name (Deutsch, Español, Français, Italiano, Nederlands), so someone who
 doesn't read English can still find theirs. A new pick shows on the next frame, within about a second.
 
+The first choice, **Match Assistant**, is what a new device starts in. The screen then uses the
+language your voice assistant is set to in Home Assistant (Settings → Voice assistants), for the
+pipeline picked on the device's Assistant select. The Show checks it every ten minutes. With the
+Direct Brain it uses the Brain's language instead. A language the screen has no words for yet
+shows English. Under Match Assistant the screen still reacts to "go home" or "weather" in every
+language, since people often mix them.
+
 Only the screen and the few things the Show says on its own are translated. What the assistant
 answers is up to the assistant.
 

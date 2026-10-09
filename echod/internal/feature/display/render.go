@@ -476,9 +476,12 @@ func (r *renderer) draw(s scene) {
 	}
 
 	if s.eq != nil {
-		if s.eq.wave {
+		switch {
+		case s.eq.glow:
+			r.glow(s)
+		case s.eq.wave:
 			r.wave(s)
-		} else {
+		default:
 			r.equalizer(s)
 		}
 		if s.showVolume {

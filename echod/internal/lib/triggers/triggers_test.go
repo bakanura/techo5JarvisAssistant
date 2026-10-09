@@ -16,7 +16,7 @@ var spoken = map[string]struct{ weather, radar, home, camera string }{
 }
 
 // Each language's own sentences bring up what they ask for, both when that language is chosen and
-// under Match all.
+// under Match Assistant.
 func TestEachLanguage(t *testing.T) {
 	for lang, s := range spoken {
 		for _, sel := range []string{lang, MatchAll} {

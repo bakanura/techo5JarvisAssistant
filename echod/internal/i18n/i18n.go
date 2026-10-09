@@ -4,7 +4,8 @@
 // {name} placeholders so a translation can put the values where its own word order wants them.
 // The English text itself is the key, so T("Check now") is "Jetzt suchen" on a German screen and
 // "Check now" on any screen whose language has no entry for it yet: an untranslated string still
-// reads as something. "Match all" (no language) is English.
+// reads as something. "Match Assistant" (no language set) is the language the voice assistant is set
+// to in Home Assistant, or the Direct Brain's own, and English when that is none of these.
 //
 // Only the screen and the few things the device says on its own are translated; what the assistant
 // says is the assistant's business. Wording follows docs/screen-language.md.
@@ -21,7 +22,43 @@ import (
 )
 
 // Lang is the screen's language code, "" for English.
-func Lang() string { return config.Get().Screen.Language }
+func Lang() string {
+	c := config.Get()
+	switch {
+	case c.Screen.Language != "":
+		return c.Screen.Language
+	case c.Brain.Direct():
+		return base(c.Brain.Language)
+	}
+	if l := assistant.Load(); l != nil {
+		return *l
+	}
+	return ""
+}
+
+// assistant is the language of Home Assistant's voice pipeline, which a screen with no language set
+// follows. Somebody who set up their assistant in German wants the screen in German too.
+var assistant atomic.Pointer[string]
+
+// SetAssistant tells the screen which language the assistant's pipeline is in, as Home Assistant
+// names it ("de", "de-CH", "pt_BR").
+func SetAssistant(code string) {
+	b := base(code)
+	if old := assistant.Load(); old != nil && *old == b {
+		return
+	}
+	assistant.Store(&b)
+	Changed()
+}
+
+// base is the language in a code, without its country: "de" for "de-CH".
+func base(code string) string {
+	code = strings.ToLower(strings.TrimSpace(code))
+	if i := strings.IndexAny(code, "-_"); i >= 0 {
+		code = code[:i]
+	}
+	return code
+}
 
 // T is s in the screen's language.
 func T(s string) string {

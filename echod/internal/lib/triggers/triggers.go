@@ -83,8 +83,9 @@ var Languages = map[string]Set{
 	},
 }
 
-// MatchAll is the Language setting that consults every table, as this behaved before the tables
-// existed: right for a household that speaks more than one, at the cost of one language's ordinary
+// MatchAll is the Language setting that consults every table ("Match Assistant" on the screen, which
+// follows the assistant's language for its own words but listens in all of them), as this behaved
+// before the tables existed: right for a household that speaks more than one, at the cost of one language's ordinary
 // word now and then being another's trigger.
 const MatchAll = ""
 
