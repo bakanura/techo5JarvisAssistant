@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"math"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -409,6 +410,15 @@ func (c *conversation) handle(e event) {
 		}
 
 	case evReplyText:
+		// A follow-up answered with a bare "Okay." heard nothing meant for the device: it is what the
+		// agent is told to say to the television. Said out loud it is a voice answering nobody, and it
+		// would open the next follow-up on the same room. So it is not played and the chain ends here.
+		if c.followUp && c.phase != phaseIdle && bareOkay(e.text) {
+			slog.Info("a follow-up answered with a bare okay, ending quietly", "slot", c.slot+1, "text", e.text)
+			c.clearPending()
+			c.idle("nothing to answer", activity.Canceled)
+			return
+		}
 		slog.Info("replying", "slot", c.slot+1, "text", e.text)
 		c.log.Replied(e.text)
 		c.turn.Replying(e.text)
@@ -960,6 +970,12 @@ func (c *conversation) stopStreaming() {
 	c.stopAudio = nil
 
 	c.send("end of audio", c.be.End)
+}
+
+// bareOkay reports whether a reply is "Okay" and nothing else, however it is written.
+func bareOkay(text string) bool {
+	t := strings.ToLower(strings.Trim(text, " \t\n.!,…"))
+	return t == "okay" || t == "ok" || t == "o.k"
 }
 
 // preRoll is how much of the audio before a follow-up's onset is sent with it.

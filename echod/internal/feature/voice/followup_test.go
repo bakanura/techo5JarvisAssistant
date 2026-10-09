@@ -53,3 +53,20 @@ func TestFollowGateSendsTheStartWithTheOnset(t *testing.T) {
 		t.Fatalf("sent %d..%d, want the quiet before and the speech up to now", got[0], got[len(got)-1])
 	}
 }
+
+func TestBareOkay(t *testing.T) {
+	for text, want := range map[string]bool{
+		"Okay.":                        true,
+		"okay":                         true,
+		" OK! ":                        true,
+		"Okay…":                        true,
+		"Okay, das Licht ist an.":      false,
+		"Pausiert":                     false,
+		"":                             false,
+		"Okay. Was möchtest du hören?": false,
+	} {
+		if got := bareOkay(text); got != want {
+			t.Errorf("bareOkay(%q) = %v, want %v", text, got, want)
+		}
+	}
+}
