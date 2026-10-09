@@ -593,8 +593,10 @@ func nameSection(w http.ResponseWriter, token string) {
 	 <input id="name" name="name" value="%s" maxlength="31" autocomplete="off">
 	 <p class="bad"><strong>Home Assistant keeps the entity ids it already gave this device.</strong>
 	  It knows the device by its address, not its name, so <code>%s</code> stays as it is and your
-	  automations keep working — but it will no longer look like the new name, and Home Assistant will
-	  go on showing the old one in places until you rename the device there too.</p>
+	  automations keep working, but it will no longer look like the new name. Home Assistant picks the
+	  new name up when the device comes back, unless the device was given a name in Home Assistant:
+	  that one stays there until you clear it on the device's page in Home Assistant.</p>
+	 <p class="note">Renaming the device in Home Assistant renames it here too.</p>
 	 <p class="note">On a device that does not use Home Assistant, none of that applies: the name is
 	  only what the screen says. Naming a device before you hand it to somebody is what this is for.</p>
 	 <p><label><input type="checkbox" name="understood" value="yes" style="width:auto">

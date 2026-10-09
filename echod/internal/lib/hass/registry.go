@@ -3,6 +3,7 @@ package hass
 import (
 	"context"
 	"encoding/json"
+	"strings"
 )
 
 // Area is a room as Home Assistant's area registry has it.
@@ -22,13 +23,25 @@ type Floor struct {
 	Level *int   `json:"level"`
 }
 
-// Device is a device's area, which its entities are in unless they say otherwise, and the addresses the
-// device is known by. A connection is a [type, value] pair, and the address the hardware recorded is the
-// one that survives a rename, a reinstall and a new address.
+// Device is a device's area, which its entities are in unless they say otherwise, the addresses the
+// device is known by, and the name somebody gave it in Home Assistant, empty when nobody has. A
+// connection is a [type, value] pair, and the address the hardware recorded is the one that survives a
+// rename, a reinstall and a new address.
 type Device struct {
 	ID          string     `json:"id"`
 	Area        string     `json:"area_id"`
 	Connections [][]string `json:"connections"`
+	NameByUser  string     `json:"name_by_user"`
+}
+
+// Has reports whether the device is known by the hardware address mac.
+func (d Device) Has(mac string) bool {
+	for _, c := range d.Connections {
+		if len(c) == 2 && c[0] == "mac" && strings.EqualFold(c[1], mac) {
+			return true
+		}
+	}
+	return false
 }
 
 // Registered is an entity as the registry lists it for display: where it is, and whether it is one

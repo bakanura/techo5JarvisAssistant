@@ -64,10 +64,8 @@ func (c *Client) AssistLanguage(ctx context.Context, mac string) (string, error)
 func pipelineSelect(devices []Device, entities []RegistryEntity, mac string) string {
 	ours := make(map[string]bool)
 	for _, d := range devices {
-		for _, c := range d.Connections {
-			if len(c) == 2 && c[0] == "mac" && strings.EqualFold(c[1], mac) {
-				ours[d.ID] = true
-			}
+		if d.Has(mac) {
+			ours[d.ID] = true
 		}
 	}
 	for _, e := range entities {

@@ -32,6 +32,10 @@ const (
 	KeyPath  = StateDir + "/psk"
 	NamePath = StateDir + "/name"
 
+	// NameInHAPath is the name Home Assistant had given the device the last time it looked, so one it
+	// already took over, or one the device has since been renamed away from, is not taken again.
+	NameInHAPath = StateDir + "/name_in_ha"
+
 	// UpdatingPath holds the version being tried, so a rollback can say which one it took out. It is
 	// under /data because the boot hook reads it after a restore has already remounted /system back to
 	// read-only.

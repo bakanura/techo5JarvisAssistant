@@ -175,6 +175,7 @@ func (f *Feature) Run(ctx context.Context) error {
 	go f.metaLoop(ctx)
 	go f.musicRouteLoop(ctx)
 	go f.assistLanguageLoop(ctx)
+	go f.nameLoop(ctx)
 	if hasScreen {
 		go f.slideshowLoop(ctx)
 	}
