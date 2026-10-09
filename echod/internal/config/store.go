@@ -88,7 +88,7 @@ func Load(path string) (*Store, error) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			st.c.Speaker.SoundsMoved = true // a new device starts on the new default: nothing to move
-			st.c.Wake.CutoffRaised = true
+			st.c.Wake.CutoffRaised, st.c.Wake.CutoffSettled = true, true
 			st.readable = true
 			return st, nil
 		}
@@ -119,7 +119,7 @@ func Load(path string) (*Store, error) {
 		st.c.Screen.MusicStrip = 0
 	}
 	st.c.moveSounds()
-	st.c.raiseCutoff()
+	st.c.settleCutoff()
 
 	st.readable = true
 	return st, nil

@@ -11,9 +11,11 @@ type Wake struct {
 	// the choice came back undone at every start.
 	NoneChosen bool `json:"none_chosen,omitempty"`
 
-	// CutoffRaised is whether a slot left on the old default threshold has been moved to the new one:
-	// once, like Speaker.SoundsMoved, so a 0.85 chosen afterwards is kept. See raiseCutoff.
-	CutoffRaised bool `json:"cutoff_raised,omitempty"`
+	// CutoffRaised is whether a slot left on 0.85 was moved to 0.92, and CutoffSettled whether a slot
+	// left on either has been moved to the default: once each, like Speaker.SoundsMoved, so a value
+	// chosen afterwards is kept. See settleCutoff.
+	CutoffRaised  bool `json:"cutoff_raised,omitempty"`
+	CutoffSettled bool `json:"cutoff_settled,omitempty"`
 
 	// Stop is the device's own word for interrupting what it is saying. It is not one of the slots
 	// above: Home Assistant does not choose it, and it opens no pipeline.
@@ -91,10 +93,12 @@ type WakeWord struct {
 }
 
 const (
-	// DefaultThreshold is ESPHome's "moderately sensitive" for Hey Jarvis; the model's own manifest
-	// asks for 0.97. At 0.85 the word woke on song lyrics and talk from another room, crossing between
-	// 0.85 and 0.91, while said on purpose it lands well above that.
-	DefaultThreshold = 0.92
+	// DefaultThreshold is where Hey Jarvis wakes in a quiet room. Said on purpose across a living room
+	// it peaks between 0.88 and 0.91, so ESPHome's 0.92 missed it nearly every time. The false wakes
+	// that once led there all came while the device's own speaker played and the threshold had slack
+	// under it; wake words get none now (detect.thresholdFor), and in a quiet room nothing that was
+	// not the word ever passed 0.85.
+	DefaultThreshold = 0.87
 	DefaultEffect    = "Pulse"
 	DefaultTone      = ToneHA
 	DefaultDelivery  = DeliveryWhole
@@ -139,23 +143,30 @@ func defaultWords() []WakeWord {
 	return []WakeWord{w}
 }
 
-// oldDefaultThreshold is what DefaultThreshold was before it was raised.
-const oldDefaultThreshold = 0.85
+// The defaults DefaultThreshold has had: 0.85 first, then 0.92 for a day, which was too deaf.
+const (
+	firstDefaultThreshold  = 0.85
+	raisedDefaultThreshold = 0.92
+)
 
-// raiseCutoff moves a Hey Jarvis slot still on the old default threshold to the new one, which is what
-// a device that was never tuned should be on. A threshold anybody set is left alone, and so is one set
-// to 0.85 after this has run.
-func (c *Config) raiseCutoff() {
-	if c.Wake.CutoffRaised {
+// settleCutoff moves a Hey Jarvis slot still on an earlier default threshold to the current one, which
+// is what a device that was never tuned should be on. A threshold anybody set is left alone, and so is
+// one chosen after this has run.
+func (c *Config) settleCutoff() {
+	if c.Wake.CutoffSettled {
 		return
+	}
+	old := firstDefaultThreshold
+	if c.Wake.CutoffRaised {
+		old = raisedDefaultThreshold
 	}
 	for i := range c.Wake.Words {
 		w := &c.Wake.Words[i]
-		if w.ID == DefaultWakeID && math.Abs(w.Threshold-oldDefaultThreshold) < 0.005 {
+		if w.ID == DefaultWakeID && math.Abs(w.Threshold-old) < 0.005 {
 			w.Threshold = DefaultThreshold
 		}
 	}
-	c.Wake.CutoffRaised = true
+	c.Wake.CutoffRaised, c.Wake.CutoffSettled = true, true
 }
 
 // Slot is one wake word slot, or an unset one with the defaults in it.

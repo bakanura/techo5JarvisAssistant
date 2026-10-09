@@ -50,9 +50,9 @@ func Get() *Detect {
 	return shared
 }
 
-// playingSlack is how much lower the wake threshold sits while the speaker is loud enough to bury a word
-// (mic.Source.Masking). Not merely while the canceller runs: it starts on a loopback far too faint to
-// hide anything, and the slack there let a TV in the room wake the device.
+// playingSlack is how much lower the stop word's threshold sits while the speaker is loud enough to bury
+// a word (mic.Source.Masking). Not merely while the canceller runs: it starts on a loopback far too faint
+// to hide anything, and the slack there let a TV in the room wake the device.
 const playingSlack = 0.10
 
 // slackFloor is as low as the slack is allowed to drag a threshold, whatever it started at.
@@ -62,23 +62,22 @@ const slackFloor = 0.5
 // threshold; stop is the stop word's own, which is configured separately.
 //
 // While the speaker plays loud and the canceller runs, what reaches the detector is the residual of the
-// music plus the voice, and the word scores lower than it does in a quiet room. A little slack here
-// is worth more than the false wakes it risks: the music is the reference the canceller has, so it
-// is the one sound least able to fake the word.
+// music plus the voice, and the word scores lower than it does in a quiet room. The stop word gets a
+// little slack for that: it is the one word said while the speaker is certainly playing, because
+// playing is what it is asked to stop, and a false stop costs a pause.
 //
-// The stop word takes the same slack as every other slot. It needs it more than they do, not less:
-// it is the one word said while the speaker is certainly playing, because playing is what it is
-// asked to stop. Exempting it made the one word whose job is to interrupt a sound the only word
-// judged with no allowance for the sound.
+// The wake words get none. With it, the residual of the device's own songs and announcements woke it,
+// every such wake crossing between 0.85 and 0.91 against a lowered cutoff, and a false wake costs the
+// music and a turn nobody asked for. Said over the music on purpose, the word still clears its usual
+// threshold.
 func thresholdFor(slot int, base func(int) float64, stop float64, masking bool) float64 {
-	t := stop
 	if slot != StopSlot {
-		t = base(slot)
+		return base(slot)
 	}
 	if masking {
-		t = max(t-playingSlack, slackFloor)
+		return max(stop-playingSlack, slackFloor)
 	}
-	return t
+	return stop
 }
 
 func newDetect() *Detect {
