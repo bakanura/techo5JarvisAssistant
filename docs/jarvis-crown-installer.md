@@ -262,18 +262,28 @@ the moment it boots:
 
 ```
 Wi-Fi (the Show joins it on first boot):
-   network [Home]:
+   networks this computer can see (a number picks one):
+     1) Home
+     2) Home Guest
+   network name (SSID) [Home]:
    passphrase for 'Home' (hidden; Enter to skip):
+   again, to be sure:
 Home Assistant:
-   address, as the Show reaches it [http://192.168.8.125:8123]:
+   address, as the Show reaches it [http://10.0.0.2:8123]:
    the Show's own long-lived token (photos, weather, cameras) (hidden; Enter to skip):
    an admin token, used once to add the Show to Home Assistant (hidden; Enter to skip):
 DashCast (the streamed dashboard):
-   server, host[:port] [192.168.8.250:9555]:
+   server, host[:port] [10.0.0.3:9555]:
    the DashCast key (hidden; Enter to skip):
 Music Assistant (the Sendspin player):
-   server IP or name [192.168.8.125]:
+   server IP or name [10.0.0.2]:
 ```
+
+The Wi-Fi network is picked by number from the ones this computer sees (NetworkManager's list, when
+there is one) or typed by name. The passphrase is asked twice, since nobody sees it, and checked
+for WPA's 8 to 63 characters; spaces at its ends are kept. Only the WPA key made from it goes to
+the Show, never the passphrase itself, and the Show is on that network from its first boot. Enter
+at the network name leaves Wi-Fi to the Show's screen instead.
 
 Enter takes the value in brackets, `-` leaves a setting out. The addresses are remembered in
 `~/.config/jarvis-show/defaults.json`, so the second Show is mostly Enter. Secrets are never

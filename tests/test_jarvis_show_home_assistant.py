@@ -31,8 +31,8 @@ DASH_KEY = "0123456789abcdef0123"
 class AddressTests(unittest.TestCase):
     def test_dashcast_matches_the_daemon(self):
         cases = {
-            "192.168.8.250": "192.168.8.250:9555",
-            "http://192.168.8.250:9555/": "192.168.8.250:9555",
+            "10.0.0.30": "10.0.0.30:9555",
+            "http://10.0.0.30:9555/": "10.0.0.30:9555",
             "dash.example:80": "dash.example:80",
             "user@dash.example": "dash.example:9555",
             "[fd00::1]:9000": "[fd00::1]:9000",
@@ -46,8 +46,8 @@ class AddressTests(unittest.TestCase):
                 ha.normalize_dashcast(bad)
 
     def test_music_assistant_is_one_ip(self):
-        self.assertEqual(ha.normalize_music_assistant("192.168.8.125"), "192.168.8.125")
-        self.assertEqual(ha.normalize_music_assistant("http://192.168.8.125:8095/"), "192.168.8.125")
+        self.assertEqual(ha.normalize_music_assistant("10.0.0.2"), "10.0.0.2")
+        self.assertEqual(ha.normalize_music_assistant("http://10.0.0.2:8095/"), "10.0.0.2")
         self.assertEqual(ha.normalize_music_assistant("[fd00::2]:8095"), "fd00::2")
         with self.assertRaises(ValueError):
             ha.normalize_music_assistant("ma.local")
@@ -274,8 +274,8 @@ class GatherTests(unittest.TestCase):
 
     def test_everything_asked(self):
         asker, _ = self.asker(["Home", "http://ha:8123/", "10.0.0.5", "10.0.0.6"],
-                              ["wifi-pass", TOKEN, "admin-token", DASH_KEY])
-        s = gather(args(), asker, defaults={}, lookup=lambda *a, **k: None)
+                              ["wifi-pass", "wifi-pass", TOKEN, "admin-token", DASH_KEY])
+        s = gather(args(), asker, defaults={}, lookup=lambda *a, **k: None, nearby=lambda: [])
         self.assertEqual(s, Settings(wifi="Home", wifi_passphrase="wifi-pass", ha_url="http://ha:8123",
                                      ha_token=TOKEN, dashcast="10.0.0.5:9555", dashcast_key=DASH_KEY,
                                      music_assistant="10.0.0.6", ha_admin_token="admin-token"))
@@ -288,14 +288,40 @@ class GatherTests(unittest.TestCase):
                    "wifi": "wifi-pass"}
         asker, _ = self.asker(["", "", "", ""], [])
         defaults = {"wifi": "Home", "ha_url": "http://ha:8123", "dashcast": "10.0.0.5:9555", "music_assistant": "10.0.0.6"}
-        s = gather(args(), asker, defaults=defaults, lookup=lambda secret, **attrs: keyring.get(secret))
+        s = gather(args(), asker, defaults=defaults, lookup=lambda secret, **attrs: keyring.get(secret),
+                   nearby=lambda: [])
         self.assertEqual((s.wifi, s.ha_url, s.dashcast, s.music_assistant),
                          ("Home", "http://ha:8123", "10.0.0.5:9555", "10.0.0.6"))
         self.assertEqual((s.wifi_passphrase, s.ha_token, s.dashcast_key), ("wifi-pass", TOKEN, DASH_KEY))
 
+    def test_wifi_picked_from_what_is_nearby(self):
+        asker, said = self.asker(["4", "2", "-", "-"], ["short", "  spaced pass ", "typo here", "  spaced pass ", "  spaced pass "])
+        s = gather(args(music_assistant="10.0.0.6"), asker, defaults={}, lookup=lambda *a, **k: None,
+                   nearby=lambda: ["Upstairs", "Garden IoT", "Neighbour"], want_wifi=True)
+        self.assertEqual(s.wifi, "Garden IoT")
+        self.assertEqual(s.wifi_passphrase, "  spaced pass ", "spaces at the ends belong to the passphrase")
+        self.assertTrue(any("2) Garden IoT" in line for line in said))
+        self.assertTrue(any("pick 1 to 3" in line for line in said))
+        self.assertTrue(any("8 to 63" in line for line in said))
+        self.assertTrue(any("did not match" in line for line in said))
+        self.assertTrue(any("secret-tool store" in line and "'Garden IoT'" in line for line in said))
+        self.assertFalse(any("spaced pass" in line for line in said))
+
+    def test_wifi_name_is_checked_and_typed_names_still_work(self):
+        asker, said = self.asker(["x" * 33, "Attic", "-", "-", "-"], ["long enough", "long enough"])
+        s = gather(args(), asker, defaults={}, lookup=lambda *a, **k: None, nearby=lambda: [])
+        self.assertEqual((s.wifi, s.wifi_passphrase), ("Attic", "long enough"))
+        self.assertTrue(any("1 to 32 bytes" in line for line in said))
+
+    def test_enter_on_wifi_leaves_it_to_the_screen(self):
+        asker, said = self.asker(["", "-", "-", "-"], [])
+        s = gather(args(), asker, defaults={}, lookup=lambda *a, **k: None, nearby=lambda: ["Upstairs"])
+        self.assertIsNone(s.wifi)
+        self.assertEqual(s.summary()[0], "Wi-Fi: picked on the Show's screen")
+
     def test_bad_answer_is_asked_again(self):
         asker, said = self.asker(["-", "ftp://ha.example", "http://ha.example", "-", "nope.example", "10.0.0.6"], ["", ""])
-        s = gather(args(), asker, defaults={}, lookup=lambda *a, **k: None,
+        s = gather(args(), asker, defaults={}, lookup=lambda *a, **k: None, nearby=lambda: [],
                    resolve=lambda h: (_ for _ in ()).throw(OSError("no such host")))
         self.assertEqual((s.wifi, s.ha_url, s.ha_token, s.dashcast, s.music_assistant),
                          (None, "http://ha.example", None, None, "10.0.0.6"))

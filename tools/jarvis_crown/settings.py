@@ -18,6 +18,7 @@ import getpass
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import socket
 import subprocess
@@ -96,7 +97,7 @@ def secret_tool() -> str | None:
     return None
 
 
-def keyring_lookup(secret: str, **attrs: str) -> str | None:
+def keyring_lookup(secret: str, *, strip: bool = True, **attrs: str) -> str | None:
     """One secret from the desktop keyring, or None when there is no keyring or no such entry."""
     tool = secret_tool()
     if not tool:
@@ -108,8 +109,8 @@ def keyring_lookup(secret: str, **attrs: str) -> str | None:
         out = subprocess.run(argv, capture_output=True, text=True, timeout=15, check=False)
     except (OSError, subprocess.TimeoutExpired):
         return None
-    value = out.stdout.rstrip("\r\n").strip() if out.returncode == 0 else ""
-    return value or None
+    value = out.stdout.rstrip("\r\n") if out.returncode == 0 else ""
+    return (value.strip() if strip else value) or None
 
 
 def read_secret_file(path: Path, what: str) -> str:
@@ -136,11 +137,12 @@ class Asker:
     ask_secret: Callable[[str], str] = getpass.getpass
     say: Callable[[str], None] = print
 
-    def text(self, label: str, default: str | None, check: Callable[[str], str]) -> str | None:
+    def text(self, label: str, default: str | None, check: Callable[[str], str],
+             skip: str = "Enter to skip") -> str | None:
         """A value, re-asked until the Show would take it. Enter keeps the default; '-' is none."""
         if not self.interactive:
             return None
-        hint = f" [{default}]" if default else " (Enter to skip)"
+        hint = f" [{default}]" if default else f" ({skip})"
         while True:
             try:
                 raw = self.ask(f"   {label}{hint}: ").strip()
@@ -174,20 +176,55 @@ class Asker:
                 return named[0]
             self.say(f"   pick 1 to {len(options)}, or Enter to keep it")
 
-    def secret(self, label: str, check: Callable[[str], str]) -> str | None:
+    def secret(self, label: str, check: Callable[[str], str], *, strip: bool = True,
+               confirm: bool = False) -> str | None:
+        """A hidden value. confirm asks for it twice, for one nobody can see the typo in."""
         if not self.interactive:
             return None
         while True:
             try:
-                raw = self.ask_secret(f"   {label} (hidden; Enter to skip): ").strip()
+                raw = self.ask_secret(f"   {label} (hidden; Enter to skip): ")
+                raw = raw.strip() if strip else raw.rstrip("\r\n")
+                if not raw:
+                    return None
+                value = check(raw)
+                if confirm and self.ask_secret("   again, to be sure: ").rstrip("\r\n") != raw:
+                    self.say("   the two did not match; once more")
+                    continue
+                return value
             except EOFError:
                 return None
-            if not raw:
-                return None
-            try:
-                return check(raw)
             except ValueError as exc:
                 self.say(f"   {exc}")
+
+
+def check_network(value: str) -> str:
+    if not 1 <= len(value.encode("utf-8")) <= 32:
+        raise ValueError("a Wi-Fi network name is 1 to 32 bytes")
+    return value
+
+
+def check_wifi_passphrase(value: str) -> str:
+    if not 8 <= len(value) <= 63:
+        raise ValueError("a WPA passphrase is 8 to 63 characters")
+    return value
+
+
+def nearby_networks(limit: int = 12) -> list[str]:
+    """The Wi-Fi networks this computer can see, strongest first (NetworkManager only; else none)."""
+    nmcli = shutil.which("nmcli")
+    if not nmcli:
+        return []
+    try:
+        out = subprocess.run([nmcli, "-t", "-e", "no", "-f", "SSID", "device", "wifi", "list"],
+                             capture_output=True, text=True, timeout=10, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    seen: list[str] = []
+    for line in out.stdout.splitlines() if out.returncode == 0 else []:
+        if line and line not in seen:
+            seen.append(line)
+    return seen[:limit]
 
 
 def _checked(value: str | None, check: Callable[[str], str]) -> str | None:
@@ -201,7 +238,8 @@ def _checked(value: str | None, check: Callable[[str], str]) -> str | None:
 
 def gather(args, asker: Asker, *, defaults: dict[str, str] | None = None,
            lookup: Callable[..., str | None] = keyring_lookup,
-           resolve: Callable[[str], str] = _resolve, want_wifi: bool = True) -> Settings:
+           resolve: Callable[[str], str] = _resolve, want_wifi: bool = True,
+           nearby: Callable[[], list[str]] = nearby_networks) -> Settings:
     """Everything the Show is set up with: switches first, then the keyring, then the terminal."""
     d = defaults if defaults is not None else load_defaults()
     say = asker.say if asker.interactive else (lambda _text: None)
@@ -219,10 +257,33 @@ def gather(args, asker: Asker, *, defaults: dict[str, str] | None = None,
     s = Settings()
     if want_wifi:
         say("Wi-Fi (the Show joins it on first boot):")
-        wifi = getattr(args, "wifi", None) or asker.text("network", d.get("wifi"), lambda v: v)
+        wifi = _checked(getattr(args, "wifi", None), check_network)
+        if not wifi and asker.interactive:
+            seen = nearby()
+            if seen:
+                say("   networks this computer can see (a number picks one):")
+                for i, name in enumerate(seen, 1):
+                    say(f"     {i}) {name}")
+
+            def network(value: str) -> str:
+                if value.isdigit() and seen:
+                    if not 1 <= int(value) <= len(seen):
+                        raise ValueError(f"pick 1 to {len(seen)}, or type the network's name")
+                    return seen[int(value) - 1]
+                return check_network(value)
+
+            wifi = asker.text("network name (SSID)", d.get("wifi"), network,
+                              skip="Enter: pick it on the Show's screen instead")
         passphrase = None
         if wifi and not getattr(args, "wifi_passphrase_file", None):
-            passphrase = lookup("wifi", network=wifi) or asker.secret(f"passphrase for {wifi!r}", lambda v: v)
+            passphrase = _checked(lookup("wifi", network=wifi, strip=False), check_wifi_passphrase)
+            if passphrase is None:
+                passphrase = asker.secret(f"passphrase for {wifi!r}", check_wifi_passphrase,
+                                          strip=False, confirm=True)
+                if passphrase:
+                    say("   to skip this next time, keep it in the keyring:")
+                    say(f"     secret-tool store --label='Jarvis Show: Wi-Fi' application jarvis-show "
+                        f"secret wifi network {shlex.quote(wifi)}")
             if passphrase is None and asker.interactive:
                 say("   no passphrase: the Show will ask for the network on its screen instead")
                 wifi = None
