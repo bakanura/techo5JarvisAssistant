@@ -146,6 +146,9 @@ type Display struct {
 	booting bool
 	started time.Time
 	logo    *splash
+	// online is whether the device had a network address at onlineAt, looked at once a second.
+	online   bool
+	onlineAt time.Time
 
 	// sheet is the settings sheet being shown; restartArm is the first of the two taps Restart wants.
 	sheet      bool
@@ -1657,7 +1660,7 @@ func (d *Display) frame() time.Duration {
 	}
 	d.mu.Unlock()
 	if booting {
-		d.r.drawSplash(d.logo, now.Sub(started))
+		d.r.drawSplash(d.logo, now.Sub(started), d.bootStep(now, started))
 		if err := d.dev.Present(); err != nil {
 			slog.Warn("presenting the frame failed", "err", err)
 		}

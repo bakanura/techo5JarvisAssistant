@@ -3,27 +3,28 @@
 package display
 
 import (
+	"fmt"
 	"image"
 	"image/draw"
 	"math"
 	"time"
+
+	"github.com/HuskerMinion/techo5/echod/internal/feature/voice"
+	"github.com/HuskerMinion/techo5/echod/internal/hardware/metrics"
 )
 
 // The Jarvis Show mark, drawn while the device comes up. It deliberately uses the active screen
 // palette rather than embedding an upstream TECHO5 bitmap, so a fresh White Jade device has one
-// visual identity from the first daemon-rendered frame onward. Signal arcs pulse outward until Home
-// Assistant is listening.
+// visual identity from the first daemon-rendered frame onward. Under the mark a bar fills through the
+// steps of coming up, the same way JODS shows its setup, with one line saying which step it is on.
 
 const (
-	// The pulse: arcs leave the mark at arcFrom pixels from the center and fade out by arcTo,
-	// arcCount of them in flight, one full sweep every arcPeriod.
-	arcFrom   = 100.0
-	arcTo     = 380.0
-	arcCount  = 3
-	arcPeriod = 2400 * time.Millisecond
-	arcWidth  = 5.0
-	// arcSpread is how far above and below the horizontal the arcs reach, in radians.
-	arcSpread = 38 * math.Pi / 180
+	// The bar: barWidth by barHeight in the Show 5's pixels, its fill moving to a new step over
+	// barEase, and the current step's sweep crossing it once every sweepPeriod.
+	barWidth    = 420
+	barHeight   = 10
+	barEase     = 300 * time.Millisecond
+	sweepPeriod = 1600 * time.Millisecond
 
 	// waitingAfter is when the splash starts saying what it is waiting for: long enough that a
 	// device which is already adopted is up and gone before it shows, short enough that nobody
@@ -44,10 +45,36 @@ const (
 	noHomeAssistantWait = 60 * time.Second
 )
 
-// splash is the theme-aware wordmark's geometry and where its arcs are centered on the canvas.
+// bootStep is how far coming up has got: each one is a third of the bar.
+type bootStep int
+
+const (
+	stepStarting      bootStep = iota // the daemon is drawing; nothing else is known yet
+	stepNetwork                       // waiting for a network address
+	stepHomeAssistant                 // on the network, waiting for Home Assistant to listen
+	stepReady                         // Home Assistant is listening; the splash ends at splashMin
+)
+
+const bootSteps = 3
+
+func (b bootStep) label() string {
+	switch b {
+	case stepStarting:
+		return "Starting up"
+	case stepNetwork:
+		return "Joining Wi-Fi"
+	case stepHomeAssistant:
+		return "Connecting to Home Assistant"
+	}
+	return "Ready"
+}
+
+// splash is the wordmark's geometry, and the bar's fill as last drawn so a new step slides in.
 type splash struct {
 	cx, cy       float64
 	titleY, subY int
+	shown        float64
+	at           time.Duration
 }
 
 func newSplash(w, h int) *splash {
@@ -55,99 +82,118 @@ func newSplash(w, h int) *splash {
 	return &splash{
 		cx:     float64(w) / 2,
 		cy:     cy,
-		titleY: int(cy) + 10,
-		subY:   int(cy) + 54,
+		titleY: int(cy) - 30,
+		subY:   int(cy) + 14,
 	}
 }
 
-// draw paints the splash for the moment t into the elapsed animation.
-func (r *renderer) drawSplash(s *splash, elapsed time.Duration) {
+// drawSplash paints the splash elapsed into coming up, at the given step.
+func (r *renderer) drawSplash(s *splash, elapsed time.Duration, step bootStep) {
 	draw.Draw(r.dst, r.dst.Rect, image.NewUniform(walnut), image.Point{}, draw.Src)
 	if s == nil {
 		mark := "JARVIS"
 		r.text(r.title, mark, (r.w-r.width(r.title, mark))/2, r.h/2, cream)
 		return
 	}
-	r.arcs(s, elapsed)
 	mark := "JARVIS"
 	r.text(r.title, mark, (r.w-r.width(r.title, mark))/2, s.titleY, cream)
 	sub := "SHOW"
 	r.text(r.small, sub, (r.w-r.width(r.small, sub))/2, s.subY, amber)
+
+	// The fill eases toward the steps done, so the bar never jumps.
+	target := float64(min(step, stepReady)) / bootSteps
+	if dt := (elapsed - s.at).Seconds(); dt > 0 {
+		s.shown += (target - s.shown) * math.Min(dt/barEase.Seconds(), 1)
+	}
+	s.at = elapsed
+	bar := s.barRect(r)
+	r.progressBar(bar, s.shown, step < stepReady, elapsed)
+
+	// One line under the bar for the step, a second once waiting is the explanation.
+	y := bar.Max.Y + r.s(44)
+	line := step.label()
+	if step < stepReady {
+		line += "…"
+		count := fmt.Sprintf("  %d of %d", int(step)+1, bootSteps)
+		w := r.width(r.tiny, line) + r.width(r.tiny, count)
+		x := (r.w - w) / 2
+		r.text(r.tiny, line, x, y, cream)
+		r.text(r.tiny, count, x+r.width(r.tiny, line), y, dim)
+	} else {
+		r.text(r.tiny, line, (r.w-r.width(r.tiny, line))/2, y, cream)
+	}
 	if elapsed >= waitingAfter {
-		r.splashWaiting(s)
-	}
-}
-
-// splashWaiting says what the splash is waiting for, once it has been up long enough that waiting is
-// the explanation.
-//
-// The mark stays until Home Assistant subscribes, which does not happen until somebody accepts the
-// device there. Between flashing a unit and adopting it that can be minutes, or as long as it takes
-// to walk to a computer, and the screen said nothing at all - so it reads as a device that has hung
-// on its first boot. Somebody sat in front of one for ten minutes before finding out that accepting
-// the ESPHome prompt was what freed it (techo5-checkers issue #2). It costs two lines to say so.
-//
-// Not said from the first frame: a device that is adopted already reaches Home Assistant in a couple
-// of seconds, and telling that owner to go and do something they did not need to do would be worse
-// than saying nothing.
-func (r *renderer) splashWaiting(s *splash) {
-	const (
-		what  = "Waiting for Home Assistant"
-		where = "Settings > Devices & services > ESPHome"
-	)
-	// Below the wordmark. If a panel ever leaves less room than they need, the lines sit on the
-	// bottom edge instead of climbing onto the mark.
-	const gap, lead = 26, 32
-	y := s.subY + gap + 34
-	if bottom := r.h - 6; y+lead > bottom {
-		y = bottom - lead
-	}
-	r.text(r.tiny, what, (r.w-r.width(r.tiny, what))/2, y, amber)
-	r.text(r.tiny, where, (r.w-r.width(r.tiny, where))/2, y+lead, dim)
-}
-
-// arcs draws arcCount rings expanding from the mark to both sides, each fading as it travels.
-// Only the band the arcs can reach is scanned, and only pixels near a ring are touched.
-func (r *renderer) arcs(s *splash, elapsed time.Duration) {
-	phase := math.Mod(elapsed.Seconds()/arcPeriod.Seconds(), 1)
-	var radii [arcCount]float64
-	var fades [arcCount]float64
-	for i := range arcCount {
-		p := math.Mod(phase+float64(i)/arcCount, 1)
-		radii[i] = arcFrom + p*(arcTo-arcFrom)
-		fades[i] = (1 - p) * (1 - p) // brighter near the mark, gone at the edge
-	}
-	x0 := max(int(s.cx-arcTo-arcWidth), 0)
-	x1 := min(int(s.cx+arcTo+arcWidth), r.w-1)
-	y0 := max(int(s.cy-arcTo*math.Sin(arcSpread)-arcWidth), 0)
-	y1 := min(int(s.cy+arcTo*math.Sin(arcSpread)+arcWidth), r.h-1)
-	pix := r.dst.Pix
-	for y := y0; y <= y1; y++ {
-		dy := float64(y) - s.cy
-		for x := x0; x <= x1; x++ {
-			dx := float64(x) - s.cx
-			if math.Abs(dy) > math.Abs(dx)*math.Tan(arcSpread) {
-				continue // outside the two sideways cones
-			}
-			d := math.Hypot(dx, dy)
-			for i := range arcCount {
-				w := math.Abs(d - radii[i])
-				if w > arcWidth {
-					continue
-				}
-				a := (1 - w/arcWidth) * fades[i]
-				// soften the cone edges
-				edge := 1 - math.Abs(dy)/(math.Abs(dx)*math.Tan(arcSpread)+1e-9)
-				a *= math.Min(edge*4, 1)
-				o := r.dst.PixOffset(x, y)
-				pix[o] = blend(pix[o], amber.R, a)
-				pix[o+1] = blend(pix[o+1], amber.G, a)
-				pix[o+2] = blend(pix[o+2], amber.B, a)
-			}
+		if hint := step.hint(); hint != "" {
+			r.message(r.tiny, hint, r.margin, y+r.s(44), dim)
 		}
 	}
 }
 
-func blend(under, over uint8, a float64) uint8 {
-	return uint8(float64(under)*(1-a) + float64(over)*a + 0.5)
+func (s *splash) barRect(r *renderer) image.Rectangle {
+	w := min(r.s(barWidth), r.w-2*r.margin)
+	h := max(r.s(barHeight), 4)
+	x := (r.w - w) / 2
+	y := s.subY + r.s(46)
+	return image.Rect(x, y, x+w, y+h)
+}
+
+// hint is what the step is waiting on, said once it has gone on long enough to need saying.
+//
+// Home Assistant does not listen until somebody accepts the device there. Between flashing a unit and
+// adopting it that can be minutes, and a screen that says nothing reads as one that has hung on its
+// first boot: somebody sat in front of one for ten minutes before finding out that accepting the
+// ESPHome prompt was what freed it (techo5-checkers issue #2). A device that is adopted already is
+// past this step in a couple of seconds, so it never sees the hint.
+func (b bootStep) hint() string {
+	switch b {
+	case stepNetwork:
+		return "No network yet. The Wi-Fi page opens by itself if this goes on."
+	case stepHomeAssistant:
+		return "Add it in Home Assistant: Settings > Devices & services > ESPHome"
+	}
+	return ""
+}
+
+// progressBar is the JODS bar: a rounded track, filled to done (0 to 1) in the accent. While busy,
+// a soft sweep runs across the part not yet done, so a long step still looks alive.
+func (r *renderer) progressBar(b image.Rectangle, done float64, busy bool, elapsed time.Duration) {
+	rad := float64(b.Dy()) / 2
+	track := lerp(walnut, dim, 0.35)
+	r.roundFill(b, rad, track, track)
+	fill := b.Min.X + int(math.Round(clamp01(done)*float64(b.Dx())))
+	if busy {
+		// The sweep is a third of the remaining track wide and fades in and out at its ends.
+		rest := b.Max.X - fill
+		if rest > b.Dy() {
+			phase := math.Mod(elapsed.Seconds()/sweepPeriod.Seconds(), 1)
+			w := max(rest/3, b.Dy())
+			x := fill - w + int(phase*float64(rest+w))
+			glow := lerp(track, amber, 0.45*math.Sin(phase*math.Pi))
+			seg := image.Rect(max(x, fill), b.Min.Y, min(x+w, b.Max.X), b.Max.Y)
+			if seg.Dx() > 0 {
+				r.roundFill(seg, rad, glow, glow)
+			}
+		}
+	}
+	if fill-b.Min.X >= b.Dy() {
+		r.roundFill(image.Rect(b.Min.X, b.Min.Y, fill, b.Max.Y), rad, lerp(amber, cream, 0.15), amber)
+	}
+}
+
+// bootStep is which step of coming up the splash shows. The address is looked at once a second, not
+// every frame. Only the frame loop calls it, so online needs no lock.
+func (d *Display) bootStep(now, started time.Time) bootStep {
+	if voice.Get().Ready() {
+		return stepReady
+	}
+	if now.Sub(d.onlineAt) >= time.Second {
+		d.online, d.onlineAt = len(metrics.Addresses()) > 0, now
+	}
+	switch {
+	case d.online:
+		return stepHomeAssistant
+	case now.Sub(started) < splashMin/2:
+		return stepStarting
+	}
+	return stepNetwork
 }
