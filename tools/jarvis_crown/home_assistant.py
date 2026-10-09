@@ -3,17 +3,23 @@
 Once the installer is done, a Show still has to be taken in by Home Assistant. By hand that means
 five screens per unit: add the ESPHome device with its encryption key, allow it to perform Home
 Assistant actions, pick the assistant and the wake word, and give it the DashCast server and its own
-Home Assistant access. Here that is one call with an admin token, used for this and kept nowhere.
+Home Assistant access, and put it in its room. Here that is one call with an admin token, used for
+this and kept nowhere.
 
 Every step looks first at what is already there, so running it again on a unit Home Assistant
 already has only fills in what is missing. No secret is ever put in an error message.
 """
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass
+import hashlib
 import ipaddress
 import json
+import os
 import re
+import socket
+import ssl
 import time
 from typing import Any, Callable
 import urllib.error
@@ -24,6 +30,8 @@ DASHCAST_PORT = 9555
 DASHCAST_MIN_KEY = 16
 ESPHOME_PORT = 6053
 _ENTRY_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_ENTITY_ID_RE = re.compile(r"^[a-z0-9_]+\.[a-z0-9_]+$")
+_WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 
 class HomeAssistantError(RuntimeError):
@@ -210,6 +218,115 @@ class HomeAssistant:
             return json.loads(raw)
         except json.JSONDecodeError:
             return raw.decode("utf-8", "replace")
+
+    def ws(self, message: dict) -> Any:
+        """One command over the websocket API, for what REST cannot do (the device registry); returns
+        its result."""
+        u = urllib.parse.urlsplit(self.url)
+        what = message.get("type", "websocket")
+        try:
+            sock: socket.socket = socket.create_connection(
+                (u.hostname, u.port or (443 if u.scheme == "https" else 80)), timeout=self.timeout)
+        except OSError as exc:
+            raise HomeAssistantError(f"cannot reach Home Assistant at {self.url}: {exc}") from None
+        try:
+            if u.scheme == "https":
+                sock = ssl.create_default_context().wrap_socket(sock, server_hostname=u.hostname)
+            return _ws_exchange(sock, u.netloc, self._token, message)
+        except (OSError, ValueError) as exc:
+            raise HomeAssistantError(f"{what}: {exc}") from None
+        finally:
+            sock.close()
+
+
+class _Frames:
+    """Just enough of RFC 6455 for a short exchange: text frames out, masked; text frames in."""
+
+    def __init__(self, sock: Any, buffered: bytes = b"") -> None:
+        self.sock = sock
+        self.buf = buffered
+
+    def _take(self, n: int) -> bytes:
+        while len(self.buf) < n:
+            chunk = self.sock.recv(65536)
+            if not chunk:
+                raise ValueError("Home Assistant closed the websocket")
+            self.buf += chunk
+        out, self.buf = self.buf[:n], self.buf[n:]
+        return out
+
+    def send(self, data: Any, opcode: int = 1) -> None:
+        payload = json.dumps(data).encode("utf-8") if opcode == 1 else data
+        n = len(payload)
+        head = bytes([0x80 | opcode])
+        if n < 126:
+            head += bytes([0x80 | n])
+        elif n < 1 << 16:
+            head += bytes([0x80 | 126]) + n.to_bytes(2, "big")
+        else:
+            head += bytes([0x80 | 127]) + n.to_bytes(8, "big")
+        mask = os.urandom(4)
+        self.sock.sendall(head + mask + bytes(b ^ mask[i % 4] for i, b in enumerate(payload)))
+
+    def recv(self) -> Any:
+        message = b""
+        while True:
+            b0, b1 = self._take(2)
+            n = b1 & 0x7F
+            if n == 126:
+                n = int.from_bytes(self._take(2), "big")
+            elif n == 127:
+                n = int.from_bytes(self._take(8), "big")
+            mask = self._take(4) if b1 & 0x80 else b""
+            payload = self._take(n)
+            if mask:
+                payload = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+            opcode = b0 & 0x0F
+            if opcode == 8:
+                raise ValueError("Home Assistant closed the websocket")
+            if opcode == 9:
+                self.send(payload, opcode=10)
+                continue
+            if opcode not in (0, 1):
+                continue
+            message += payload
+            if b0 & 0x80:
+                return json.loads(message)
+
+
+def _ws_exchange(sock: Any, host: str, token: str, message: dict, *, key: str | None = None) -> Any:
+    key = key or base64.b64encode(os.urandom(16)).decode()
+    sock.sendall((f"GET /api/websocket HTTP/1.1\r\nHost: {host}\r\nUpgrade: websocket\r\n"
+                  f"Connection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n").encode())
+    head = b""
+    while b"\r\n\r\n" not in head:
+        chunk = sock.recv(4096)
+        if not chunk:
+            raise ValueError("Home Assistant closed the connection before the websocket opened")
+        head += chunk
+    head, rest = head.split(b"\r\n\r\n", 1)
+    lines = head.decode("latin-1").split("\r\n")
+    if not lines[0].startswith("HTTP/1.1 101"):
+        raise ValueError(f"no websocket: {lines[0]}")
+    want = base64.b64encode(hashlib.sha1((key + _WS_GUID).encode()).digest()).decode()
+    accept = next((l.split(":", 1)[1].strip() for l in lines[1:] if l.lower().startswith("sec-websocket-accept:")), "")
+    if accept != want:
+        raise ValueError("the websocket answer does not match what was asked")
+    frames = _Frames(sock, rest)
+    if frames.recv().get("type") != "auth_required":
+        raise ValueError("Home Assistant did not ask for the token")
+    frames.send({"type": "auth", "access_token": token})
+    if frames.recv().get("type") != "auth_ok":
+        raise ValueError("Home Assistant did not accept the token")
+    frames.send({"id": 1, **message})
+    while True:
+        answer = frames.recv()
+        if answer.get("id") != 1 or answer.get("type") != "result":
+            continue
+        if not answer.get("success"):
+            error = answer.get("error") or {}
+            raise ValueError(f"{error.get('code', 'failed')}: {error.get('message', '')}".rstrip(": "))
+        return answer.get("result")
 
 
 # ----------------------------------------------------------------------------------- the ESPHome entry
@@ -406,6 +523,52 @@ def _switch_on(ha: HomeAssistant, entities: list[str], suffix: str) -> str:
     return f"{entity} switched on"
 
 
+def _areas(ha: HomeAssistant) -> dict[str, str]:
+    """Home Assistant's rooms, id to name."""
+    text = ha.request("POST", "/api/template", {"template":
+                      "{% for a in areas() %}{{ a }}\t{{ area_name(a) }}\n{% endfor %}"})
+    out = {}
+    for line in str(text or "").splitlines():
+        area, _, name = line.partition("\t")
+        if area.strip():
+            out[area.strip()] = name.strip() or area.strip()
+    return out
+
+
+def _room(ha: HomeAssistant, entities: list[str], room: str | None, choose: Chooser | None = None) -> str:
+    """Puts the Show's device in room (an area's name or id), or in the one choose picks. The room is how
+    the Show finds the speaker the room's music plays on, and how Assist knows where "the light" is."""
+    known = sorted((e for e in entities if _ENTITY_ID_RE.fullmatch(e)), key=len)
+    if not known:
+        return "no entity of the Show in Home Assistant yet, so it was not put in a room"
+    text = ha.request("POST", "/api/template", {"template":
+                      "{% set d = device_id('" + known[0] + "') %}{{ d }}\t{{ area_id(d) if d else '' }}"})
+    device, _, current = str(text or "").partition("\t")
+    device, current = device.strip(), current.strip()
+    if device in ("", "None"):
+        return "Home Assistant has no device for the Show yet, so it was not put in a room"
+    current = "" if current == "None" else current
+    areas = _areas(ha)
+    if not areas:
+        return "this Home Assistant has no rooms (areas) yet; the Show is in none"
+    if room is None:
+        names = sorted(areas.values(), key=str.casefold)
+        picked = choose("room", areas.get(current, ""), names) if choose else None
+        room = next((a for a, n in areas.items() if n == picked), None) if picked else None
+        if room is None:
+            return f"the Show left in {areas.get(current, 'no room')}"
+    else:
+        want = room.strip().casefold()
+        found = [a for a, n in areas.items() if want in (a.casefold(), n.casefold())]
+        if len(found) != 1:
+            return f"no room {room!r} in Home Assistant (it has {', '.join(sorted(areas.values()))})"
+        room = found[0]
+    if room == current:
+        return f"the Show is already in {areas[room]}"
+    ha.ws({"type": "config/device_registry/update", "device_id": device, "area_id": room})
+    return f"the Show put in {areas[room]}"
+
+
 def _services(ha: HomeAssistant) -> set[str]:
     for domain in ha.request("GET", "/api/services") or []:
         if domain.get("domain") == "esphome":
@@ -431,6 +594,7 @@ class DeployOptions:
     host: str | None = None
     wake_word: str | None = None   # None: keep the Show's, or ask through choose
     assistant: str | None = None   # the Assist pipeline the Show talks to; None as above
+    room: str | None = None        # the area it is in, by name or id; None as above
     settings: DeviceSettings = DeviceSettings()
     wait_seconds: float = 300.0
 
@@ -475,10 +639,11 @@ def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], 
     # The options change reloads the entry, so the entities and actions come back a moment later.
     entities: list[str] = []
     want_selects = bool(opts.wake_word or opts.assistant or choose)
+    want_entities = want_selects or bool(s.music_assistant or opts.room)
     while True:
-        entities = entry_entities(ha, entry_id) if want_selects or s.music_assistant else []
+        entities = entry_entities(ha, entry_id) if want_entities else []
         services = _services(ha) if wanted else set()
-        ready = (not (want_selects or s.music_assistant) or any(e.startswith("select.") for e in entities)) and \
+        ready = (not want_entities or any(e.startswith("select.") for e in entities)) and \
             all(svc in services for svc, _, _ in wanted) and (not want_selects or _selects_ready(ha, entities))
         if ready or clock() >= deadline:
             break
@@ -491,6 +656,8 @@ def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], 
         progress(_select(ha, entities, "_assistant", opts.assistant, choose))
     if opts.wake_word or choose:
         progress(_select(ha, entities, "_wake_word", opts.wake_word, choose))
+    if opts.room or choose:
+        progress(_room(ha, entities, opts.room, choose))
     services = _services(ha) if wanted else set()
     for svc, data, what in wanted:
         if svc not in services:

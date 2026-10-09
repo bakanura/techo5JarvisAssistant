@@ -81,6 +81,9 @@ class FakeHA:
         self.flow_errors = list(flow_errors)
         self.allowed = allowed
         self.entries = [{"entry_id": "E1", "domain": "esphome", "title": "Jarvis Show 5"}] if entry else []
+        self.areas = {"living_room": "Wohnzimmer", "kitchen": "Küche"}
+        self.area = ""
+        self.ws_calls = []
         self.states = {
             "select.jarvis_show_5_assistant": {"state": "preferred", "attributes": {"options": ["preferred", "Jarvis"]}},
             "select.jarvis_show_5_wake_word": {"state": "Okay Nabu", "attributes": {"options": ["Okay Nabu", "Hey Jarvis"]}},
@@ -112,6 +115,10 @@ class FakeHA:
         if path == "/api/config/config_entries/options/flow/O1":
             self.allowed = body["allow_service_calls"]
             return {"type": "create_entry"}
+        if path == "/api/template" and "areas()" in body["template"]:
+            return "".join(f"{a}\t{n}\n" for a, n in self.areas.items())
+        if path == "/api/template" and "device_id(" in body["template"]:
+            return f"D1\t{self.area or 'None'}"
         if path == "/api/template":
             return "\n".join(list(self.states) + ["select.jarvis_show_5_assistant_2"])
         if path == "/api/services" and method == "GET":
@@ -132,6 +139,12 @@ class FakeHA:
         if path.startswith("/api/services/esphome/"):
             return []
         raise AssertionError(f"unexpected {method} {path}")
+
+    def ws(self, message):
+        self.ws_calls.append(message)
+        if message["type"] == "config/device_registry/update":
+            self.area = message["area_id"]
+        return {}
 
     def posted(self, prefix):
         return [(p, b) for m, p, b in self.calls if m == "POST" and p.startswith(prefix)]
@@ -198,7 +211,8 @@ class DeployTests(unittest.TestCase):
             return options[-1] if label == "assistant" else None
         _, log = run_deploy(fake, choose=choose, host="10.0.0.9")
         self.assertEqual(offered, {"assistant": ("preferred", ["preferred", "Jarvis"]),
-                                   "wake word": ("Okay Nabu", ["Okay Nabu", "Hey Jarvis"])})
+                                   "wake word": ("Okay Nabu", ["Okay Nabu", "Hey Jarvis"]),
+                               "room": ("", ["Küche", "Wohnzimmer"])})
         self.assertEqual(fake.states["select.jarvis_show_5_assistant"]["state"], "Jarvis")
         self.assertEqual(fake.states["select.jarvis_show_5_wake_word"]["state"], "Okay Nabu")
         self.assertTrue(any("left at Okay Nabu" in line for line in log))
@@ -255,6 +269,94 @@ class DeployTests(unittest.TestCase):
         self.assertIn("401", str(cm.exception))
 
 
+class RoomTests(unittest.TestCase):
+    def test_the_room_picked_is_where_the_device_goes(self):
+        fake = FakeHA()
+        offered = {}
+
+        def choose(label, current, options):
+            offered[label] = (current, options)
+            return "Wohnzimmer" if label == "room" else None
+        _, log = run_deploy(fake, choose=choose, host="10.0.0.9")
+        self.assertEqual(offered["room"], ("", ["Küche", "Wohnzimmer"]))
+        self.assertEqual(fake.ws_calls, [{"type": "config/device_registry/update", "device_id": "D1",
+                                          "area_id": "living_room"}])
+        self.assertIn("the Show put in Wohnzimmer", log)
+
+    def test_room_by_switch_and_twice_is_once(self):
+        fake = FakeHA()
+        run_deploy(fake, host="10.0.0.9", room="wohnzimmer")
+        run_deploy(fake, host="10.0.0.9", room="living_room")
+        self.assertEqual(len(fake.ws_calls), 1)
+        self.assertEqual(fake.area, "living_room")
+
+    def test_enter_and_unknown_rooms_leave_it_alone(self):
+        fake = FakeHA()
+        _, log = run_deploy(fake, choose=lambda *_: None, host="10.0.0.9")
+        self.assertIn("the Show left in no room", log)
+        _, log = run_deploy(fake, host="10.0.0.9", room="Dachboden")
+        self.assertTrue(any("no room 'Dachboden'" in line for line in log))
+        self.assertEqual(fake.ws_calls, [])
+
+    def test_websocket_exchange(self):
+        key = "dGhlIHNhbXBsZSBub25jZQ=="
+
+        def frame(obj):
+            data = json.dumps(obj).encode()
+            return bytes([0x81, len(data)]) + data
+
+        accept = "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+        server = (f"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                  f"Sec-WebSocket-Accept: {accept}\r\n\r\n").encode()
+        server += frame({"type": "auth_required"}) + frame({"type": "auth_ok"})
+        server += bytes([0x89, 0]) + frame({"id": 1, "type": "result", "success": True, "result": {"ok": 1}})
+
+        class Sock:
+            def __init__(self):
+                self.inbox, self.sent = server, b""
+
+            def recv(self, n):
+                out, self.inbox = self.inbox[:7], self.inbox[7:]  # in small pieces, as a network gives them
+                return out
+
+            def sendall(self, data):
+                self.sent += data
+        sock = Sock()
+        result = ha._ws_exchange(sock, "ha:8123", TOKEN, {"type": "x"}, key=key)
+        self.assertEqual(result, {"ok": 1})
+        sent = sock.sent.split(b"\r\n\r\n", 1)[1]
+        messages, pongs = [], 0
+        while sent:
+            op, n, mask = sent[0] & 0x0F, sent[1] & 0x7F, sent[2:6]
+            payload = bytes(b ^ mask[i % 4] for i, b in enumerate(sent[6:6 + n]))
+            sent = sent[6 + n:]
+            if op == 10:
+                pongs += 1
+            else:
+                messages.append(json.loads(payload))
+        self.assertEqual(messages, [{"type": "auth", "access_token": TOKEN}, {"id": 1, "type": "x"}])
+        self.assertEqual(pongs, 1)
+
+    def test_websocket_refusal_says_why_without_the_token(self):
+        def frame(obj):
+            data = json.dumps(obj).encode()
+            return bytes([0x81, len(data)]) + data
+
+        class Sock:
+            inbox = (b"HTTP/1.1 101 OK\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n"
+                     + frame({"type": "auth_required"}) + frame({"type": "auth_invalid"}))
+
+            def recv(self, n):
+                out, self.inbox = self.inbox[:n], self.inbox[n:]
+                return out
+
+            def sendall(self, data):
+                pass
+        with self.assertRaises(ValueError) as cm:
+            ha._ws_exchange(Sock(), "ha:8123", TOKEN, {"type": "x"}, key="dGhlIHNhbXBsZSBub25jZQ==")
+        self.assertNotIn(TOKEN, str(cm.exception))
+
+
 def args(**kw):
     base = dict(wifi=None, wifi_passphrase_file=None, ha_url=None, ha_token_file=None, ha_admin_token_file=None,
                 dashcast=None, dashcast_key_file=None, music_assistant=None)
@@ -277,7 +379,7 @@ def args(**kw):
         fake = FakeHA(unconfigured=10**6)
         asked = []
         _, log = run_deploy(fake, choose=lambda label, *_: asked.append(label), host="10.0.0.9")
-        self.assertEqual(asked, ["assistant"])
+        self.assertEqual(asked, ["assistant", "room"])
         self.assertTrue(any("not available yet" in line for line in log))
 
 

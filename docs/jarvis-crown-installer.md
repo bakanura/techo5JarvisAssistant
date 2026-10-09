@@ -325,7 +325,11 @@ What happens with the answers:
      words this Show has, and you pick one or press Enter to keep the current one. `--assistant` and
      `--wake-word` answer ahead of time; `''` leaves one alone. With nobody at the terminal and no
      switch, both stay as they are;
-  4. hands it the DashCast server, Home Assistant access and Music Assistant address again through
+  4. asks which room (Home Assistant area) it stands in and puts its device there, over the
+     websocket API since REST has no device registry. The room is how the Show finds the Music
+     Assistant speaker whose music it shows, when it is the only one in that area. `--room` answers
+     ahead of time; Enter or `''` leaves it where it is;
+  5. hands it the DashCast server, Home Assistant access and Music Assistant address again through
      its own actions, and turns its Sendspin switch on.
 
   The admin token is used for this and kept nowhere. Each step looks first at what is already

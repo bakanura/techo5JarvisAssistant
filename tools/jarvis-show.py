@@ -57,6 +57,7 @@ def parse_args() -> argparse.Namespace:
     setup.add_argument("--music-assistant", help="the Music Assistant server's IP address or name")
     setup.add_argument("--wake-word", help="the wake word, one the Show offers (default: ask; '' leaves it alone)")
     setup.add_argument("--assistant", help="the Assist pipeline it talks to, by name (default: ask; '' leaves it alone)")
+    setup.add_argument("--room", help="the Home Assistant area it stands in, by name (default: ask; '' leaves it alone)")
     setup.add_argument("--no-questions", action="store_true", help="ask nothing; take switches and the keyring only")
     hass = parser.add_argument_group("home-assistant: add an installed Show to Home Assistant")
     hass.add_argument("--host", help="the Show's address, when Home Assistant has not discovered it")
@@ -145,22 +146,23 @@ def _find_host(name: str):
     return find
 
 
-# How the assistant and wake word questions read, by the label deploy() asks them with.
+# How the assistant, wake word and room questions read, by the label deploy() asks them with.
 QUESTIONS = {
     "assistant": ("Which assistant should the Show talk to?",
                   {"preferred": "the one Home Assistant has as preferred"}, ("jarvis",)),
     "wake word": ("Which wake word should it listen for?",
                   {"no_wake_word": "none, no wake word"}, ("hey jarvis", "jarvis")),
+    "room": ("Which room is it in? (it plays and shows that room's music)", {}, ()),
 }
 
 
 def _chooser(args):
-    """Asks for the assistant and wake word the switches left open; '' on a switch means do not touch it.
+    """Asks for the assistant, wake word and room the switches left open; '' on a switch means do not touch it.
     Enter takes Jarvis when this Home Assistant and this Show have it."""
     asker = _asker(args)
     if not asker.interactive:
         return None
-    given = {"assistant": args.assistant, "wake word": args.wake_word}
+    given = {"assistant": args.assistant, "wake word": args.wake_word, "room": args.room}
 
     def choose(label: str, current: str, options: list[str]) -> str | None:
         if given.get(label) is not None:
@@ -209,6 +211,7 @@ def deploy_to_home_assistant(settings: Settings, args, *, name: str, key_file: P
             host = saved.read_text(encoding="utf-8").strip() or None
     opts = ha_api.DeployOptions(
         name=name, psk=psk, host=host, wake_word=args.wake_word or None, assistant=args.assistant or None,
+        room=args.room or None,
         settings=ha_api.DeviceSettings(dashcast=settings.dashcast, dashcast_key=settings.dashcast_key,
                                        ha_url=settings.ha_url, ha_token=settings.ha_token,
                                        music_assistant=settings.music_assistant),
