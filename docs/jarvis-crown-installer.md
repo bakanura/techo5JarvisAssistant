@@ -21,6 +21,18 @@ The preflight requires:
 - a complete local Amonet package whose `amonet/device.prop` says `DEVICE=crown`;
 - when supplied, a LineageOS ZIP whose metadata says `pre-device=crown`.
 
+The LineageOS zip and the board boot image are fetched rather than hunted for by hand:
+
+```sh
+python3 tools/fetch-show-assets.py --board checkers     # or crown
+```
+
+It downloads both from GitHub (amazon-oss/releases for LineageOS, the upstream TECHO5 release for the
+boot image) into `~/.cache/jarvis-show/<board>/` (override with `--cache` or `JARVIS_SHOW_ASSETS`),
+keeps a file only when its size and SHA-256 match the pin in `tools/jarvis_crown/assets.py`, and prints
+the paths. It refuses a folder inside the repository: these files are hundreds of MB and never belong in
+the checkout. `--check` verifies what is cached without downloading.
+
 The Amonet package stays a local/user-supplied dependency rather than a Jarvis Crown release asset.
 Later installer stages must not weaken or bypass this gate.
 
