@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/HuskerMinion/techo5/echod/internal/config"
+	"github.com/HuskerMinion/techo5/echod/internal/lib/hass"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/safe"
 )
 
@@ -190,23 +191,8 @@ func (s *stream) once() error {
 	}
 	_ = raw.SetDeadline(time.Time{})
 
-	path := "/" + d.Path
-	if d.Path == "" {
-		path = "/lovelace/0"
-	}
 	enc := json.NewEncoder(c)
-	hello := map[string]any{"name": cfg.Device.Name, "w": s.w, "h": s.h, "path": path}
-	if cfg.Dashboard.Kiosk {
-		hello["kiosk"] = true // a dashcast from before it knew kiosk ignores it and shows the header
-	}
-	if s.cold {
-		hello["cold"] = true
-	}
-	if s.page != "" {
-		// Dashcast puts the page where it is in place of the path. One from before it knew pages
-		// ignores this and shows the dashboard.
-		hello["page"] = s.page
-	}
+	hello := helloFor(cfg, s.w, s.h, s.cold, s.page, hass.Get().Token())
 	if err := enc.Encode(hello); err != nil {
 		return err
 	}
@@ -233,7 +219,7 @@ func (s *stream) once() error {
 		s.conn, s.enc = nil, nil
 		s.mu.Unlock()
 	}()
-	slog.Info("dashboard stream connected", "server", d.Server, "path", path, "page", s.page)
+	slog.Info("dashboard stream connected", "server", d.Server, "path", hello["path"], "page", s.page, "own_user", hello["token"] != nil)
 
 	r := bufio.NewReaderSize(c, 256<<10)
 	var hdr [4]byte
@@ -351,4 +337,32 @@ func (s *stream) paintDoubled(at image.Point, img image.Image) {
 	s.view.Version++
 	s.mu.Unlock()
 	s.f.Changed.Emit(struct{}{})
+}
+
+// helloFor is the line a stream opens with: who the device is, its size and what it wants shown.
+// token is the device's own Home Assistant token, sent only when the dashboard is to be signed in
+// as the device's own user.
+func helloFor(cfg config.Config, w, h int, cold bool, page, token string) map[string]any {
+	d := cfg.Dashboard
+	path := "/" + d.Path
+	if d.Path == "" {
+		path = "/lovelace/0"
+	}
+	hello := map[string]any{"name": cfg.Device.Name, "w": w, "h": h, "path": path}
+	if d.Kiosk {
+		hello["kiosk"] = true // a dashcast from before it knew kiosk ignores it and shows the header
+	}
+	if cold {
+		hello["cold"] = true
+	}
+	// Without a token there is no user of its own to be, and dashcast shows its own.
+	if d.OwnUser && token != "" {
+		hello["token"] = token
+	}
+	if page != "" {
+		// Dashcast puts the page where it is in place of the path. One from before it knew pages
+		// ignores this and shows the dashboard.
+		hello["page"] = page
+	}
+	return hello
 }

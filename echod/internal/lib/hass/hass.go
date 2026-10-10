@@ -123,6 +123,15 @@ func (c *Client) Ready() bool {
 	return c.acc.URL != "" && c.acc.Token != ""
 }
 
+// Token is the token itself, for the one place it is handed on: the dashcast server, inside the
+// encrypted connection, when the dashboard is to be signed in as this device's own user. "" when
+// there is none.
+func (c *Client) Token() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.acc.Token
+}
+
 func (c *Client) do(method, path string, body any) ([]byte, error) {
 	c.mu.Lock()
 	acc := c.acc

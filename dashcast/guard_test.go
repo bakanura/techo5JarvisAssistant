@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 )
 
@@ -43,5 +45,47 @@ func TestOnlyIsOnePanel(t *testing.T) {
 		if got, err := allows(context.Background(), path); err != nil || got != want {
 			t.Errorf("%q: allowed %v (%v), want %v", path, got, err, want)
 		}
+	}
+}
+
+// A Show's own user gets a guard of its own, one per user however often the Show connects; an
+// administrator's token, or one Home Assistant refuses, gets none.
+func TestShowUsersGuards(t *testing.T) {
+	u := &users{ask: func(_ context.Context, cfg config) (string, bool, error) {
+		switch cfg.token {
+		case "admin":
+			return "Jade", true, nil
+		case "kitchen", "bedroom":
+			return "Show " + cfg.token, false, nil
+		}
+		return "", false, errors.New("home assistant refused the token")
+	}}
+	ctx := context.Background()
+	cfg := config{ha: "http://10.0.0.5:8123", token: "dashcast"}
+	a, name, err := u.guardFor(ctx, cfg, "kitchen")
+	if err != nil || a == nil || name != "Show kitchen" || a.cfg.token != "kitchen" {
+		t.Fatalf("kitchen: %v %q %v", a, name, err)
+	}
+	if again, _, _ := u.guardFor(ctx, cfg, "kitchen"); again != a {
+		t.Error("the same user got a second guard")
+	}
+	if b, _, _ := u.guardFor(ctx, cfg, "bedroom"); b == nil || b == a {
+		t.Error("another user did not get a guard of its own")
+	}
+	for _, token := range []string{"admin", "made-up"} {
+		if g, _, err := u.guardFor(ctx, cfg, token); g != nil || err == nil {
+			t.Errorf("%s: got a guard", token)
+		}
+	}
+	if cfg.token != "dashcast" {
+		t.Error("dashcast's own config was changed")
+	}
+}
+
+// The parked tabs' keys and the log name a token by its hash, never the token itself.
+func TestTokenIDIsNotTheToken(t *testing.T) {
+	id := tokenID("a-long-lived-token")
+	if id == "" || strings.Contains("a-long-lived-token", id) || id != tokenID("a-long-lived-token") || id == tokenID("another") {
+		t.Errorf("tokenID gave %q", id)
 	}
 }

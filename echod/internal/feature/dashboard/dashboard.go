@@ -60,6 +60,7 @@ type Feature struct {
 	mode  *esphome.Select
 	idle  *esphome.Switch
 	kiosk *esphome.Switch
+	own   *esphome.Switch
 	board *esphome.Select
 
 	mu        sync.Mutex
@@ -115,6 +116,14 @@ func Get() *Feature {
 					Category: esphome.CategoryConfig,
 				},
 			},
+			own: &esphome.Switch{
+				Base: esphome.Base{
+					ObjectID: "screen_dashboard_own_user",
+					Name:     "Dashboard as this device's own user",
+					Icon:     "mdi:account-lock",
+					Category: esphome.CategoryConfig,
+				},
+			},
 			board: &esphome.Select{
 				Base: esphome.Base{
 					ObjectID: "screen_dashboard_view",
@@ -142,6 +151,15 @@ func Get() *Feature {
 			slog.Info("dashboard: header", "hidden", on)
 			f.setMode(f.Mode())
 		}
+		// So is the user, by the token sent with the hello.
+		f.own.OnCommand = func(on bool) {
+			f.own.Set(on)
+			if err := config.Set().Dashboard().OwnUser(on); err != nil {
+				slog.Error("saving the dashboard user setting failed", "err", err)
+			}
+			slog.Info("dashboard: own user", "on", on)
+			f.setMode(f.Mode())
+		}
 		shared = f
 	})
 	return shared
@@ -150,7 +168,7 @@ func Get() *Feature {
 func (f *Feature) Name() string { return "dashboard" }
 
 func (f *Feature) Entities() []esphome.Entity {
-	return []esphome.Entity{f.mode, f.idle, f.kiosk, f.board}
+	return []esphome.Entity{f.mode, f.idle, f.kiosk, f.own, f.board}
 }
 
 func (f *Feature) Restore(c config.Config) {
@@ -158,6 +176,7 @@ func (f *Feature) Restore(c config.Config) {
 	f.idle.Set(c.Dashboard.Idle)
 	slog.Info("restored", "what", f.idle.ObjectID, "using", c.Dashboard.Idle)
 	f.kiosk.Set(c.Dashboard.Kiosk)
+	f.own.Set(c.Dashboard.OwnUser)
 	f.listBoards(c.Dashboard)
 }
 

@@ -23,6 +23,12 @@ type Dashboard struct {
 	// is a real slice of it. Only dashcast can do it; a drawn dashboard has no bar to hide.
 	Kiosk bool `json:"kiosk,omitempty"`
 
+	// OwnUser has a streamed dashboard signed in as this device's own Home Assistant user, the one
+	// whose token it was given, rather than as dashcast's: what it can see is then what that user
+	// can. The token goes to dashcast inside the encrypted connection, and a dashcast from before
+	// it knew of this ignores it.
+	OwnUser bool `json:"own_user,omitempty"`
+
 	// Known is the dashboards Home Assistant had when last asked, kept so the list of them is there
 	// from the start and not only once Home Assistant has been asked again.
 	Known []DashboardChoice `json:"known,omitempty"`
@@ -81,6 +87,10 @@ func (w DashboardWriter) Server(addr, key string) error {
 
 func (w DashboardWriter) Kiosk(v bool) error {
 	return w.st.Update(func(c *Config) { c.Dashboard.Kiosk = v })
+}
+
+func (w DashboardWriter) OwnUser(v bool) error {
+	return w.st.Update(func(c *Config) { c.Dashboard.OwnUser = v })
 }
 
 func (w DashboardWriter) Idle(v bool) error {

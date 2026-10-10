@@ -195,19 +195,30 @@ func chromePath(named string) string {
 }
 
 // open is a new tab showing path at w by h, signed in to Home Assistant, in the dark theme a screen
-// in a room wants. The tab closes with ctx.
-func (b *browser) open(ctx context.Context, path string, w, h int, allowed map[string]bool, kiosk, music bool) (context.Context, func(), error) {
-	// No options: a tab of a browser already running takes none of the browser's, and chromedp
-	// panics if it is given one (WithErrorf is one) - which it did on every device's first
+// in a room wants. The tab closes with ctx. It is signed in with token, a Show's own user's, or with
+// dashcast's when that is "".
+func (b *browser) open(ctx context.Context, token, path string, w, h int, allowed map[string]bool, kiosk, music bool) (context.Context, func(), error) {
+	// No browser options: a tab of a browser already running takes none of the browser's, and
+	// chromedp panics if it is given one (WithErrorf is one) - which it did on every device's first
 	// connection (techo5#26). The browser has its quiet logger from newBrowser.
-	tab, cancel := chromedp.NewContext(b.ctx)
+	//
+	// The frontend keeps its sign-in in local storage, which every tab of one profile shares. So a
+	// Show's own user gets a profile of its own (a browser context, thrown away with the tab): in
+	// the shared one the last tab opened would have signed every other tab in as its user.
+	var opts []chromedp.ContextOption
+	if token == "" {
+		token = b.cfg.token
+	} else {
+		opts = append(opts, chromedp.WithNewBrowserContext())
+	}
+	tab, cancel := chromedp.NewContext(b.ctx, opts...)
 	stop := context.AfterFunc(ctx, cancel)
 
 	// The frontend keeps its sign-in in local storage; putting a long-lived token there before any
 	// of its code runs signs it in without the login page. The sidebar is kept closed for the same
 	// reason: a screen this size has no room for it.
 	tokens, _ := json.Marshal(map[string]any{
-		"access_token": b.cfg.token, "token_type": "Bearer", "expires_in": 1800,
+		"access_token": token, "token_type": "Bearer", "expires_in": 1800,
 		"hassUrl": b.cfg.ha, "clientId": b.cfg.ha + "/", "expires": 9999999999999, "refresh_token": "",
 	})
 	quoted, _ := json.Marshal(string(tokens))

@@ -48,7 +48,7 @@ func TestOpenATabInTheRunningBrowser(t *testing.T) {
 	defer b.close()
 
 	for i, kiosk := range []bool{false, true} { // a second tab too: every device gets one
-		tab, closeTab, err := b.open(ctx, "/lovelace/0", 480, 480, map[string]bool{"lovelace": true}, kiosk, false)
+		tab, closeTab, err := b.open(ctx, "", "/lovelace/0", 480, 480, map[string]bool{"lovelace": true}, kiosk, false)
 		if err != nil {
 			t.Fatalf("tab %d: %v", i+1, err)
 		}
@@ -125,7 +125,7 @@ func TestMusicSettingsAreLeft(t *testing.T) {
 		t.Skipf("the browser did not start: %v", err)
 	}
 	defer b.close()
-	tab, closeTab, err := b.open(ctx, "/ma", 480, 480, map[string]bool{"ma": true}, true, true)
+	tab, closeTab, err := b.open(ctx, "", "/ma", 480, 480, map[string]bool{"ma": true}, true, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func TestMusicBackstopReachesTheFrame(t *testing.T) {
 		t.Skipf("the browser did not start: %v", err)
 	}
 	defer b.close()
-	tab, closeTab, err := b.open(ctx, "/ma", 480, 480, map[string]bool{"ma": true}, true, false)
+	tab, closeTab, err := b.open(ctx, "", "/ma", 480, 480, map[string]bool{"ma": true}, true, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +265,7 @@ func TestMusicWaysToTheSettingsAreHidden(t *testing.T) {
 		t.Skipf("the browser did not start: %v", err)
 	}
 	defer b.close()
-	tab, closeTab, err := b.open(ctx, "/ma", 480, 480, map[string]bool{"ma": true}, true, true)
+	tab, closeTab, err := b.open(ctx, "", "/ma", 480, 480, map[string]bool{"ma": true}, true, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,5 +297,54 @@ func TestMusicWaysToTheSettingsAreHidden(t *testing.T) {
 	}
 	if !slices.Contains(heard, "done") || slices.Contains(heard, "home-assistant/toggle-menu") {
 		t.Errorf("the page heard %q, want done and no toggle-menu", heard)
+	}
+}
+
+// A Show signed in as its own user has a profile of its own: the sign-in lives in local storage,
+// and in one shared profile the last tab opened would sign every other tab in as its user.
+func TestEachShowUserHasItsOwnSignIn(t *testing.T) {
+	if chromePath("") == "" {
+		if os.Getenv("DASHCAST_REQUIRE_BROWSER") != "" {
+			t.Fatal("no Chrome or headless-shell to run")
+		}
+		t.Skip("no Chrome or headless-shell to run")
+	}
+	ha := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte("<!doctype html><title>dashboard</title><p>a dashboard"))
+	}))
+	defer ha.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	b, err := newBrowser(ctx, config{ha: ha.URL, token: "dashcast-token"})
+	if err != nil {
+		if os.Getenv("DASHCAST_REQUIRE_BROWSER") != "" {
+			t.Fatal(err)
+		}
+		t.Skipf("the browser did not start: %v", err)
+	}
+	defer b.close()
+	signedIn := func(tab context.Context) string {
+		t.Helper()
+		var token string
+		if err := chromedp.Run(tab, chromedp.Evaluate(`JSON.parse(localStorage.getItem("hassTokens")).access_token`, &token)); err != nil {
+			t.Fatal(err)
+		}
+		return token
+	}
+	allowed := map[string]bool{"lovelace": true}
+	var tabs []context.Context
+	for _, token := range []string{"", "show-a", "show-b", ""} {
+		tab, closeTab, err := b.open(ctx, token, "/lovelace/0", 480, 480, allowed, true, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer closeTab()
+		tabs = append(tabs, tab)
+	}
+	for i, want := range []string{"dashcast-token", "show-a", "show-b", "dashcast-token"} {
+		if got := signedIn(tabs[i]); got != want {
+			t.Errorf("tab %d is signed in with %q, want %q", i+1, got, want)
+		}
 	}
 }

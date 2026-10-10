@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -189,18 +191,81 @@ func listPanels(ctx context.Context, cfg config) (map[string]panel, error) {
 // warnIfAdmin says so in the log when the token is an administrator's, which the README advises
 // against.
 func warnIfAdmin(ctx context.Context, cfg config) {
-	raw, err := haCall(ctx, cfg, "auth/current_user")
+	name, admin, err := currentUser(ctx, cfg)
 	if err != nil {
 		slog.Warn("could not ask Home Assistant whose token this is", "err", err)
 		return
+	}
+	if admin {
+		slog.Warn("HA_TOKEN belongs to an administrator: make a user that is not one for dashcast (README, Security)", "user", name)
+	}
+}
+
+// currentUser is whose cfg.token is, and whether they are an administrator.
+func currentUser(ctx context.Context, cfg config) (string, bool, error) {
+	raw, err := haCall(ctx, cfg, "auth/current_user")
+	if err != nil {
+		return "", false, err
 	}
 	var u struct {
 		Name    string `json:"name"`
 		IsAdmin bool   `json:"is_admin"`
 	}
-	if json.Unmarshal(raw, &u) == nil && u.IsAdmin {
-		slog.Warn("HA_TOKEN belongs to an administrator: make a user that is not one for dashcast (README, Security)", "user", u.Name)
+	if err := json.Unmarshal(raw, &u); err != nil {
+		return "", false, err
 	}
+	return u.Name, u.IsAdmin, nil
+}
+
+// A Show can have its page signed in as its own Home Assistant user rather than dashcast's: it sends
+// that user's token in its hello, inside the encrypted connection. What is a dashboard is what Home
+// Assistant shows the user, so each such user has a guard of its own.
+type users struct {
+	mu     sync.Mutex
+	guards map[string]*guard // by tokenID
+	ask    func(context.Context, config) (string, bool, error)
+}
+
+var showUsers = &users{ask: currentUser}
+
+// maxUsers is how many Show users dashcast keeps a guard for: a house has a few Shows, not dozens.
+const maxUsers = 16
+
+// guardFor is the guard for token's user and the user's name. Home Assistant is asked whose the
+// token is every time, so a token taken back since is noticed. A token it refuses, or an
+// administrator's, gets none: the Show is then shown dashcast's own user's page, which it would have
+// been without a token at all.
+func (u *users) guardFor(ctx context.Context, cfg config, token string) (*guard, string, error) {
+	cfg.token = token
+	name, admin, err := u.ask(ctx, cfg)
+	if err != nil {
+		return nil, "", err
+	}
+	if admin {
+		return nil, name, errors.New("the Show's token belongs to an administrator, and a screen anyone can touch is not signed in as one")
+	}
+	id := tokenID(token)
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if g := u.guards[id]; g != nil {
+		return g, name, nil
+	}
+	if len(u.guards) >= maxUsers {
+		return nil, name, fmt.Errorf("dashcast already has %d Show users", maxUsers)
+	}
+	if u.guards == nil {
+		u.guards = map[string]*guard{}
+	}
+	g := &guard{cfg: cfg}
+	u.guards[id] = g
+	return g, name, nil
+}
+
+// tokenID names a token without being it, for the parked tabs' keys and the log: the first bytes of
+// its hash.
+func tokenID(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:6])
 }
 
 // haCall runs one command on Home Assistant's websocket.

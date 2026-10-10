@@ -87,6 +87,11 @@ touch. So treat the token and the key with care:
 - **Dashboards only.** Webpage dashboards are not shown, because they are often a tool (a code
   editor, the ESPHome dashboard) that anyone with the key could then use. Neither are Settings, the
   add-ons or Developer Tools.
+- **A Show can be its own user.** A Show set to use its own Home Assistant user sends that user's
+  token inside the encrypted connection, and its page is then signed in as that user, in a browser
+  profile of its own, rather than as dashcast's. dashcast asks Home Assistant whose the token is
+  each time the Show connects. An administrator's token, or one Home Assistant refuses, is not used:
+  the Show gets dashcast's own user and the log says why. The token is never written to the log.
 - **Up to 8 screens at once.** Each is a browser tab of a couple of hundred megabytes; a ninth is
   told the server is full.
 

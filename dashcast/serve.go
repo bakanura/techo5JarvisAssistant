@@ -64,6 +64,10 @@ type hello struct {
 	// Page is a page asked for by name rather than by path, which dashcast finds for itself:
 	// pageMusic. Path is then ignored. A device too old to know of it never sends it.
 	Page string `json:"page,omitempty"`
+
+	// Token is a long-lived token of the Show's own Home Assistant user, for its page to be signed
+	// in as that user rather than dashcast's (guard.go, users). It is never logged.
+	Token string `json:"token,omitempty"`
 }
 
 // pageMusic is Music Assistant's own pages - its library, queue and groups - in its Home Assistant
@@ -173,6 +177,17 @@ func serve(ctx context.Context, b *browser, g *guard, cfg config, raw net.Conn) 
 	if !strings.HasPrefix(h.Path, "/") {
 		h.Path = "/" + h.Path
 	}
+	// Whose page it is: the Show's own user's when it sent a token that will do, dashcast's otherwise.
+	token, user := "", ""
+	if h.Token != "" {
+		if ug, name, err := showUsers.guardFor(ctx, cfg, h.Token); err != nil {
+			slog.Warn("the Show's own Home Assistant user can't be used, so it gets dashcast's", "name", h.Name, "user", name, "err", err)
+		} else {
+			g, token, user = ug, h.Token, name
+		}
+	}
+	h.Token = ""
+
 	// Dashboards only (guard.go); or, for Music Assistant, its panel only.
 	allows, music := g.allows, false
 	switch h.Page {
@@ -218,7 +233,7 @@ func serve(ctx context.Context, b *browser, g *guard, cfg config, raw net.Conn) 
 		return
 	}
 	defer sessions.Add(-1)
-	slog.Info("device connected", "name", h.Name, "from", c.RemoteAddr(), "size", [2]int{h.W, h.H}, "path", h.Path)
+	slog.Info("device connected", "name", h.Name, "from", c.RemoteAddr(), "size", [2]int{h.W, h.H}, "path", h.Path, "user", user)
 	defer slog.Info("device gone", "name", h.Name)
 
 	sctx, cancel := context.WithCancel(ctx)
@@ -227,13 +242,16 @@ func serve(ctx context.Context, b *browser, g *guard, cfg config, raw net.Conn) 
 	// The tab: this screen's parked one if it left a moment ago (warm.go), or a new one. It outlives
 	// the session, so it is opened against the server's context, not this connection's.
 	key := fmt.Sprintf("%s|%dx%d|%s|%t|%t|g=%s", h.Name, h.W, h.H, h.Path, h.Kiosk, music, cfg.generation)
+	if token != "" {
+		key += "|u=" + tokenID(token) // another user's tab is never handed over
+	}
 	if h.Cold {
 		warm.discard(key)
 	}
 	w := warm.take(key)
 	reused := w != nil
 	if !reused {
-		tab, closeTab, err := b.open(ctx, h.Path, h.W, h.H, allowed, h.Kiosk, music)
+		tab, closeTab, err := b.open(ctx, token, h.Path, h.W, h.H, allowed, h.Kiosk, music)
 		if err != nil {
 			slog.Warn("opening the dashboard failed", "name", h.Name, "err", err)
 			out.problem("The dashboard would not open: " + err.Error())
