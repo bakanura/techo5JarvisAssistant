@@ -92,9 +92,10 @@ func initScript(origin, tokens, allowed []byte, kiosk, music bool) string {
 // It is a single-page app that moves with the history API and its #/ addresses, so it is watched
 // after each move, and every second for whatever moves without either.
 //
-// The ways in are the settings link, the System group around it (left as a bare heading otherwise),
-// and Profile in the user menu, which is a page of the settings; Edit menu stays, so the menu can be
-// put in order. The Home Assistant button Music Assistant shows when it sees Home Assistant's sidebar
+// The ways in are the settings link, the System group around it (left as a bare heading otherwise,
+// and in Edit menu a row of its own), and Profile in the user menu, which is a page of the settings.
+// Where there is no link to go by, Music Assistant's settings icon marks them. Edit menu stays, so
+// the menu can be put in order. The Home Assistant button Music Assistant shows when it sees Home Assistant's sidebar
 // gone opens that sidebar, so it goes too. Each is a rule of its own: a selector the browser does not
 // take drops only its own rule.
 const musicScript = `
@@ -116,7 +117,8 @@ const musicScript = `
         s.textContent = [
           'a[href^="#/settings"]',
           '[data-slot=sidebar-group]:has(a[href^="#/settings"])',
-          '[data-slot=dropdown-menu-content]:has([data-slot=avatar]) [data-slot=dropdown-menu-separator] + [data-slot=dropdown-menu-item]',
+          '[data-slot=sidebar-group]:has(svg.lucide-settings)',
+          '[data-slot=dropdown-menu-item]:has(svg.lucide-settings)',
           '[data-slot=sidebar-footer] button:has(> img[src^="data:image/svg+xml"])',
           '.ha-escape-button',
         ].map((q) => q + "{display:none!important}").join("\n");

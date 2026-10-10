@@ -213,17 +213,20 @@ func TestMusicBackstopReachesTheFrame(t *testing.T) {
 }
 
 // maSidebar is Music Assistant's sidebar and user menu as its 2.10 frontend draws them, cut down to
-// what the guard goes by: the System group holding only the settings, the user menu with Profile and
-// Edit menu under the name, and the Home Assistant button in the footer.
+// what the guard goes by: the System group holding only the settings, as it is drawn and as Edit menu
+// draws it, the user menu with Profile and Edit menu under the name, and the Home Assistant button in
+// the footer. The classes are the ones the live frontend gives them.
 const maSidebar = `<!doctype html><title>ma</title>
 <div data-slot="sidebar-group" id="library"><div data-slot="sidebar-group-label">Library</div><a href="#/artists">Artists</a></div>
-<div data-slot="sidebar-group" id="system"><div data-slot="sidebar-group-label">System</div><a href="#/settings">Settings</a></div>
+<div data-slot="sidebar-group" id="system"><div data-slot="sidebar-group-label">System</div><a href="#/settings"><svg class="lucide lucide-settings-icon lucide-settings mr-1"></svg>Settings</a></div>
+<div data-slot="sidebar-group" id="system-editing"><div class="nav-edit-label">System</div><div class="nav-edit-row"><svg class="lucide lucide-settings-icon lucide-settings nav-edit-row-icon"></svg><span class="nav-edit-row-title">Settings</span></div></div>
+<div data-slot="sidebar-group" id="library-editing"><div class="nav-edit-label">Library</div><div class="nav-edit-row"><svg class="lucide lucide-disc3-icon lucide-disc-3 nav-edit-row-icon"></svg><span class="nav-edit-row-title">Albums</span></div></div>
 <div data-slot="sidebar-footer"><button id="ha" aria-label="Home Assistant"><img src="data:image/svg+xml,%3csvg%3e%3c/svg%3e"><span>Home Assistant</span></button><button id="collapse"><svg></svg></button></div>
 <div data-slot="dropdown-menu-content" role="menu">
   <div data-slot="dropdown-menu-label"><span data-slot="avatar">D</span>dashcastuser</div>
   <div data-slot="dropdown-menu-separator"></div>
-  <div data-slot="dropdown-menu-item" id="profile">Profile</div>
-  <div data-slot="dropdown-menu-item" id="edit">Edit menu</div>
+  <div data-slot="dropdown-menu-item" id="profile"><svg class="lucide lucide-settings-icon lucide-settings size-4"></svg> Profile</div>
+  <div data-slot="dropdown-menu-item" id="edit"><svg class="lucide lucide-square-pen-icon lucide-square-pen size-4"></svg> Edit menu</div>
 </div>
 <div data-slot="dropdown-menu-content" role="menu" id="other">
   <div data-slot="dropdown-menu-separator"></div>
@@ -275,12 +278,12 @@ func TestMusicWaysToTheSettingsAreHidden(t *testing.T) {
 	}
 	for end := time.Now().Add(5 * time.Second); shown("system") != "none" && time.Now().Before(end); time.Sleep(100 * time.Millisecond) {
 	}
-	for _, id := range []string{"system", "profile", "ha"} {
+	for _, id := range []string{"system", "system-editing", "profile", "ha"} {
 		if d := shown(id); d != "none" {
 			t.Errorf("%s shows (display %q)", id, d)
 		}
 	}
-	for _, id := range []string{"library", "edit", "collapse", "play"} {
+	for _, id := range []string{"library", "library-editing", "edit", "collapse", "play"} {
 		if d := shown(id); d == "none" || d == "missing" {
 			t.Errorf("%s is hidden too (display %q)", id, d)
 		}
