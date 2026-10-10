@@ -28,11 +28,12 @@ git clone -q --filter=blob:none "$repo" "$dir/src"
 git -C "$dir/src" checkout -q "$commit"
 docker build -q -t "$image" "$dir/src/dashcast"
 
-# The settings in the README, as the running container has them. The file holds the token and the key,
-# so it is readable by nobody else and goes with the temporary folder.
+# The settings in the README and docs/jarvis-show-platform.md, as the running container has them.
+# The file holds the token and the key, so it is readable by nobody else and goes with the temporary
+# folder.
 umask 077
 docker inspect "$name" --format '{{range .Config.Env}}{{println .}}{{end}}' |
-	grep -E '^(HA_URL|HA_TOKEN|DASHCAST_KEY|LISTEN|CHROME|LANG)=' >"$dir/env"
+	grep -E '^(HA_URL|HA_TOKEN|DASHCAST_KEY|LISTEN|CHROME|LANG|JARVIS_SHOW_BOARD|JARVIS_SHOW_UI_GENERATION|JARVIS_CROWN_UI_GENERATION)=' >"$dir/env"
 
 # The one before the last update goes; the one running now stays, stopped, for going back.
 docker rm -f "$name-previous" >/dev/null 2>&1 || true
