@@ -581,8 +581,9 @@ func (r *renderer) timeAndDate(now time.Time, base int, dateSuffix string) image
 }
 
 // timeAndDateAt is timeAndDate lined up across as align says: -1 against left (a left edge), 0
-// centered, 1 against the right margin. Off center it is the compact clock, for a corner: the time at
-// the size of the weather's reading, the date close under it.
+// centered, 1 against the right margin; centered or on the right, left moves it across by that much.
+// Off center it is the compact clock, for a corner: the time at the size of the weather's reading,
+// the date close under it.
 func (r *renderer) timeAndDateAt(now time.Time, base int, dateSuffix string, align, left int) image.Rectangle {
 	clock, ampmFace, dateGap := r.clock, r.ampm, r.s(70)
 	if align != 0 {
@@ -604,9 +605,9 @@ func (r *renderer) timeAndDateAt(now time.Time, base int, dateSuffix string, ali
 		case align < 0:
 			return left
 		case align > 0:
-			return r.w - r.margin - w
+			return r.w - r.margin - w + left
 		}
-		return (r.w - w) / 2
+		return (r.w-w)/2 + left
 	}
 	x := across(hw + gap + aw)
 	r.text(clock, hour, x, base, cream)
@@ -623,11 +624,13 @@ func (r *renderer) timeAndDateAt(now time.Time, base int, dateSuffix string, ali
 // the date.
 func (r *renderer) bigClock(s scene) {
 	align, foot := clockAlign()
+	shift := r.idleShift(s.now)
 	base, timersAt := r.h/2+r.s(60), r.s(128)
 	if foot {
 		// The compact clock in a corner at the foot, the date clear of the footer's line.
 		base, timersAt = r.h-r.s(106), r.s(96)
 	}
+	base += shift.Y
 	timers := false
 	for _, t := range s.timers {
 		timers = timers || t.Active
@@ -662,9 +665,12 @@ func (r *renderer) bigClock(s scene) {
 	}
 	// A tap on the date opens the calendar, with a finger's room around it.
 	// Bottom left keeps clear of the Call button, when it is on the clock.
-	left := r.margin
-	if s.callButton && foot && align < 0 {
-		left = r.callButtonRect().Max.X + r.s(24)
+	left := shift.X
+	if align < 0 {
+		left += r.margin
+		if s.callButton && foot {
+			left = r.callButtonRect().Max.X + r.s(24) + shift.X
+		}
 	}
 	r.setDateAt(r.timeAndDateAt(s.now, base, suffix, align, left).Inset(-r.s(16)))
 	if timers {
@@ -674,14 +680,14 @@ func (r *renderer) bigClock(s scene) {
 		r.glanceStrip(s.glance, s.callButton)
 	}
 
-	r.weatherCorner(s)
+	r.weatherCorner(s, shift)
 	r.alertBadge(s)
 }
 
 // weatherCorner is the weather where it has always been, top left, with the drawing of it that the
 // forecast page has had all along. The icon is read before the words are: a glance at the corner of
 // a clock is not reading, and the screen already knew how to draw it.
-func (r *renderer) weatherCorner(s scene) {
+func (r *renderer) weatherCorner(s scene, shift image.Point) {
 	w := s.weather
 	if w.Temp == "" && w.Condition == "" {
 		return
@@ -693,15 +699,16 @@ func (r *renderer) weatherCorner(s scene) {
 		}
 		line += c
 	}
-	x := r.margin
+	x0, y0 := r.margin+shift.X, r.margin+shift.Y
+	x := x0
 	if w.Condition != "" && conditionWords(w.Condition) != "" {
-		r.weatherIcon(w.Condition, r.margin+weatherMark/2, r.margin+15, weatherMark)
-		r.over.note(image.Rect(r.margin, r.margin+15-weatherMark/2, r.margin+weatherMark, r.margin+15+weatherMark/2))
+		r.weatherIcon(w.Condition, x0+weatherMark/2, y0+15, weatherMark)
+		r.over.note(image.Rect(x0, y0+15-weatherMark/2, x0+weatherMark, y0+15+weatherMark/2))
 		x += weatherMark + 14
 	}
-	r.text(r.small, line, x, r.margin+26, dim)
+	r.text(r.small, line, x, y0+26, dim)
 	// A tap on it opens the forecast: the icon and the words, with a finger's room around them.
-	r.setWeatherAt(image.Rect(r.margin, r.margin+15-weatherMark/2, x+r.width(r.small, line), r.margin+15+weatherMark/2).Inset(-r.s(14)))
+	r.setWeatherAt(image.Rect(x0, y0+15-weatherMark/2, x+r.width(r.small, line), y0+15+weatherMark/2).Inset(-r.s(14)))
 }
 
 func (r *renderer) setDateAt(b image.Rectangle) {

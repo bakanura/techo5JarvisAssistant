@@ -43,11 +43,13 @@ func TestShowScenesDraw(t *testing.T) {
 	}
 
 	scenes := map[string]scene{
-		"clock":             {now: at, phase: "idle", weather: sky},
-		"clock-sunny":       {now: at, phase: "idle", weather: home.Weather{Condition: "sunny", Temp: "88°"}},
-		"clock-rainy":       {now: at, phase: "idle", weather: home.Weather{Condition: "rainy", Temp: "54°"}},
-		"clock-night":       {now: at, phase: "idle", weather: home.Weather{Condition: "clear-night", Temp: "58°"}},
-		"clock-no-weather":  {now: at, phase: "idle"},
+		"clock":            {now: at, phase: "idle", weather: sky},
+		"clock-sunny":      {now: at, phase: "idle", weather: home.Weather{Condition: "sunny", Temp: "88°"}},
+		"clock-rainy":      {now: at, phase: "idle", weather: home.Weather{Condition: "rainy", Temp: "54°"}},
+		"clock-night":      {now: at, phase: "idle", weather: home.Weather{Condition: "clear-night", Temp: "58°"}},
+		"clock-no-weather": {now: at, phase: "idle"},
+		// Twelve minutes on, the clock and the weather have gone four steps round the ring (burnin.go).
+		"clock-shifted":     {now: at.Add(4 * shiftEvery), phase: "idle", weather: sky},
 		"clock-call-button": {now: at, phase: "idle", weather: sky, callButton: true},
 		"drawer-call": {now: at, phase: "idle", weather: sky, showDrawer: true, drawerTab: drawerCall, demo: true,
 			callees: []phone.Callee{{Name: "a", Device: true}, {Name: "b", Device: true}, {Name: "c", Device: true},
