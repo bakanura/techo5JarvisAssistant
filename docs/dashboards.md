@@ -79,8 +79,9 @@ The Show looks for a dashboard for the area it is in, in Home Assistant. It take
    (`kitchen`, `dashboard-kitchen`; for "Küche", `kuche` and `kueche` both count);
 2. a view with the area's name in another dashboard (`lovelace/kitchen`).
 
-The Show's own dashboard and Home Assistant's built-in pages never count. Nothing is made for you: a
-house without such a dashboard has no room page, and the swipe works as before. The room's dashboard
+The Show's own dashboard and Home Assistant's built-in pages never count. The Show never makes one: a
+house without such a dashboard has no room page, and the swipe works as before. The installer can
+make a small one when you say yes ([installer](jarvis-crown-installer.md), `--room-dashboard`). The room's dashboard
 is always streamed, so it needs a [dashcast server](#setting-up-streamed) even when the Show draws
 its own dashboard itself.
 

@@ -71,6 +71,9 @@ def parse_args() -> argparse.Namespace:
     setup.add_argument("--wake-word", help="the wake word, one the Show offers (default: ask; '' leaves it alone)")
     setup.add_argument("--assistant", help="the Assist pipeline it talks to, by name (default: ask; '' leaves it alone)")
     setup.add_argument("--room", help="the Home Assistant area it stands in, by name (default: ask; '' leaves it alone)")
+    setup.add_argument("--room-dashboard", action=argparse.BooleanOptionalAction, default=None,
+                       help="make a small dashboard for its room when the house has none, the page a swipe in "
+                            "from the left goes on to (default: ask; Enter is no)")
     setup.add_argument("--no-questions", action="store_true", help="ask nothing; take switches and the keyring only")
     hass = parser.add_argument_group("home-assistant: add an installed Show to Home Assistant")
     hass.add_argument("--host", help="the Show's address, when Home Assistant has not discovered it")
@@ -159,13 +162,15 @@ def _find_host(name: str):
     return find
 
 
-# How the assistant, wake word and room questions read, by the label deploy() asks them with.
+# How the assistant, wake word, room and room dashboard questions read, by the label deploy() asks them with.
 QUESTIONS = {
     "assistant": ("Which assistant should the Show talk to?",
                   {"preferred": "the one Home Assistant has as preferred"}, ("jarvis",)),
     "wake word": ("Which wake word should it listen for?",
                   {"no_wake_word": "none, no wake word"}, ("hey jarvis", "jarvis")),
     "room": ("Which room is it in? (it plays and shows that room's music)", {}, ()),
+    "room dashboard": ("The room has no dashboard of its own. Make a small one? (heating, temperature, "
+                       "lights, blinds; the Show swipes on to it)", {}, ()),
 }
 
 
@@ -175,7 +180,8 @@ def _chooser(args):
     asker = _asker(args)
     if not asker.interactive:
         return None
-    given = {"assistant": args.assistant, "wake word": args.wake_word, "room": args.room}
+    given = {"assistant": args.assistant, "wake word": args.wake_word, "room": args.room,
+             "room dashboard": args.room_dashboard}
 
     def choose(label: str, current: str, options: list[str], shown: dict[str, str] | None = None) -> str | None:
         if given.get(label) is not None:
@@ -225,7 +231,7 @@ def deploy_to_home_assistant(settings: Settings, args, *, name: str, key_file: P
             host = saved.read_text(encoding="utf-8").strip() or None
     opts = ha_api.DeployOptions(
         name=name, psk=psk, host=host, wake_word=args.wake_word or None, assistant=args.assistant or None,
-        room=args.room or None,
+        room=args.room or None, room_dashboard=args.room_dashboard,
         settings=ha_api.DeviceSettings(dashcast=settings.dashcast, dashcast_key=settings.dashcast_key,
                                        ha_url=settings.ha_url, ha_token=settings.ha_token,
                                        music_assistant=settings.music_assistant, own_user=settings.own_ha_user),

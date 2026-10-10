@@ -87,6 +87,22 @@ class FakeHA:
         self.area = ""
         self.ws_calls = []
         self.pipelines = None
+        self.boards = []      # lovelace/dashboards/list
+        self.views = {}       # url_path (None for the default) -> its views
+        self.devices = [{"id": "D1", "area_id": None}, {"id": "D2", "area_id": "living_room"}]
+        self.entities = [
+            {"entity_id": "climate.wohnzimmer", "device_id": "D2", "area_id": None},
+            {"entity_id": "sensor.wohnzimmer_temperature", "device_id": "D2", "area_id": None},
+            {"entity_id": "sensor.wohnzimmer_battery", "device_id": "D2", "area_id": None,
+             "entity_category": "diagnostic"},
+            {"entity_id": "light.decke", "device_id": None, "area_id": "living_room"},
+            {"entity_id": "light.versteckt", "device_id": None, "area_id": "living_room", "hidden_by": "user"},
+            {"entity_id": "binary_sensor.fenster", "device_id": None, "area_id": "living_room"},
+            {"entity_id": "media_player.wohnzimmer", "device_id": None, "area_id": "living_room"},
+            {"entity_id": "light.kueche", "device_id": None, "area_id": "kitchen"},
+            {"entity_id": "light.jarvis_show_5_screen", "device_id": "D1", "area_id": None},
+        ]
+        self.classes = {"sensor.wohnzimmer_temperature": "temperature", "binary_sensor.fenster": "window"}
         self.states = {
             "select.jarvis_show_5_assistant": {"state": "preferred", "attributes": {"options": ["preferred", "Jarvis"]}},
             "select.jarvis_show_5_wake_word": {"state": "Okay Nabu", "attributes": {"options": ["Okay Nabu", "Hey Jarvis"]}},
@@ -127,6 +143,9 @@ class FakeHA:
         if path == "/api/services" and method == "GET":
             names = ["jarvis_show_5_dashboard_server", "jarvis_show_5_home_assistant", "jarvis_show_5_sendspin_server"]
             return [{"domain": "light", "services": {}}, {"domain": "esphome", "services": {n: {} for n in names}}]
+        if path == "/api/states" and method == "GET":
+            return [{"entity_id": e["entity_id"], "state": "on",
+                     "attributes": {"device_class": self.classes.get(e["entity_id"])}} for e in self.entities]
         if path.startswith("/api/states/"):
             entity = path[len("/api/states/"):]
             if self.unconfigured and entity.endswith("_wake_word"):
@@ -148,6 +167,16 @@ class FakeHA:
             if self.pipelines is None:
                 raise ha.HomeAssistantError("unknown command")
             return self.pipelines
+        if message["type"] == "lovelace/dashboards/list":
+            return list(self.boards)
+        if message["type"] == "lovelace/config":
+            if message["url_path"] not in self.views:
+                raise ha.HomeAssistantError("lovelace/config: config_not_found")
+            return {"views": self.views[message["url_path"]]}
+        if message["type"] == "config/device_registry/list":
+            return [{**d, "area_id": self.area or None} if d["id"] == "D1" else d for d in self.devices]
+        if message["type"] == "config/entity_registry/list":
+            return list(self.entities)
         self.ws_calls.append(message)
         if message["type"] == "config/device_registry/update":
             self.area = message["area_id"]
@@ -249,7 +278,8 @@ class DeployTests(unittest.TestCase):
         self.assertNotIn("Basic", shown["assistant"])
 
     def test_the_installer_shows_what_home_assistant_names(self):
-        args = argparse.Namespace(assistant=None, wake_word=None, room=None, no_questions=False)
+        args = argparse.Namespace(assistant=None, wake_word=None, room=None, room_dashboard=None,
+                                  no_questions=False)
         said = []
         asker = Asker(interactive=True, ask=lambda _: "", say=said.append)
         with mock.patch.object(show_cli, "_asker", return_value=asker):
@@ -338,6 +368,72 @@ class RoomTests(unittest.TestCase):
         _, log = run_deploy(fake, host="10.0.0.9", room="Dachboden")
         self.assertTrue(any("no room 'Dachboden'" in line for line in log))
         self.assertEqual(fake.ws_calls, [])
+
+    def test_a_room_dashboard_is_made_when_asked_for(self):
+        fake = FakeHA()
+        offered = {}
+
+        def choose(label, current, options, names=None):
+            offered[label] = (options, names)
+            return {"room": "Wohnzimmer", "room dashboard": "yes"}.get(label)
+        _, log = run_deploy(fake, choose=choose, host="10.0.0.9")
+        self.assertEqual(offered["room dashboard"][0], ["yes", "no"])
+        self.assertIn("Wohnzimmer", offered["room dashboard"][1]["yes"])
+        create, save = fake.ws_calls[1:]
+        self.assertEqual(create["type"], "lovelace/dashboards/create")
+        self.assertEqual((create["url_path"], create["title"], create["mode"]),
+                         ("dashboard-wohnzimmer", "Wohnzimmer", "storage"))
+        self.assertEqual(save["type"], "lovelace/config/save")
+        cards = save["config"]["views"][0]["sections"][0]["cards"]
+        self.assertEqual([c["entity"] for c in cards],
+                         ["climate.wohnzimmer", "sensor.wohnzimmer_temperature", "light.decke"])
+        self.assertEqual(cards[0]["features"], [{"type": "target-temperature"}])
+        self.assertIn("room dashboard dashboard-wohnzimmer made for Wohnzimmer, 3 cards", log)
+
+    def test_enter_makes_no_room_dashboard(self):
+        fake = FakeHA()
+        _, log = run_deploy(fake, choose=lambda label, *_: "Wohnzimmer" if label == "room" else None,
+                            host="10.0.0.9")
+        self.assertEqual([m["type"] for m in fake.ws_calls], ["config/device_registry/update"])
+        self.assertIn("no room dashboard for Wohnzimmer", log)
+
+    def test_a_switch_makes_it_or_never_asks(self):
+        fake = FakeHA()
+        _, log = run_deploy(fake, host="10.0.0.9", room="Wohnzimmer", room_dashboard=True)
+        self.assertIn("lovelace/dashboards/create", [m["type"] for m in fake.ws_calls])
+        fake = FakeHA()
+        asked = []
+        run_deploy(fake, choose=lambda label, *_: asked.append(label) or ("Wohnzimmer" if label == "room" else None),
+                   host="10.0.0.9", room_dashboard=False)
+        self.assertNotIn("room dashboard", asked)
+
+    def test_a_room_with_a_dashboard_keeps_it(self):
+        for boards, views, where in (
+                ([{"url_path": "living-room", "title": "Unten", "mode": "storage"}], {}, "living-room"),
+                ([{"url_path": "dashboard-x", "title": "wohnzimmer", "mode": "storage"}], {}, "dashboard-x"),
+                ([], {None: [{"title": "Wohnzimmer", "path": "wz"}]}, "lovelace/wz"),
+                ([{"url_path": "dashboard-haus", "title": "Haus", "mode": "storage"}],
+                 {"dashboard-haus": [{"title": "Wohnzimmer", "path": "unten"}]}, "dashboard-haus/unten")):
+            fake = FakeHA()
+            fake.boards, fake.views = boards, views
+            asked = []
+            _, log = run_deploy(fake, choose=lambda label, *_: asked.append(label) or (
+                "Wohnzimmer" if label == "room" else "yes"), host="10.0.0.9")
+            self.assertNotIn("room dashboard", asked)
+            self.assertIn(f"Wohnzimmer has a dashboard already ({where}); the Show goes on to it", log)
+            self.assertEqual(len(fake.ws_calls), 1)
+
+    def test_a_room_with_nothing_to_show_gets_none(self):
+        fake = FakeHA()
+        fake.entities = [e for e in fake.entities if e["entity_id"].startswith(("binary_sensor.", "media_player."))]
+        _, log = run_deploy(fake, host="10.0.0.9", room="Wohnzimmer", room_dashboard=True)
+        self.assertEqual(len(fake.ws_calls), 1)
+        self.assertTrue(any("nothing in Wohnzimmer worth a room dashboard" in line for line in log))
+
+    def test_room_keys_match_the_shows(self):
+        self.assertEqual(ha.slug_key("Küche"), "kuche")
+        self.assertEqual(ha.slug_key("Küche", True), "kueche")
+        self.assertEqual(ha.slug_key("Groß Raum_2"), "grossraum2")
 
     def test_websocket_exchange(self):
         key = "dGhlIHNhbXBsZSBub25jZQ=="

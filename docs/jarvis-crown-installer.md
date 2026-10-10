@@ -334,7 +334,15 @@ What happens with the answers:
      websocket API since REST has no device registry. The room is how the Show finds the Music
      Assistant speaker whose music it shows, when it is the only one in that area. `--room` answers
      ahead of time; Enter or `''` leaves it where it is;
-  5. hands it the DashCast server, Home Assistant access and Music Assistant address again through
+  5. when the room has no dashboard of its own (by the rules in
+     [The room's dashboard](dashboards.md#the-rooms-dashboard)), asks whether to make a small one.
+     It holds what someone standing in the room would reach for: up to two thermostats, two
+     temperature and two humidity sensors, and the room's lights, blinds and fans, twelve tiles at
+     most. Doors, windows, motion, media players and the Show itself are left out. It is made as
+     `dashboard-<room>` (for "Küche", `dashboard-kueche`), and a room with nothing on that list gets
+     none. Enter is no. `--room-dashboard` makes it without asking, `--no-room-dashboard` never
+     asks. A dashboard that is already there is never changed;
+  6. hands it the DashCast server, Home Assistant access and Music Assistant address again through
      its own actions, and turns its Sendspin switch on.
 
   The admin token is used for this and kept nowhere. Each step looks first at what is already
@@ -454,6 +462,7 @@ uses the Home Assistant, DashCast, Music Assistant and choice switches.
 | `--assistant NAME` | The Assist pipeline it talks to, or `preferred`. `''` leaves it alone. |
 | `--wake-word NAME` | One of the wake words the Show offers. `''` leaves it alone. |
 | `--room NAME` | The Home Assistant area it stands in, by name or id. `''` leaves it alone. |
+| `--room-dashboard`, `--no-room-dashboard` | Make a small dashboard for its room when the room has none, or never. Asked otherwise. |
 | `--no-questions` | Asks nothing. Only switches and the keyring count. `TECHO5_NO_PROMPT=1`, or running without a terminal, does the same. |
 
 Secrets only ever come from files, the keyring or a hidden question, never from a switch's value

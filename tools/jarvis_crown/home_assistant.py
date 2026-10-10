@@ -612,6 +612,112 @@ def _room(ha: HomeAssistant, entities: list[str], room: str | None, choose: Choo
     return f"the Show put in {areas[room]}"
 
 
+def slug_key(s: str, spell: bool = False) -> str:
+    """s with only its letters and digits left, lower case, as the Show compares dashboard addresses with
+    rooms (echod's slugKey): "living-room" and "Living Room" are one key. spell writes ä as ae."""
+    out = []
+    for c in s.lower():
+        if "a" <= c <= "z" or "0" <= c <= "9":
+            out.append(c)
+        elif c == "ß":
+            out.append("ss")
+        elif c in "äöü":
+            out.append({"ä": "a", "ö": "o", "ü": "u"}[c] + ("e" if spell else ""))
+    return "".join(out)
+
+
+def _room_board(ha: HomeAssistant, area: str, name: str) -> str | None:
+    """The dashboard the Show would take as the room's, by the Show's own rules (a dashboard titled or
+    addressed after the room, or a view with its name); None when there is none."""
+    keys = {k for k in (slug_key(area), slug_key(name), slug_key(name, True)) if k}
+    boards = ha.ws({"type": "lovelace/dashboards/list"}) or []
+    for b in boards:
+        path = str(b.get("url_path") or "")
+        if str(b.get("title") or "").strip().casefold() == name.casefold() or \
+                slug_key(path) in keys or slug_key(path.removeprefix("dashboard-")) in keys:
+            return path
+    for path in [None] + [b.get("url_path") for b in boards if b.get("mode") == "storage"]:
+        try:
+            config = ha.ws({"type": "lovelace/config", "url_path": path})
+        except HomeAssistantError:
+            continue  # never edited, or made by a strategy: nothing to look in
+        views = config.get("views") if isinstance(config, dict) else None
+        for view in views or []:
+            if isinstance(view, dict) and str(view.get("title") or "").strip().casefold() == name.casefold():
+                return f"{path or 'lovelace'}/{view.get('path') or ''}".rstrip("/")
+    return None
+
+
+# What a room's dashboard shows, in this order: what someone in the room would reach for. Doors, windows
+# and motion are left out, since whoever looks at the Show is in the room and sees them.
+_ROOM_CARDS = (("climate", None, 2), ("sensor", "temperature", 2), ("sensor", "humidity", 2),
+               ("light", None, 6), ("cover", None, 4), ("fan", None, 2))
+_ROOM_CARDS_MAX = 12
+
+
+def _room_cards(ha: HomeAssistant, area: str, own_device: str) -> list[dict]:
+    """Tile cards for what is in the area, the Show's own device left out."""
+    devices = {d.get("id"): d.get("area_id") for d in ha.ws({"type": "config/device_registry/list"}) or []}
+    here = []
+    for e in ha.ws({"type": "config/entity_registry/list"}) or []:
+        if e.get("entity_category") or e.get("hidden_by") or e.get("disabled_by"):
+            continue
+        if own_device and e.get("device_id") == own_device:
+            continue
+        if (e.get("area_id") or devices.get(e.get("device_id"))) == area:
+            here.append(e.get("entity_id") or "")
+    classes = {st.get("entity_id"): (st.get("attributes") or {}).get("device_class")
+               for st in ha.request("GET", "/api/states") or []}
+    cards: list[dict] = []
+    for domain, device_class, most in _ROOM_CARDS:
+        found = sorted(e for e in here if e.split(".", 1)[0] == domain and e in classes
+                       and (device_class is None or classes[e] == device_class))
+        for entity in found[:most]:
+            card: dict = {"type": "tile", "entity": entity}
+            if domain == "climate":
+                card["features"] = [{"type": "target-temperature"}]
+            cards.append(card)
+    return cards[:_ROOM_CARDS_MAX]
+
+
+def _room_dashboard(ha: HomeAssistant, entities: list[str], make: bool | None,
+                    choose: Chooser | None = None) -> str:
+    """Makes a small dashboard for the Show's room, the page a swipe in from the left goes on to, when the
+    house has none and make says so (None: choose is asked). An existing one is never touched."""
+    known = sorted((e for e in entities if _ENTITY_ID_RE.fullmatch(e)), key=len)
+    if not known:
+        return "no entity of the Show in Home Assistant yet, so no room dashboard"
+    text = ha.request("POST", "/api/template", {"template":
+                      "{% set d = device_id('" + known[0] + "') %}{{ d }}\t{{ area_id(d) if d else '' }}"})
+    device, _, area = str(text or "").partition("\t")
+    device, area = device.strip(), area.strip()
+    if device == "None":
+        device = ""
+    if area in ("", "None"):
+        return "the Show is in no room, so it has no room dashboard"
+    name = _areas(ha).get(area, area)
+    found = _room_board(ha, area, name)
+    if found:
+        return f"{name} has a dashboard already ({found}); the Show goes on to it"
+    if make is None:
+        picked = choose("room dashboard", "", ["yes", "no"],
+                        {"yes": f"yes, a small one for {name}", "no": "no"}) if choose else None
+        make = picked == "yes"
+    if not make:
+        return f"no room dashboard for {name}"
+    cards = _room_cards(ha, area, device)
+    if not cards:
+        return f"nothing in {name} worth a room dashboard (no heating, lights, blinds or fans), so none made"
+    url_path = "dashboard-" + (slug_key(name, True) or slug_key(area) or "room")
+    ha.ws({"type": "lovelace/dashboards/create", "url_path": url_path, "title": name, "icon": "mdi:sofa",
+           "require_admin": False, "show_in_sidebar": True, "mode": "storage"})
+    ha.ws({"type": "lovelace/config/save", "url_path": url_path, "config": {
+        "title": name,
+        "views": [{"title": name, "path": "room", "type": "sections", "max_columns": 3,
+                   "sections": [{"type": "grid", "cards": cards}]}]}})
+    return f"room dashboard {url_path} made for {name}, {len(cards)} cards"
+
+
 def _services(ha: HomeAssistant) -> set[str]:
     for domain in ha.request("GET", "/api/services") or []:
         if domain.get("domain") == "esphome":
@@ -722,6 +828,7 @@ class DeployOptions:
     wake_word: str | None = None   # None: keep the Show's, or ask through choose
     assistant: str | None = None   # the Assist pipeline the Show talks to; None as above
     room: str | None = None        # the area it is in, by name or id; None as above
+    room_dashboard: bool | None = None  # make a small one for the room if it has none; None: ask
     settings: DeviceSettings = DeviceSettings()
     wait_seconds: float = 300.0
 
@@ -769,7 +876,7 @@ def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], 
     # The options change reloads the entry, so the entities and actions come back a moment later.
     entities: list[str] = []
     want_selects = bool(opts.wake_word or opts.assistant or choose)
-    want_entities = want_selects or bool(s.music_assistant or opts.room or s.own_user)
+    want_entities = want_selects or bool(s.music_assistant or opts.room or opts.room_dashboard or s.own_user)
     while True:
         entities = entry_entities(ha, entry_id) if want_entities else []
         services = _services(ha) if wanted else set()
@@ -788,6 +895,8 @@ def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], 
         progress(_select(ha, entities, "_wake_word", opts.wake_word, choose))
     if opts.room or choose:
         progress(_room(ha, entities, opts.room, choose))
+    if opts.room_dashboard or (opts.room_dashboard is None and choose):
+        progress(_room_dashboard(ha, entities, opts.room_dashboard, choose))
     services = _services(ha) if wanted else set()
     own_given = False
     for svc, data, what in wanted:
