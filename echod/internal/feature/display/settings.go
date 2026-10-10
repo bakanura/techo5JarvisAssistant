@@ -25,7 +25,7 @@ import (
 // interface listing.
 func (d *Display) gather(s scene, restartArm time.Time) settings {
 	d.mu.Lock()
-	st := settings{cat: d.cat, picker: d.picker, cardScroll: d.cardScroll, pickScroll: d.pickScroll, checking: d.checking, colors: d.colors, folder: d.folder, brightness: d.ceiling, auto: d.autoOn, now: s.now, restartArm: restartArm}
+	st := settings{cat: d.cat, picker: d.picker, cardScroll: d.cardScroll, pickScroll: d.pickScroll, checking: d.checking, colors: d.colors, folder: d.folder, brightness: d.ceiling, auto: d.autoOn, now: s.now, restartArm: restartArm, resetArm: d.resetArm}
 	d.mu.Unlock()
 	if st.brightness == 0 {
 		st.brightness = config.DefaultScreenBrightness
@@ -94,6 +94,19 @@ func address() string {
 		}
 	}
 	return "-"
+}
+
+// resetMark is what tells the boot script to erase the device before anything starts (t5_factory_reset).
+var resetMark = layout.StateDir + "/factory_reset"
+
+// factoryReset leaves the mark and restarts; the boot script erases. Nothing is erased here, while
+// the daemon is running and could write some of it back. A variable so a test can stand in for it.
+var factoryReset = func() {
+	if err := os.WriteFile(resetMark, []byte("screen\n"), 0o600); err != nil {
+		slog.Error("factory reset: leaving the mark failed, nothing erased", "err", err)
+		return
+	}
+	restart()
 }
 
 // restart reboots the device the plain way; the slot store and the daemon's state are on disk

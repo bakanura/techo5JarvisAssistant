@@ -365,6 +365,29 @@ It will do that three times in ten minutes and then leave it off, since a statio
 up is not going to. The log says `the stream ended by itself, putting it back on`. Music starting
 again on its own is this, not a fault.
 
+## Factory reset
+
+For a Show you're passing on, or one you want to set up from scratch. On the Show, open the settings,
+go to **General**, and tap **Factory reset** at the bottom. The button turns into **Erase**; wait a
+moment and tap it. A quick double tap doesn't count, and after eight seconds it goes back to
+**Reset**.
+
+The Show restarts and erases, before anything else starts:
+
+- its settings, alarms, name, Bluetooth pairings and wake words;
+- the Wi-Fi networks it knew, including the ones LineageOS had saved;
+- the Home Assistant key, which is replaced with a random one nobody has;
+- the root password, the USB debugging switch and the SSH keys Home Assistant gave it;
+- its logs, except the rescue log.
+
+It comes back like a newly installed Show: the Wi-Fi page asks for a network, and the USB port is
+closed. What it was installed as (the profile) and the TECHO5 version stay. LineageOS's own data on
+userdata (downloads and the like) isn't touched.
+
+Your Home Assistant can't reach it any more: delete it from **Settings → Devices & services →
+ESPHome**. To add it again, open its setup page, go to **General** and choose **Let a Home Assistant
+add this device**, as after [leaving Home Assistant](actions.md#disconnect-the-device-from-home-assistant-for-good).
+
 ## Troubleshooting
 
 | Symptom | Cause and fix |

@@ -115,7 +115,7 @@ t5_usb_host() {
 }
 
 # T5_ROOT_PW is root's password as /etc/shadow keeps it ("$6$salt$hash"), set by the installer or
-# techo5-passwd; factory reset removes it. The root filesystem is read-only, so t5_root_pw lays a copy
+# techo5-passwd; factory reset removes it (t5_factory_reset). The root filesystem is read-only, so t5_root_pw lays a copy
 # of /etc/shadow with that line over it. While one is set, the serial console asks for it.
 T5_ROOT_PW=/data/misc/techo5/root_pw
 
@@ -134,6 +134,39 @@ t5_root_pw() {
 	chown root:shadow /run/techo5/shadow 2>/dev/null
 	mount --bind /run/techo5/shadow /etc/shadow || return 1
 	: > /run/techo5/root_pw_on
+}
+
+# T5_RESET is the mark the screen's Factory reset leaves before it restarts (echod's resetMark).
+T5_RESET=/data/misc/techo5/factory_reset
+
+# t5_factory_reset [root]: when the mark is there, erases what this device was set up with before
+# anything that could write it back has started: the daemon's state and settings, its name, the Home
+# Assistant key, the root password, Bluetooth pairings, the Wi-Fi it knew (Android's saved networks
+# too, or t5_wifi_conf would bring them back), ssh host keys and the logs. The profile stays: it is
+# what the image was installed as, not a setting. Android's other data on userdata stays as well.
+# The Home Assistant key is replaced with a random one nobody holds, not removed: a missing key is an
+# open device, and adding it again goes through the setup page's adoption window. The mark goes
+# last, so a power cut halfway erases again on the next boot. [root] is for the tests.
+t5_factory_reset() {
+	r=${1:-}
+	st=$r/data/misc/techo5
+	[ -e "$r$T5_RESET" ] || return 1
+	log "factory reset: erasing"
+	for f in "$st"/* "$st"/.[!.]*; do
+		[ -e "$f" ] || [ -L "$f" ] || continue
+		case ${f##*/} in profile|factory_reset) continue ;; esac
+		rm -rf "$f"
+	done
+	(umask 077; head -c 32 /dev/urandom | base64 > "$st/psk.new") && mv -f "$st/psk.new" "$st/psk"
+	rm -rf "$r/data/techo5-linux/wpa_supplicant.conf" "$r/data/techo5-linux/wpa_supplicant.conf".* \
+		"$r/data/techo5-linux/dropbear" "$r/data/techo5-linux/crash" \
+		"$r/data/techo5-linux/techo5.log" "$r/data/techo5-linux/techo5.log".* \
+		"$r/data/techo5-linux/echod.log" "$r/data/techo5-linux/boot.log"
+	rm -f "$r/data/misc/apexdata/com.android.wifi/WifiConfigStore"* "$r/data/misc/wifi/WifiConfigStore"*
+	sync
+	rm -f "$r$T5_RESET"
+	sync
+	log "factory reset: done"
 }
 
 # t5_wifi_store_records <xml>: the networks in an Android WifiConfigStore, three

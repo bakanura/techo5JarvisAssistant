@@ -1164,7 +1164,7 @@ const radioCueFor = 20 * time.Second
 func (d *Display) showSheet(on bool) {
 	d.mu.Lock()
 	d.sheet = on
-	d.restartArm, d.picker, d.cardScroll, d.pickScroll, d.colors = time.Time{}, "", 0, 0, false
+	d.restartArm, d.resetArm, d.picker, d.cardScroll, d.pickScroll, d.colors = time.Time{}, time.Time{}, "", 0, 0, false
 	d.mu.Unlock()
 	slog.Info("settings sheet", "open", on)
 	d.wake()
@@ -1529,7 +1529,7 @@ func (d *Display) OpenSheet(name string) bool {
 	}
 	d.closeDrawer()
 	d.mu.Lock()
-	d.sheet, d.cat, d.picker, d.restartArm = true, cat, "", time.Time{}
+	d.sheet, d.cat, d.picker, d.restartArm, d.resetArm = true, cat, "", time.Time{}, time.Time{}
 	d.draft, d.cardScroll, d.pickScroll = nil, 0, 0
 	d.mu.Unlock()
 	d.wake()

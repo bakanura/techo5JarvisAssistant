@@ -342,3 +342,37 @@ func TestACutLineLeavesTheValueWhole(t *testing.T) {
 		}
 	}
 }
+
+// Factory reset wants two taps like Restart, but a double tap or a resting finger is no yes: the
+// second tap only counts after resetPause, and the arm runs out after resetWindow.
+func TestFactoryResetAsksTwiceSlowly(t *testing.T) {
+	resets := 0
+	was := factoryReset
+	factoryReset = func() { resets++ }
+	t.Cleanup(func() { factoryReset = was })
+
+	d := &Display{r: testRenderer()}
+	d.deviceRowTap("factoryreset", partMain, 0)
+	d.deviceRowTap("factoryreset", partMain, 0)
+	if resets != 0 {
+		t.Fatal("a quick double tap erased the Show")
+	}
+	if row := resetRows(settings{now: time.Now(), resetArm: d.resetArm})[0]; row.button != "Erase" {
+		t.Errorf("armed button = %q, want Erase", row.button)
+	}
+
+	d.resetArm = time.Now().Add(-2 * resetPause)
+	d.deviceRowTap("factoryreset", partMain, 0)
+	if resets != 1 {
+		t.Fatalf("a deliberate second tap: %d resets, want 1", resets)
+	}
+
+	d.resetArm = time.Now().Add(-resetWindow - time.Second)
+	d.deviceRowTap("factoryreset", partMain, 0)
+	if resets != 1 {
+		t.Error("a tap after the arm ran out erased the Show")
+	}
+	if row := resetRows(settings{now: time.Now()})[0]; row.button != "Reset" {
+		t.Errorf("resting button = %q, want Reset", row.button)
+	}
+}

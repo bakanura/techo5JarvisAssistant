@@ -37,6 +37,10 @@ mountpoint -q /store || mount -t ext4 -o ro,noatime $STORE_DEV /store
 mount -t tmpfs tmpfs /var/log
 mount -t tmpfs tmpfs /var/tmp
 mkdir -p /run/lock /run/techo5
+# Factory reset from the screen: it left a mark and restarted, and the erasing is done here, before
+# anything that keeps state is running. What it removes and boot.sh recreates (time zone, models) is
+# recreated below as on a fresh unit.
+t5_factory_reset || true
 # Older TECHO5 images used the system umask for these userdata paths. Repair them on every boot so
 # an upgraded unit does not keep readable credentials, logs or crash material indefinitely.
 mkdir -p -m 700 $LOGDIR /data/misc/techo5 /data/misc/techo5/models

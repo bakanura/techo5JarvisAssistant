@@ -64,6 +64,9 @@ func (d *Display) deviceRowTap(id string, _ part, _ int) bool {
 	return true
 }
 
+// resetRows is none: the wipe is done by the Show's boot script, which the Spot doesn't run.
+func resetRows(settings) []settingRow { return nil }
+
 // swatchStrip is the custom colors row, which the Spot has no use for.
 func (r *paint) swatchStrip(settingRow, int, int, int) {}
 

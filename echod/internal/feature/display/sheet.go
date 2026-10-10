@@ -218,7 +218,7 @@ func generalRows(sv sheetView) []settingRow {
 	}
 	rows := []settingRow{{label: "Name", sub: "Change it on the setup page", kind: ctlValue, value: st.name}}
 	rows = append(rows, calendarRows()...)
-	return append(rows,
+	rows = append(rows,
 		settingRow{id: "weather", label: "Weather", sub: "Shown with the clock", kind: ctlChoice, value: st.weather, button: "Show"},
 		settingRow{id: "timezone", label: "Time zone", sub: zoneSub(), kind: ctlChoice, value: zoneValue()},
 		settingRow{id: "screenlang", label: "Screen language", sub: "The words on this screen and the ones it listens for",
@@ -227,6 +227,7 @@ func generalRows(sv sheetView) []settingRow {
 		settingRow{label: "About", kind: ctlValue, value: deviceModel + " · slot " + st.slot},
 		restart,
 	)
+	return append(rows, resetRows(st)...)
 }
 
 // connectionRows are the Connections card's: Wi-Fi, Bluetooth audio, and the Bluetooth proxy.
@@ -707,7 +708,7 @@ func (d *Display) nextTap(x, y int) {
 		d.closeSheet()
 	case zoneCat:
 		d.mu.Lock()
-		d.cat, d.picker, d.restartArm, d.draft, d.colors = z.cat, "", time.Time{}, nil, false
+		d.cat, d.picker, d.restartArm, d.resetArm, d.draft, d.colors = z.cat, "", time.Time{}, time.Time{}, nil, false
 		d.cardScroll, d.pickScroll = 0, 0
 		d.mu.Unlock()
 	case zoneAction:

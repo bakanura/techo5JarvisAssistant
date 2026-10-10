@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/HuskerMinion/techo5/echod/internal/config"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/home"
@@ -80,6 +81,17 @@ func colorsCard() cardView {
 	return v
 }
 
+// resetRows is the General card's last row, Factory reset. Its first tap arms it, and only a second
+// one between resetPause and resetWindow later erases.
+func resetRows(st settings) []settingRow {
+	row := settingRow{id: "factoryreset", label: "Factory reset",
+		sub: "Erases the settings, Wi-Fi, the Home Assistant key and the root password", kind: ctlDanger, button: "Reset"}
+	if since := st.now.Sub(st.resetArm); !st.resetArm.IsZero() && since < resetWindow {
+		row.sub, row.button = "Tap Erase to wipe this Show and restart", "Erase"
+	}
+	return []settingRow{row}
+}
+
 // adaptRows is the Show's rows as they are: its card is wide enough for all of them.
 func adaptRows(rows []settingRow, _ sheetView) []settingRow { return rows }
 
@@ -148,6 +160,21 @@ func (d *Display) deviceRowTap(id string, p part, opt int) bool {
 		d.mu.Lock()
 		d.colors, d.cardScroll = true, 0
 		d.mu.Unlock()
+	case "factoryreset":
+		d.mu.Lock()
+		since := time.Since(d.resetArm)
+		armed := !d.resetArm.IsZero() && since < resetWindow
+		switch {
+		case !armed:
+			d.resetArm = time.Now()
+		case since < resetPause:
+			armed = false // the same press, or one right after: wait for a deliberate second
+		}
+		d.mu.Unlock()
+		if armed {
+			slog.Warn("factory reset asked for from the screen")
+			factoryReset()
+		}
 	case "wifi":
 		if wifi.Available() {
 			d.showSheet(false)
