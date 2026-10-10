@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image"
 	"testing"
+	"time"
 
 	"github.com/HuskerMinion/techo5/echod/internal/feature/home"
 )
@@ -48,6 +49,16 @@ func TestTheNowPlayingButtonsFitTheirPanel(t *testing.T) {
 			}
 			if play.Max.Y != cover.Max.Y {
 				t.Errorf("the row ends at %d, not level with the cover's foot at %d", play.Max.Y, cover.Max.Y)
+			}
+			// The Lyrics pill sits in the head of the column, left of the clock, clear of the row.
+			now := time.Date(2026, 10, 10, 22, 58, 0, 0, time.UTC)
+			words := r.lyricsButton(now)
+			clock := col.Max.X - r.width(r.small, clockText(now))
+			if !words.In(screen) || words.Min.X < col.Min.X+col.Dx()/3 || words.Max.X > clock-r.s(8) {
+				t.Errorf("the Lyrics pill %v is not between the place and the clock at %d in %v", words, clock, col)
+			}
+			if words.Inset(-r.s(8)).Overlaps(fav) || words.Max.Y > col.Min.Y+r.s(60) {
+				t.Errorf("the Lyrics pill %v is not in the head of the column %v", words, col)
 			}
 			if footer := panel.Y - r.s(26); play.Max.Y > footer {
 				t.Errorf("the buttons reach %d, into the footer at %d", play.Max.Y, footer)

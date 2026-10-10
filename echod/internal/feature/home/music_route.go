@@ -49,6 +49,21 @@ type MusicPlaybackView struct {
 	Position float64
 	Duration float64
 	Next     string
+
+	// PositionAt is when Position was true; a playing song has moved on since.
+	PositionAt time.Time
+}
+
+// Elapsed is how far into the song it is at now: Position, moved on by the time since while playing.
+func (v MusicPlaybackView) Elapsed(now time.Time) float64 {
+	p := v.Position
+	if v.Playing && !v.PositionAt.IsZero() {
+		p += now.Sub(v.PositionAt).Seconds()
+	}
+	if v.Duration > 0 && p > v.Duration {
+		p = v.Duration
+	}
+	return max(p, 0)
 }
 
 type musicPlaybackState struct {
@@ -333,6 +348,7 @@ func (f *Feature) musicPlaybackTick() {
 		if hadPicture && !media.Get().Carried() {
 			RemoteArt(nil, nil)
 		}
+		refreshLyrics(queueSong{})
 		return
 	}
 
@@ -380,6 +396,7 @@ func (f *Feature) musicPlaybackTick() {
 		}
 		view.Position = floatAttr(st, "media_position")
 		view.Duration = floatAttr(st, "media_duration")
+		view.PositionAt = time.Now()
 		if view.Playing && view.Duration > 0 {
 			if updated, _ := st.Attributes["media_position_updated_at"].(string); updated != "" {
 				if at, err := time.Parse(time.RFC3339Nano, updated); err == nil {
@@ -409,14 +426,17 @@ func (f *Feature) musicPlaybackTick() {
 	}
 
 	musicPlayback.Lock()
-	needQueue := musicPlayback.queueFor != active || time.Since(musicPlayback.queueAt) >= 15*time.Second
+	// A new song is asked about at once, so its words and what comes next are not a poll behind.
+	needQueue := musicPlayback.queueFor != active || musicPlayback.view.Title != view.Title ||
+		time.Since(musicPlayback.queueAt) >= 15*time.Second
 	if !needQueue {
 		view.Next = musicPlayback.view.Next
 	}
 	musicPlayback.Unlock()
+	var song *queueSong
 	if needQueue {
-		if next, err := musicQueueNext(active); err == nil {
-			view.Next = next
+		if next, cur, err := musicQueue(active); err == nil {
+			view.Next, song = next, &cur
 			musicPlayback.Lock()
 			musicPlayback.queueFor, musicPlayback.queueAt = active, time.Now()
 			musicPlayback.Unlock()
@@ -426,26 +446,53 @@ func (f *Feature) musicPlaybackTick() {
 	musicPlayback.view = view
 	musicPlayback.Unlock()
 	f.Changed.Emit(struct{}{})
+	if song != nil {
+		refreshLyrics(*song)
+	}
 }
 
-func musicQueueNext(entity string) (string, error) {
+// musicQueue is the name of the song after this one, and what the queue knows of this one.
+func musicQueue(entity string) (next string, cur queueSong, err error) {
 	raw, err := hass.Get().CallResponse("music_assistant", "get_queue", map[string]any{"entity_id": entity})
 	if err != nil {
-		return "", err
+		return "", queueSong{}, err
+	}
+	type item struct {
+		Name      string `json:"name"`
+		MediaItem *struct {
+			Name string `json:"name"`
+		} `json:"media_item"`
+		StreamDetails *struct {
+			Provider string `json:"provider"`
+			ItemID   string `json:"item_id"`
+		} `json:"stream_details"`
 	}
 	var response map[string]struct {
-		NextItem *struct {
-			Name string `json:"name"`
-		} `json:"next_item"`
+		CurrentItem *item `json:"current_item"`
+		NextItem    *item `json:"next_item"`
 	}
 	if err := json.Unmarshal(raw, &response); err != nil {
-		return "", err
+		return "", queueSong{}, err
 	}
 	q, ok := response[entity]
-	if !ok || q.NextItem == nil {
-		return "", nil
+	if !ok {
+		return "", queueSong{}, nil
 	}
-	return strings.TrimSpace(q.NextItem.Name), nil
+	if q.NextItem != nil {
+		next = strings.TrimSpace(q.NextItem.Name)
+	}
+	if c := q.CurrentItem; c != nil {
+		cur.Name = strings.TrimSpace(c.Name)
+		if c.MediaItem != nil {
+			// The bare song name, as the player reports it in media_title; the queue's own name has
+			// the artist in front.
+			cur.Name = strings.TrimSpace(c.MediaItem.Name)
+		}
+		if d := c.StreamDetails; d != nil {
+			cur.Provider, cur.ID = d.Provider, d.ItemID
+		}
+	}
+	return next, cur, nil
 }
 
 // MusicPlayback reports optional routing/progress/queue context for the native music page. It never

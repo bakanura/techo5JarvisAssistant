@@ -274,6 +274,11 @@ type Display struct {
 	showingPlaying bool
 	showingWord    bool
 
+	// lyricsOn is the now-playing page showing the song's words, from its Lyrics button, and
+	// showingLyrics whether the last frame had that button on it.
+	lyricsOn      bool
+	showingLyrics bool
+
 	// ringPreview shows the ringing page silently until then.
 	ringPreview time.Time
 
@@ -943,7 +948,15 @@ func (d *Display) gesture(g touch.Gesture) {
 			if d.r != nil {
 				fav, back, _, next, stop := d.r.nowPlayingButtons()
 				at := image.Pt(g.X, g.Y)
+				d.mu.Lock()
+				words := d.showingLyrics
+				d.mu.Unlock()
 				switch {
+				case words && at.In(d.r.lyricsButton(time.Now()).Inset(-d.r.s(8))):
+					d.mu.Lock()
+					d.lyricsOn = !d.lyricsOn
+					d.mu.Unlock()
+					d.wake()
 				case at.In(stop):
 					go d.endMusic()
 				case at.In(fav):
@@ -1780,7 +1793,12 @@ func (d *Display) frame() time.Duration {
 		s.nowPlaying, s.strip = false, true
 	}
 	s.faved = d.favedKey != "" && d.favedKey == s.radio.Title+"\x00"+s.radio.Now
+	if l := home.Get().MusicLyrics(); s.nowPlaying && s.radio.Now == "Music Assistant" && l != nil && l.Title == s.music.Title {
+		s.lyrics = l
+	}
+	s.showLyrics = d.lyricsOn && s.lyrics != nil
 	d.showingPlaying, d.showingStrip, d.showingWord = s.nowPlaying, s.strip, playingWord(s) != ""
+	d.showingLyrics = s.lyrics != nil
 	d.mu.Unlock()
 	s.weather = home.Get().Weather()
 	d.calendarScene(&s, now)
@@ -1901,7 +1919,15 @@ func (d *Display) frame() time.Duration {
 		return eqFrame // the bars are moving
 	}
 	if s.showWeather || s.nowPlaying {
-		return time.Until(now.Truncate(idleFrame).Add(idleFrame))
+		next := time.Until(now.Truncate(idleFrame).Add(idleFrame))
+		if s.showLyrics && s.music.Playing {
+			// The next line lights when it is sung, not on the second after.
+			el := time.Duration(s.music.Elapsed(now) * float64(time.Second))
+			if at := s.lyrics.NextAt(el); at > el && at-el < next {
+				return at - el
+			}
+		}
+		return next
 	}
 	if (s.phase == "idle" || s.phase == "lingering") && !s.showVolume {
 		// On the next whole second, so the clock changes when the second does.

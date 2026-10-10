@@ -103,6 +103,10 @@ type scene struct {
 	showWeather bool
 	music       home.MusicPlaybackView
 	forecast    forecastDays
+	// lyrics is the words of the song on the now-playing page, when the music server has them, and
+	// showLyrics the page showing them in place of the song's details.
+	lyrics     *home.Lyrics
+	showLyrics bool
 	// showRadar is the rain map in place of the forecast.
 	showRadar  bool
 	radar      home.RadarView

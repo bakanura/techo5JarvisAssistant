@@ -9,6 +9,7 @@ import (
 	"image/draw"
 	"math"
 	"strings"
+	"time"
 	"unicode"
 
 	xdraw "golang.org/x/image/draw"
@@ -51,6 +52,10 @@ func (r *renderer) nowPlaying(s scene) {
 	if rd.Now == "Music Assistant" {
 		label = musicPlace(s.music)
 	}
+	if s.showLyrics && rd.Title != "" {
+		// The words take the song's place below, so the head says which song they are.
+		label = rd.Title
+	}
 
 	// The head of the column: where it plays, and the time on the right. The page is looked at for
 	// minutes, and the big clock is not on it.
@@ -58,56 +63,66 @@ func (r *renderer) nowPlaying(s scene) {
 	clock := clockText(s.now)
 	cw := r.width(r.small, clock)
 	r.text(r.small, clock, col.Max.X-cw, head, dim)
-	r.text(r.small, r.fit(r.small, label, col.Dx()-cw-r.s(24)), col.Min.X, head, amber)
+	labelEnd := col.Max.X - cw - r.s(24)
+	if s.lyrics != nil {
+		b := r.lyricsButton(s.now)
+		r.lyricsPill(b, s.showLyrics)
+		labelEnd = b.Min.X - r.s(16)
+	}
+	r.text(r.small, r.fit(r.small, label, labelEnd-col.Min.X), col.Min.X, head, amber)
 
 	fav, back, _, _, _ := r.nowPlayingButtons()
 	bar := back.Min.Y - r.s(34)
 	room := bar - r.s(44) // the words stop clear of the times over the bar
 
-	headline := station
-	if rd.Title != "" {
-		headline = rd.Title
-	}
-	face := r.title
-	if r.width(face, headline) > col.Dx() && len(r.wrap(face, headline, col.Dx())) > 2 {
-		face = r.body
-	}
-	y := head + r.s(66)
-	lines := r.wrap(face, headline, col.Dx())
-	for i, line := range lines {
-		if i == 2 {
-			break
+	if s.showLyrics {
+		r.lyricWords(s, col, head, room)
+	} else {
+		headline := station
+		if rd.Title != "" {
+			headline = rd.Title
 		}
-		if i == 1 && len(lines) > 2 {
-			line = r.clipTo(face, line+" "+strings.Join(lines[2:], " "), col.Dx())
+		face := r.title
+		if r.width(face, headline) > col.Dx() && len(r.wrap(face, headline, col.Dx())) > 2 {
+			face = r.body
 		}
-		r.text(face, line, col.Min.X, y, cream)
-		y += r.s(52)
-	}
-	y -= r.s(52)
-	line := func(face font.Face, text string, step int, c color.RGBA) {
-		if text == "" || y+step > room {
-			return
+		y := head + r.s(66)
+		lines := r.wrap(face, headline, col.Dx())
+		for i, line := range lines {
+			if i == 2 {
+				break
+			}
+			if i == 1 && len(lines) > 2 {
+				line = r.clipTo(face, line+" "+strings.Join(lines[2:], " "), col.Dx())
+			}
+			r.text(face, line, col.Min.X, y, cream)
+			y += r.s(52)
 		}
-		y += step
-		r.text(face, r.clipTo(face, text, col.Dx()), col.Min.X, y, c)
-	}
-	line(r.body, rd.Artist, r.s(48), dim)
-	line(r.small, rd.Album, r.s(42), dim)
+		y -= r.s(52)
+		line := func(face font.Face, text string, step int, c color.RGBA) {
+			if text == "" || y+step > room {
+				return
+			}
+			y += step
+			r.text(face, r.clipTo(face, text, col.Dx()), col.Min.X, y, c)
+		}
+		line(r.body, rd.Artist, r.s(48), dim)
+		line(r.small, rd.Album, r.s(42), dim)
 
-	// A group says which rooms it reached; the queue says what comes next.
-	if rd.Now == "Music Assistant" && len(s.music.Rooms) > 1 {
-		line(r.small, strings.Join(s.music.Rooms, "  ·  "), r.s(40), amber)
-	}
-	if rd.Now == "Music Assistant" && s.music.Next != "" {
-		line(r.small, i18n.T("Next")+"  ·  "+s.music.Next, r.s(40), dim)
+		// A group says which rooms it reached; the queue says what comes next.
+		if rd.Now == "Music Assistant" && len(s.music.Rooms) > 1 {
+			line(r.small, strings.Join(s.music.Rooms, "  ·  "), r.s(40), amber)
+		}
+		if rd.Now == "Music Assistant" && s.music.Next != "" {
+			line(r.small, i18n.T("Next")+"  ·  "+s.music.Next, r.s(40), dim)
+		}
 	}
 
 	// Music Assistant's player state supplies a best-effort position/duration. Sendspin deliberately
 	// has no position in its protocol, so an unavailable HA value leaves an honest empty bar rather
 	// than inventing timing.
 	if rd.Now == "Music Assistant" {
-		r.musicProgress(s.music, image.Rect(col.Min.X, bar, col.Max.X, bar+r.s(6)))
+		r.musicProgress(s.music, s.now, image.Rect(col.Min.X, bar, col.Max.X, bar+r.s(6)))
 	}
 
 	// One row: the star, back, play or pause, forward, and stop. Sendspin routes these back to Music
@@ -180,6 +195,90 @@ func (r *renderer) transportButtons() (back, play, next image.Rectangle) {
 	play = image.Rect(x+w+gap, y, x+2*w+gap, y+h)
 	next = image.Rect(x+2*(w+gap), y, x+3*w+2*gap, y+h)
 	return back, play, next
+}
+
+// lyricsButton is the words button in the head of the column, left of the clock: a pill with lines of
+// text drawn on it, because a word there cost the room's name most of its letters on the Show 5. It is
+// there only for a song the music server has words for. The clock's width moves it, so a tap is checked
+// against the same clock the frame drew.
+func (r *renderer) lyricsButton(now time.Time) image.Rectangle {
+	_, col := r.nowPlayingLayout()
+	right := col.Max.X - r.width(r.small, clockText(now)) - r.s(18)
+	top := col.Min.Y - r.s(6)
+	return image.Rect(right-r.s(56), top, right, top+r.s(42))
+}
+
+// lyricsPill is the button: lit while the words are up, on the ground's own color while they are not.
+func (r *renderer) lyricsPill(b image.Rectangle, on bool) {
+	ground, ink := shift(walnut, 10), cream
+	if !dark() {
+		ground = shift(walnut, -6)
+	}
+	if on {
+		ground, ink = amber, onAccent()
+	}
+	r.roundButton(b, float64(b.Dy())/2, ground)
+	// Three lines of a verse, ragged on the right.
+	x := float64(b.Min.X + r.s(17))
+	cy, gap, th := float64(b.Min.Y+b.Max.Y)/2, float64(r.s(8)), float64(r.s(4))
+	for i, w := range []float64{22, 15, 19} {
+		y := cy + float64(i-1)*gap
+		r.roundFillF(x, y-th/2, x+float64(r.s(int(w))), y+th/2, th/2, ink)
+	}
+}
+
+// lyricWords is the song's words between the head and the bar, in place of the song's details. Timed
+// words keep the line being sung near the top, lit, with the one before it above when it is short; untimed ones
+// have no line being sung and move down through the song as it goes.
+func (r *renderer) lyricWords(s scene, col image.Rectangle, head, room int) {
+	l := s.lyrics
+	type row struct {
+		text string
+		line int
+	}
+	var rows []row
+	first := make([]int, len(l.Lines))
+	for i, ln := range l.Lines {
+		first[i] = len(rows)
+		text := ln.Text
+		if text == "" && l.Synced {
+			text = "♪" // a gap in timed words is the band playing
+		} else if text == "" {
+			rows = append(rows, row{"", i}) // and in untimed ones the gap between verses
+			continue
+		}
+		for _, w := range r.wrap(r.body, text, col.Dx()) {
+			rows = append(rows, row{r.clipTo(r.body, w, col.Dx()), i})
+		}
+	}
+	step := r.s(50)
+	top := head + r.s(62)
+	fits := max((room-top)/step+1, 1)
+	elapsed := time.Duration(s.music.Elapsed(s.now) * float64(time.Second))
+	cur := l.Current(elapsed)
+	start := 0
+	switch {
+	case l.Synced && cur >= 0:
+		// The line before stays above for the eye coming back, unless it would show only its end.
+		start = first[cur]
+		if cur > 0 && first[cur]-first[cur-1] == 1 {
+			start--
+		}
+	case !l.Synced && s.music.Duration > 0 && len(rows) > fits:
+		start = int(float64(len(rows)-fits+1) * elapsed.Seconds() / s.music.Duration)
+	}
+	start = min(start, max(len(rows)-fits, 0))
+	past := lerp(walnut, dim, 0.55)
+	for i, y := start, top; i < len(rows) && y <= room; i, y = i+1, y+step {
+		c := dim
+		switch {
+		case !l.Synced || rows[i].line == cur:
+			c = cream
+		case rows[i].line < cur:
+			c = past
+		}
+		r.text(r.body, rows[i].text, col.Min.X, y, c)
+	}
 }
 
 // coverArt draws the picture in its square: the cover with rounded corners and a shadow under it, a
@@ -378,7 +477,10 @@ func prettyMusicName(v string) string {
 }
 
 // musicProgress is the position as a rounded bar in b, with the time gone and the length over its ends.
-func (r *renderer) musicProgress(v home.MusicPlaybackView, b image.Rectangle) {
+// The position moves on from Music Assistant's last report while the song plays, so the time gone
+// counts up between reports rather than jumping.
+func (r *renderer) musicProgress(v home.MusicPlaybackView, now time.Time, b image.Rectangle) {
+	pos := v.Elapsed(now)
 	rad := float64(b.Dy()) / 2
 	track := shift(walnut, 18)
 	if !dark() {
@@ -386,12 +488,12 @@ func (r *renderer) musicProgress(v home.MusicPlaybackView, b image.Rectangle) {
 	}
 	r.roundFillF(float64(b.Min.X), float64(b.Min.Y), float64(b.Max.X), float64(b.Max.Y), rad, track)
 	if v.Duration > 0 {
-		p := min(max(v.Position/v.Duration, 0), 1)
+		p := min(max(pos/v.Duration, 0), 1)
 		fill := float64(b.Min.X) + float64(b.Dx())*p
 		if fill > float64(b.Min.X)+2*rad {
 			r.roundFillF(float64(b.Min.X), float64(b.Min.Y), fill, float64(b.Max.Y), rad, amber)
 		}
-		left := mediaClock(v.Position)
+		left := mediaClock(pos)
 		right := mediaClock(v.Duration)
 		r.text(r.tiny, left, b.Min.X, b.Min.Y-r.s(12), dim)
 		r.text(r.tiny, right, b.Max.X-r.width(r.tiny, right), b.Min.Y-r.s(12), dim)

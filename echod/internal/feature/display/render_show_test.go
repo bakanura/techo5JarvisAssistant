@@ -138,6 +138,20 @@ func TestShowScenesDraw(t *testing.T) {
 		"nowplaying-cover-group-paused": {now: at, phase: "idle", nowPlaying: true, paused: true, faved: true, weather: sky,
 			radio: home.Radio{Now: "Music Assistant", Title: "A Very Long Song Title That Has To Be Wrapped Over Two Lines And Then Cut", Artist: "Somebody With A Long Name", Music: true, Thumb: testCover(400, false)},
 			music: home.MusicPlaybackView{Route: "wohnung", Rooms: []string{"Living Room", "Kitchen", "Bath"}, Paused: true, Position: 30, Duration: 240, Next: "Another One"}},
+		// A song the music server has words for: the Lyrics pill in the head, then the words in place of
+		// the song's details, timed with the line being sung lit, and untimed.
+		"nowplaying-lyrics-button": {now: at, phase: "idle", nowPlaying: true, playing: true, weather: sky,
+			radio:  home.Radio{Now: "Music Assistant", Title: "Reason That I Sing", Artist: "Release", Album: "Lights Over the Water", Music: true, Thumb: testCover(400, false)},
+			music:  home.MusicPlaybackView{Rooms: []string{"Living Room"}, Playing: true, Position: 74, Duration: 213, Next: "Harbour Song – Release"},
+			lyrics: testLyrics(true)},
+		"nowplaying-lyrics": {now: at, phase: "idle", nowPlaying: true, playing: true, weather: sky,
+			radio:  home.Radio{Now: "Music Assistant", Title: "Reason That I Sing", Artist: "Release", Music: true, Thumb: testCover(400, false)},
+			music:  home.MusicPlaybackView{Rooms: []string{"Living Room"}, Playing: true, Position: 21, Duration: 213},
+			lyrics: testLyrics(true), showLyrics: true},
+		"nowplaying-lyrics-plain": {now: at, phase: "idle", nowPlaying: true, paused: true, weather: sky,
+			radio:  home.Radio{Now: "Music Assistant", Title: "Reason That I Sing", Artist: "Release", Music: true, Thumb: testCover(400, false)},
+			music:  home.MusicPlaybackView{Rooms: []string{"Living Room"}, Paused: true, Position: 100, Duration: 213},
+			lyrics: testLyrics(false), showLyrics: true},
 		// The footer's own messages still show under the page.
 		"nowplaying-cover-missed": {now: at, phase: "idle", nowPlaying: true, playing: true, weather: sky, missed: "Missed: timer \"Pasta\" at 2:03 PM",
 			radio: home.Radio{Now: "Music Assistant", Title: "Reason That I Sing", Artist: "Release", Music: true, Thumb: testCover(400, false)}},
@@ -341,4 +355,17 @@ func testCover(side int, logo bool) *image.RGBA {
 		}
 	}
 	return img
+}
+
+// testLyrics is a made-up song's words, timed every four seconds or not at all, with an instrumental
+// gap and a line long enough to wrap.
+func testLyrics(synced bool) *home.Lyrics {
+	words := []string{"", "Down by the water where the lights come on", "Somebody's singing an older song",
+		"", "And I keep walking because the night is long and the harbour wall is the only thing I know",
+		"Reason that I sing", "Reason that I sing", "Lights over the water", "Carry me home", "Carry me home"}
+	l := &home.Lyrics{Title: "Reason That I Sing", Synced: synced}
+	for i, w := range words {
+		l.Lines = append(l.Lines, home.LyricLine{At: time.Duration(i*4) * time.Second, Text: w})
+	}
+	return l
 }
