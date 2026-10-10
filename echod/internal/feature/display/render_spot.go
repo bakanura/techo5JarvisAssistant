@@ -594,7 +594,7 @@ func (r *roundRenderer) text(face font.Face, s string, x, baseline int, c color.
 }
 
 func (r *roundRenderer) width(face font.Face, s string) int {
-	return font.MeasureString(face, i18n.T(s)).Round()
+	return font.MeasureString(face, inFont(face, i18n.T(s))).Round()
 }
 
 // centered2 is centered about x rather than the middle of the panel.

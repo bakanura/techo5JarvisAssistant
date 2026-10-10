@@ -78,7 +78,7 @@ func (r *paint) iconFace(size int) font.Face {
 func (r *paint) wrapLines(face font.Face, text string, w int) []string {
 	var lines []string
 	line := ""
-	for _, word := range strings.Fields(i18n.T(text)) {
+	for _, word := range strings.Fields(inFont(face, i18n.T(text))) {
 		try := word
 		if line != "" {
 			try = line + " " + word

@@ -63,7 +63,7 @@ require (
 	github.com/ygelfand/go-esphome-device v0.0.4
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/sys v0.48.0
-	golang.org/x/text v0.42.0 // indirect
+	golang.org/x/text v0.42.0
 )
 
 replace github.com/ygelfand/go-esphome-device => ./third_party/go-esphome-device

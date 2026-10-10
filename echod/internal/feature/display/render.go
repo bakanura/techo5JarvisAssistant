@@ -269,6 +269,8 @@ type renderer struct {
 	big    font.Face // a large reading, like today's temperature
 	ampm   font.Face
 	title  font.Face // "Listening…"
+	title2 font.Face // a song title a size down, and another, when it won't fit at full size
+	title3 font.Face
 	body   font.Face // transcript and reply
 	small  font.Face // date, corner clock, footer
 	tiny   font.Face
@@ -349,6 +351,8 @@ func newRenderer(dst *image.RGBA) *renderer {
 	r.big = face(bold, 100)
 	r.ampm = face(bold, 56)
 	r.title = face(bold, 48)
+	r.title2 = face(bold, 42)
+	r.title3 = face(bold, 36)
 	r.body = face(regular, 42)
 	r.small = face(regular, 34)
 	r.tiny = face(regular, 26)

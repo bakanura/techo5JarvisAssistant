@@ -59,9 +59,10 @@ func (r *renderer) nowPlaying(s scene) {
 	if rd.Now == "Music Assistant" {
 		label = musicPlace(s.music)
 	}
+	song, version := songParts(rd.Title)
 	if s.showLyrics && rd.Title != "" {
 		// The words take the song's place below, so the head says which song they are.
-		label = rd.Title
+		label = song
 	}
 
 	// The head of the column: where it plays, and the time on the right. The page is looked at for
@@ -87,25 +88,15 @@ func (r *renderer) nowPlaying(s scene) {
 	} else {
 		headline := station
 		if rd.Title != "" {
-			headline = rd.Title
+			headline = song
 		}
-		face := r.title
-		if r.width(face, headline) > col.Dx() && len(r.wrap(face, headline, col.Dx())) > 2 {
-			face = r.body
-		}
-		y := head + r.s(66)
-		lines := r.wrap(face, headline, col.Dx())
-		for i, line := range lines {
-			if i == 2 {
-				break
-			}
-			if i == 1 && len(lines) > 2 {
-				line = r.clipTo(face, line+" "+strings.Join(lines[2:], " "), col.Dx())
-			}
+		face, step, lines := r.headlineLines(headline, col.Dx())
+		y := head + r.s(66) - r.s(52-step)/2
+		for _, line := range lines {
 			r.text(face, line, col.Min.X, y, ink.title)
-			y += r.s(52)
+			y += r.s(step)
 		}
-		y -= r.s(52)
+		y -= r.s(step)
 		line := func(face font.Face, text string, step int, c color.Color) {
 			if text == "" || y+step > room {
 				return
@@ -113,8 +104,22 @@ func (r *renderer) nowPlaying(s scene) {
 			y += step
 			r.text(face, r.clipTo(face, text, col.Dx()), col.Min.X, y, c)
 		}
-		line(r.body, rd.Artist, r.s(48), ink.soft)
-		line(r.small, rd.Album, r.s(42), ink.faint)
+		// Who plays it is the second thing looked for, so a long name goes a size down before it is cut.
+		artist := r.body
+		if r.width(artist, rd.Artist) > col.Dx() {
+			artist = r.small
+		}
+		line(artist, rd.Artist, r.s(48), ink.soft)
+		// Which take of the song it is ("Radio Edit", "Remastered 2011") is worth less than the song
+		// and who plays it, so it goes with the album, after it.
+		// When the two don't fit on one line, the take gets a line of its own under the album.
+		album := strings.TrimPrefix(rd.Album+"  ·  "+version, "  ·  ")
+		if version == "" || rd.Album == "" || r.width(r.small, album) <= col.Dx() {
+			line(r.small, strings.TrimSuffix(album, "  ·  "), r.s(42), ink.faint)
+		} else {
+			line(r.small, rd.Album, r.s(42), ink.faint)
+			line(r.small, version, r.s(40), ink.faint)
+		}
 
 		// A group says which rooms it reached; the queue says what comes next.
 		if rd.Now == "Music Assistant" && len(s.music.Rooms) > 1 {
@@ -434,6 +439,117 @@ func (c *coverCache) prepare(src *image.RGBA, side int) {
 		xdraw.CatmullRom.Scale(c.img, c.img.Bounds(), src, src.Bounds(), draw.Src, nil)
 	}
 	c.tint = averageColor(c.img)
+}
+
+// headlineLines sets a song's title (or a station's name) in the column, in the largest bold size
+// that holds it: one line at full size, then one line a size down, then two lines from full size
+// down, broken where the lines come out most even. Only a title too long for two lines of the
+// smallest size is cut, at the end of the second line. step is the line spacing, in drawn-for
+// pixels.
+func (r *renderer) headlineLines(s string, w int) (face font.Face, step int, lines []string) {
+	type size struct {
+		face font.Face
+		step int
+	}
+	sizes := []size{{r.title, 52}, {r.title2, 46}, {r.title3, 40}}
+	for _, z := range sizes[:2] {
+		if r.width(z.face, s) <= w {
+			return z.face, z.step, []string{s}
+		}
+	}
+	words := strings.Fields(s)
+	for _, z := range sizes {
+		if two := r.evenBreak(z.face, words, w); two != nil {
+			return z.face, z.step, two
+		}
+	}
+	z := sizes[len(sizes)-1]
+	lines = r.wrap(z.face, s, w)
+	if len(lines) > 2 {
+		lines = []string{lines[0], strings.Join(lines[1:], " ")}
+	}
+	for i := range lines {
+		lines[i] = r.clipTo(z.face, lines[i], w)
+	}
+	return z.face, z.step, lines
+}
+
+// evenBreak is words as two lines no wider than w with the longer line as short as it can be, or
+// nil when no break does it.
+func (r *renderer) evenBreak(face font.Face, words []string, w int) []string {
+	var best []string
+	bestW := w + 1
+	for k := 1; k < len(words); k++ {
+		a, b := strings.Join(words[:k], " "), strings.Join(words[k:], " ")
+		if most := max(r.width(face, a), r.width(face, b)); most <= w && most < bestW {
+			best, bestW = []string{a, b}, most
+		}
+	}
+	return best
+}
+
+// songParts splits a song's title into the song and which take of it this is, so the song can have
+// the big line to itself: "Song (All Star Mix – Main Pass)" is "Song" and "All Star Mix – Main Pass",
+// as is "Song - Radio Edit". Only a bracket or a dash at the end that names a take is split off;
+// "Song (Part 2)" stays whole, as does a title that would be left with nothing.
+func songParts(title string) (song, version string) {
+	song = strings.TrimSpace(title)
+	var takes []string
+	for {
+		head, take, ok := lastTake(song)
+		if !ok {
+			break
+		}
+		song = head
+		takes = append([]string{take}, takes...)
+	}
+	return song, strings.Join(takes, "  ·  ")
+}
+
+// lastTake splits a version note off the end of a title, if one is there.
+func lastTake(t string) (head, take string, ok bool) {
+	var i int
+	switch {
+	case strings.HasSuffix(t, ")"):
+		i = strings.LastIndex(t, "(")
+	case strings.HasSuffix(t, "]"):
+		i = strings.LastIndex(t, "[")
+	default:
+		for _, dash := range []string{" - ", " – ", " — "} {
+			if j := strings.LastIndex(t, dash); j > 0 && namesTake(t[j+len(dash):]) {
+				return strings.TrimSpace(t[:j]), strings.TrimSpace(t[j+len(dash):]), true
+			}
+		}
+		return t, "", false
+	}
+	if i <= 0 {
+		return t, "", false
+	}
+	inner := strings.TrimSpace(t[i+1 : len(t)-1])
+	head = strings.TrimSpace(t[:i])
+	if head == "" || !namesTake(inner) {
+		return t, "", false
+	}
+	return head, inner, true
+}
+
+// namesTake says whether words name a version of a song rather than being part of its name.
+func namesTake(s string) bool {
+	l := " " + strings.ToLower(s) + " "
+	for _, w := range takeWords {
+		if strings.Contains(l, w) {
+			return true
+		}
+	}
+	return false
+}
+
+var takeWords = []string{
+	"mix", "edit", "version", "remaster", " live", "feat.", "feat ", " ft.", "featuring", " with ",
+	"radio", " mono", "stereo", "acoustic", " demo", "instrumental", "extended", "deluxe", "bonus",
+	"explicit", " clean", " single", "unplugged", "rework", " dub", " cover", "session", "reprise",
+	"karaoke", " vip", "bootleg", "mashup", " from ", "soundtrack", "anniversary", "re-recorded",
+	"taylor's", "fassung", "aus dem film",
 }
 
 // nowInk is what the now-playing page draws its words and marks in: the head (where it plays), the

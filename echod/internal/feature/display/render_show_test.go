@@ -139,6 +139,14 @@ func TestShowScenesDraw(t *testing.T) {
 		"nowplaying-cover-group-paused": {now: at, phase: "idle", nowPlaying: true, paused: true, faved: true, weather: sky,
 			radio: home.Radio{Now: "Music Assistant", Title: "A Very Long Song Title That Has To Be Wrapped Over Two Lines And Then Cut", Artist: "Somebody With A Long Name", Music: true, Thumb: testCover(400, false)},
 			music: home.MusicPlaybackView{Route: "wohnung", Rooms: []string{"Living Room", "Kitchen", "Bath"}, Paused: true, Position: 30, Duration: 240, Next: "Another One"}},
+		// Titles as they come from a library: a take in brackets that goes with the album, and a
+		// typographer's hyphen the font has no glyph for.
+		"nowplaying-cover-take": {now: at, phase: "idle", nowPlaying: true, playing: true, weather: sky,
+			radio: home.Radio{Now: "Music Assistant", Title: "My Love Is Like...Wo (All Star Mix – Main Pass)", Artist: "Mýa/John Doe", Album: "Moodring", Music: true, Thumb: testCover(400, false)},
+			music: home.MusicPlaybackView{Rooms: []string{"Living Room"}, Playing: true, Position: 10, Duration: 234}},
+		"nowplaying-cover-hyphen": {now: at, phase: "idle", nowPlaying: true, playing: true, weather: sky,
+			radio: home.Radio{Now: "Music Assistant", Title: "Un\u2010Break My Heart", Artist: "Toni Braxton", Album: "Secrets", Music: true, Thumb: testCover(400, false)},
+			music: home.MusicPlaybackView{Rooms: []string{"Living Room"}, Playing: true, Position: 195, Duration: 268}},
 		// A song the music server has words for: the Lyrics pill in the head, then the words in place of
 		// the song's details, timed with the line being sung lit, and untimed.
 		"nowplaying-lyrics-button": {now: at, phase: "idle", nowPlaying: true, playing: true, weather: sky,

@@ -156,7 +156,7 @@ func stripPicture(rd home.Radio) image.Image {
 
 // clipTo shortens s to fit w with an ellipsis.
 func (r *renderer) clipTo(face font.Face, s string, w int) string {
-	s = i18n.T(s)
+	s = inFont(face, i18n.T(s))
 	if r.width(face, s) <= w {
 		return s
 	}
