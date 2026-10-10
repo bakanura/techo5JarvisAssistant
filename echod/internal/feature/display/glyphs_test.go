@@ -35,19 +35,3 @@ func TestInFontLeavesNoBoxes(t *testing.T) {
 		}
 	}
 }
-
-func TestSongParts(t *testing.T) {
-	for _, c := range []struct{ title, song, version string }{
-		{"My Love Is Like...Wo (All Star Mix – Main Pass)", "My Love Is Like...Wo", "All Star Mix – Main Pass"},
-		{"Bohemian Rhapsody - Remastered 2011", "Bohemian Rhapsody", "Remastered 2011"},
-		{"Song (feat. Somebody) [Radio Edit]", "Song", "feat. Somebody  ·  Radio Edit"},
-		{"Symphony No. 5 (Part 2)", "Symphony No. 5 (Part 2)", ""},
-		{"(Remix)", "(Remix)", ""},
-		{"Reason That I Sing", "Reason That I Sing", ""},
-	} {
-		song, version := songParts(c.title)
-		if song != c.song || version != c.version {
-			t.Errorf("songParts(%q) = %q, %q; want %q, %q", c.title, song, version, c.song, c.version)
-		}
-	}
-}

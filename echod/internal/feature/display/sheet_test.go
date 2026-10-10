@@ -5,6 +5,7 @@ package display
 import (
 	"fmt"
 	"image"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/config"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/home"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/touch"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 )
 
 func testRenderer() *renderer { return newRenderer(image.NewRGBA(image.Rect(0, 0, 960, 480))) }
@@ -120,9 +122,12 @@ func TestCardScrolls(t *testing.T) {
 	r.settingsScreen(s)
 	cardMax, _ := r.scrollLimits()
 	// However many rows the card has ended up with — alarms, the timers, and the settings under them.
-	rows := len(alarmsCard(s.view()).rows)
-	if want := rows*r.rowH() - (r.h - 2*r.cardIn() - r.headerH() - 8); cardMax != want {
-		t.Fatalf("%d rows scroll %d, want %d", rows, cardMax, want)
+	rows, tall := alarmsCard(s.view()).rows, 0
+	for _, row := range rows {
+		tall += r.rowHeight(r.nextCard(r.w, r.h), row)
+	}
+	if want := tall - (r.h - 2*r.cardIn() - r.headerH() - 8); cardMax != want {
+		t.Fatalf("%d rows scroll %d, want %d", len(rows), cardMax, want)
 	}
 
 	s.sheet.cardScroll = cardMax + 500 // held to the end
@@ -328,17 +333,69 @@ func TestACutLineLeavesTheValueWhole(t *testing.T) {
 	r := testRenderer()
 	fc := r.faces()
 	// The line is longer than any card here on purpose: the test is about what a cut does.
-	row := settingRow{id: "screenlang", label: "Screen language", sub: "The words on this screen and the ones it listens for, in every room",
-		kind: ctlChoice, value: "Match Assistant"}
+	row := settingRow{id: "screenlang", label: "Screen language", kind: ctlChoice, value: "Match Assistant",
+		sub: "The words on this screen and the ones it listens for, in every room of the house, from the kitchen to the hall and on up the stairs"}
 	for w := 520; w <= 760; w += 20 {
 		card := image.Rect(0, 0, w, 400)
 		_, sub, end := r.rowWords(card, row, fc.label)
-		if sub == row.sub {
+		if strings.Join(sub, " ") == row.sub {
 			t.Fatalf("card %d wide: the line was not cut, so this does not test anything", w)
 		}
 		right := card.Max.X - r.s(26)
 		if room := right - 58 - end - r.s(rowGap); r.fit(fc.value, row.value, room) != row.value {
 			t.Errorf("card %d wide: the value is cut to %q", w, r.fit(fc.value, row.value, room))
+		}
+	}
+}
+
+// No setting is cut: a label or the line under it that is too long for one line wraps to a second,
+// in English and in German, which runs the longest of the screen's languages.
+func TestEveryRowReadsWhole(t *testing.T) {
+	config.Use(filepath.Join(t.TempDir(), "state.json"))
+	t.Cleanup(i18n.Changed)
+	for _, lang := range []string{"", "de"} {
+		if err := config.Set().Screen().Language(lang); err != nil {
+			t.Fatal(err)
+		}
+		i18n.Changed()
+		for c := category(0); c < categories; c++ {
+			s := sheetScene(c)
+			r := testRenderer()
+			card, fc := r.nextCard(r.w, r.h), r.faces()
+			for _, row := range categoryCard(s.view()).rows {
+				label, sub, _ := r.rowWords(card, row, fc.label)
+				for _, l := range append(label, sub...) {
+					if strings.HasSuffix(l, "…") {
+						t.Errorf("%s %q: %q is cut", categoryNames[c], lang, row.label)
+					}
+				}
+				if r.rowHeight(card, row) < r.rowH() {
+					t.Errorf("%s %q: %q is shorter than a row", categoryNames[c], lang, row.label)
+				}
+			}
+		}
+	}
+}
+
+// A stepper's buttons are drawn small, but a tap anywhere up the row beside one counts.
+func TestStepperTakesTheRowsHeight(t *testing.T) {
+	r := testRenderer()
+	card := r.nextCard(r.w, r.h)
+	r.settingRow(card, 100, settingRow{id: "volume", label: "Volume", kind: ctlStepper, value: "5 of 30"})
+	r.zones, r.pending = r.pending, nil
+	right, cy := card.Max.X-r.s(26), 100+r.rowH()/2
+	minus, plus := r.stepper(right, cy, "5 of 30")
+	for _, c := range []struct {
+		x, y int
+		want part
+	}{
+		{(minus.Min.X + minus.Max.X) / 2, 102, partMinus},
+		{minus.Min.X - 6, 100 + r.rowH() - 2, partMinus},
+		{(plus.Min.X + plus.Max.X) / 2, 102, partPlus},
+		{card.Max.X - 12, cy, partPlus},
+	} {
+		if z, _ := r.zoneAt(c.x, c.y); z.kind != zoneRow || z.part != c.want {
+			t.Errorf("a tap at %d,%d = %+v, want %v", c.x, c.y, z, c.want)
 		}
 	}
 }

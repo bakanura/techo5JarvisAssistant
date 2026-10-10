@@ -411,18 +411,24 @@ func (r *paint) scrollLimits() (card, pick int) {
 // is put back from under (the frame as it was before the rows), which clips them without clipping
 // every primitive; bg is the card's color at the list's edges, for the fades.
 func (r *paint) rowList(card, list image.Rectangle, rows []settingRow, scroll int, bg color.RGBA, under []uint8) int {
-	maxScroll := max(len(rows)*r.rowH()-list.Dy(), 0)
+	heights, total := make([]int, len(rows)), 0
+	for i, row := range rows {
+		heights[i] = r.rowHeight(card, row)
+		total += heights[i]
+	}
+	maxScroll := max(total-list.Dy(), 0)
 	scroll = min(max(scroll, 0), maxScroll)
 	mark := len(r.pending)
+	top := list.Min.Y - scroll
 	for i, row := range rows {
-		top := list.Min.Y + i*r.rowH() - scroll
-		if top+r.rowH() <= list.Min.Y || top >= list.Max.Y {
-			continue
+		h := heights[i]
+		if top+h > list.Min.Y && top < list.Max.Y {
+			r.settingRow(card, top, row)
+			if i < len(rows)-1 {
+				r.rule(card.Min.X+r.rowIn(), card.Max.X-r.rowIn(), top+h, 0.6)
+			}
 		}
-		r.settingRow(card, top, row)
-		if i < len(rows)-1 {
-			r.rule(card.Min.X+r.rowIn(), card.Max.X-r.rowIn(), top+r.rowH(), 0.6)
-		}
+		top += h
 	}
 	if maxScroll > 0 {
 		r.restore(under, image.Rect(card.Min.X, 0, card.Max.X, list.Min.Y-1))
@@ -629,17 +635,25 @@ func (r *paint) settingRow(card image.Rectangle, top int, row settingRow) {
 	if row.bold {
 		face = fc.labelBold
 	}
-	right, cy := card.Max.X-r.s(26), top+r.rowH()/2
-	var labelEnd int
-	row.label, row.sub, labelEnd = r.rowWords(card, row, face)
-	if row.sub == "" {
-		r.text(face, row.label, card.Min.X+r.rowIn(), top+r.s(40), cream)
-	} else {
-		r.text(face, row.label, card.Min.X+r.rowIn(), top+r.s(30), cream)
-		r.text(fc.sub, row.sub, card.Min.X+r.rowIn(), top+r.s(53), dim)
+	labels, subs, labelEnd := r.rowWords(card, row, face)
+	h := r.rowFor(labels, subs)
+	bottom := top + h
+	right, cy := card.Max.X-r.s(26), top+h/2
+	y := top + r.s(30) + r.rowAir(labels, subs)/2
+	if len(subs) == 0 {
+		y += r.s(10)
+	}
+	for _, line := range labels {
+		r.text(face, line, card.Min.X+r.rowIn(), y, cream)
+		y += r.s(labelStep)
+	}
+	y += r.s(23 - labelStep)
+	for _, line := range subs {
+		r.text(fc.sub, line, card.Min.X+r.rowIn(), y, dim)
+		y += r.s(subStep)
 	}
 
-	whole := image.Rect(card.Min.X+r.s(8), top, card.Max.X-r.s(8), top+r.rowH())
+	whole := image.Rect(card.Min.X+r.s(8), top, card.Max.X-r.s(8), bottom)
 	// A value never runs into the label: it keeps its start and loses its end to an ellipsis.
 	fit := func(text string, rightEdge int) string { return r.fit(fc.value, text, rightEdge-labelEnd-r.s(rowGap)) }
 	add := func(r0 image.Rectangle, p part) {
@@ -658,12 +672,12 @@ func (r *paint) settingRow(card image.Rectangle, top int, row settingRow) {
 		}
 		if row.rowTap {
 			add(whole, partRow)
-			add(image.Rect(x-14, top, card.Max.X-r.s(8), top+r.rowH()), partMain)
+			add(image.Rect(x-14, top, card.Max.X-r.s(8), bottom), partMain)
 			break
 		}
 		add(whole, partMain) // the whole row flips the switch: a small target otherwise
 	case ctlSwatches:
-		r.swatchStrip(row, right, cy, top)
+		r.swatchStrip(row, right, cy, top, bottom)
 	case ctlDays:
 		chipW, chipGap := r.dayChip()
 		x0 := right - 7*chipW - 6*chipGap
@@ -680,13 +694,15 @@ func (r *paint) settingRow(card image.Rectangle, top int, row settingRow) {
 			}
 			r.text(fc.button, name, b.Min.X+(chipW-r.width(fc.button, name))/2, cy+8, ink)
 			if row.id != "" {
-				r.addZone(zone{r: image.Rect(b.Min.X-chipGap/2, top, b.Max.X+chipGap/2, top+r.rowH()), kind: zoneRow, id: row.id, part: partDay, opt: i})
+				r.addZone(zone{r: image.Rect(b.Min.X-chipGap/2, top, b.Max.X+chipGap/2, bottom), kind: zoneRow, id: row.id, part: partDay, opt: i})
 			}
 		}
 	case ctlStepper:
+		// Each button takes the row's height and a finger's width beside it, and + runs to the
+		// card's edge: the buttons are drawn small but a tap near one is meant for it.
 		minus, plus := r.stepper(right, cy, row.value)
-		add(minus.Inset(-6), partMinus)
-		add(plus.Inset(-6), partPlus)
+		add(image.Rect(minus.Min.X-r.s(14), top, minus.Max.X+r.s(14), bottom), partMinus)
+		add(image.Rect(plus.Min.X-r.s(14), top, card.Max.X-r.s(8), bottom), partPlus)
 	case ctlChoice:
 		extra := 0
 		if row.button != "" {
@@ -696,7 +712,7 @@ func (r *paint) settingRow(card image.Rectangle, top int, row settingRow) {
 		if row.button != "" {
 			bx := r.pillButton(x-12, cy, row.button, btnSecondary)
 			add(whole, partMain)
-			add(image.Rect(bx-6, top, x-6, top+r.rowH()), partExtra)
+			add(image.Rect(bx-6, top, x-6, bottom), partExtra)
 			break
 		}
 		add(whole, partMain)
@@ -712,23 +728,80 @@ func (r *paint) settingRow(card image.Rectangle, top int, row settingRow) {
 		if row.rowTap {
 			add(whole, partMain) // the whole row does what its button does
 		}
-		add(image.Rect(x-8, top+4, card.Max.X-12, top+r.rowH()-4), partMain)
+		add(image.Rect(x-8, top+4, card.Max.X-12, bottom-4), partMain)
 	}
 }
 
 // rowGap is the space a row keeps between its words and its value or control.
 const rowGap = 24
 
-// rowWords is a row's label and the line under it as drawn, and where the longer of them ends. They
-// keep clear of the control: on a narrow card they give up their ends to an ellipsis rather than run
-// under it. The room left to them is the room the value is fitted beside, so a row whose line is cut
-// still shows its value whole.
-func (r *paint) rowWords(card image.Rectangle, row settingRow, face font.Face) (label, sub string, end int) {
+// rowWords is a row's label and the line under it as drawn, each in up to rowLines lines, and where
+// the longest of them ends. They keep clear of the control: a long one wraps, and only what runs past
+// its last line gives up its end to an ellipsis, rather than run under the control. The room left to
+// them is the room the value is fitted beside, so a row whose words are cut still shows its value whole.
+func (r *paint) rowWords(card image.Rectangle, row settingRow, face font.Face) (label, sub []string, end int) {
 	fc := r.faces()
 	right := card.Max.X - r.s(26)
 	room := right - r.controlWidth(row) - r.s(rowGap) - (card.Min.X + r.rowIn())
-	label, sub = r.fit(face, row.label, room), r.fit(fc.sub, row.sub, room)
-	return label, sub, card.Min.X + r.rowIn() + max(r.width(face, label), r.width(fc.sub, sub))
+	label, sub = r.lines(face, row.label, room, rowLines), r.lines(fc.sub, row.sub, room, rowLines)
+	w := 0
+	for _, l := range label {
+		w = max(w, r.width(face, l))
+	}
+	for _, l := range sub {
+		w = max(w, r.width(fc.sub, l))
+	}
+	return label, sub, card.Min.X + r.rowIn() + w
+}
+
+// rowLines is how many lines a row's label, and the line under it, may wrap to. German runs a third
+// longer than English, and a cut setting name is one nobody can read.
+const rowLines = 2
+
+// labelStep and subStep are the steps between a row's wrapped lines: each line past the first makes
+// the row that much taller.
+const (
+	labelStep = 30
+	subStep   = 22
+)
+
+// rowHeight is how tall row is on card: rowH, and more for each line its words wrap to.
+func (r *paint) rowHeight(card image.Rectangle, row settingRow) int {
+	fc := r.faces()
+	face := fc.label
+	if row.bold {
+		face = fc.labelBold
+	}
+	label, sub, _ := r.rowWords(card, row, face)
+	return r.rowFor(label, sub)
+}
+
+// rowFor is the height of a row with these lines.
+func (r *paint) rowFor(label, sub []string) int {
+	return r.rowH() + r.s(labelStep)*max(len(label)-1, 0) + r.s(subStep)*max(len(sub)-1, 0) + r.rowAir(label, sub)
+}
+
+// rowAir is the room a row of three lines or more gets above and below its words, which at the
+// two-line spacing sit close to the rules between rows.
+func (r *paint) rowAir(label, sub []string) int {
+	if len(label)+len(sub) > 2 {
+		return r.s(10)
+	}
+	return 0
+}
+
+// lines wraps text to room pixels in at most most lines; what is left after the last is cut from it
+// with an ellipsis, as is a word too long for a line by itself.
+func (r *paint) lines(face font.Face, text string, room, most int) []string {
+	all := r.wrap(face, text, room)
+	if len(all) > most {
+		all[most-1] = strings.Join(all[most-1:], " ")
+		all = all[:most]
+	}
+	for i, l := range all {
+		all[i] = r.fit(face, l, room)
+	}
+	return all
 }
 
 // dayChip is the width of a ctlDays row's day and the gap between them: smaller on a round panel,

@@ -200,7 +200,7 @@ func (r *renderer) bevel(rect image.Rectangle, fill color.RGBA, raised bool) {
 
 // swatchStrip draws a ctlSwatches row's colors for one role of the theme, the one in force ringed in
 // the text color; a tap on one picks it.
-func (r *paint) swatchStrip(row settingRow, right, cy, top int) {
+func (r *paint) swatchStrip(row settingRow, right, cy, top, bottom int) {
 	const d, gap = 28, 6
 	x0 := right - swatchCount*d - (swatchCount-1)*gap
 	in := current().colors[row.role]
@@ -215,7 +215,7 @@ func (r *paint) swatchStrip(row settingRow, right, cy, top int) {
 		}
 		if row.id != "" {
 			x := x0 + i*(d+gap)
-			r.addZone(zone{r: image.Rect(x-gap/2, top, x+d+gap/2, top+r.rowH()), kind: zoneRow, id: row.id, part: partDay, opt: i})
+			r.addZone(zone{r: image.Rect(x-gap/2, top, x+d+gap/2, bottom), kind: zoneRow, id: row.id, part: partDay, opt: i})
 		}
 	}
 }

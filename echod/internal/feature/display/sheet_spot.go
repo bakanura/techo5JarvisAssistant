@@ -68,7 +68,7 @@ func (d *Display) deviceRowTap(id string, _ part, _ int) bool {
 func resetRows(settings) []settingRow { return nil }
 
 // swatchStrip is the custom colors row, which the Spot has no use for.
-func (r *paint) swatchStrip(settingRow, int, int, int) {}
+func (r *paint) swatchStrip(settingRow, int, int, int, int) {}
 
 // openSettings puts the settings screen up on its six categories. Called with d.mu held.
 func (d *Display) openSettings() {

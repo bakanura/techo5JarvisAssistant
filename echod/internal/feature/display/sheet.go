@@ -192,7 +192,7 @@ func securityRows(sv sheetView) []settingRow {
 func generalRows(sv sheetView) []settingRow {
 	st := sv.st
 	fw := firmware.Get()
-	updates := settingRow{id: "updates", label: "Updates", sub: "This is " + st.version, kind: ctlChoice,
+	updates := settingRow{id: "updates", label: "Updates", sub: i18n.F("This is {version}", "version", st.version), kind: ctlChoice,
 		value: capitalize(fw.Channel().Label()), button: "Check now"}
 	switch at, err := fw.LastCheck(); {
 	case st.checking:
