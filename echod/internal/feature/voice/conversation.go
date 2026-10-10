@@ -477,16 +477,18 @@ func (c *conversation) handle(e event) {
 	case evPlayed:
 		c.reported(e.at)
 		if c.phase == phaseReplying {
-			slot := c.slot
+			slot, reply := c.slot, c.shown.Reply
 			c.idle("spoken", activity.Completed)
 
-			// Continual conversation: the slot keeps listening after every reply, not only the ones
-			// Home Assistant asked to continue - as many times in a row as the slot allows. Only in
-			// a conversation somebody here started: after a question or announcement Home Assistant
-			// opened, the room was not talking to the device, and what it hears next is as likely the
-			// television as anybody.
+			// Continual conversation: the slot keeps listening after a reply that asks something, or
+			// after every one if it is set to, not only the ones Home Assistant asked to continue - as
+			// many times in a row as the slot allows. A plain answer ends it, so the screen goes back
+			// as soon as it has been heard. Only in a conversation somebody here started: after a
+			// question or announcement Home Assistant opened, the room was not talking to the device,
+			// and what it hears next is as likely the television as anybody.
 			limit := wakeword.FollowUps(slot)
-			if c.pending == nil && !c.lookHere && c.byUser && wakeword.FollowUp(slot) > 0 && (limit == 0 || c.followUps < limit) {
+			if c.pending == nil && !c.lookHere && c.byUser && wakeword.FollowUp(slot) > 0 && (limit == 0 || c.followUps < limit) &&
+				(wakeword.FollowUpEvery(slot) || asks(reply)) {
 				slog.Info("listening again after the reply", "slot", slot+1, "for", wakeword.FollowUp(slot))
 				c.pending = &nextTurn{slot: slot, followUp: true}
 			}
@@ -984,6 +986,13 @@ func (c *conversation) stopStreaming() {
 func bareOkay(text string) bool {
 	t := strings.ToLower(strings.Trim(text, " \t\n.!,…"))
 	return t == "okay" || t == "ok" || t == "o.k"
+}
+
+// asks reports whether a reply ends by asking something, which is what makes listening after it
+// worth the open microphone: its last sentence is a question.
+func asks(text string) bool {
+	t := strings.TrimRight(text, " \t\n\"'»«“”„)")
+	return strings.HasSuffix(t, "?") || strings.HasSuffix(t, "？")
 }
 
 // preRoll is how much of the audio before a follow-up's onset is sent with it.

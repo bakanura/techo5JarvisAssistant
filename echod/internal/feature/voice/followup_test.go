@@ -70,3 +70,21 @@ func TestBareOkay(t *testing.T) {
 		}
 	}
 }
+
+// Only a reply that ends by asking something keeps the microphone open, unless the slot says every.
+func TestAsks(t *testing.T) {
+	for text, want := range map[string]bool{
+		"Was möchtest du hören?":           true,
+		"Okay. Welches Zimmer? ":           true,
+		"Meinst du „Küche“?":               true,
+		"Soll ich das Licht anmachen?\n":   true,
+		"Musik auf 30 Prozent.":            false,
+		"Ist das Licht an? Ja, es ist an.": false,
+		"":                                 false,
+		"Das Wohnzimmer ist auf 21 Grad.":  false,
+	} {
+		if got := asks(text); got != want {
+			t.Errorf("asks(%q) = %v, want %v", text, got, want)
+		}
+	}
+}

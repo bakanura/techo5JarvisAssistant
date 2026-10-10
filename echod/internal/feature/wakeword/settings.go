@@ -71,6 +71,10 @@ func FollowUp(slot int) time.Duration {
 	return time.Duration(saved(slot).FollowUp) * time.Second
 }
 
+// FollowUpEvery is whether the follow-up time is listened for after every reply, rather than only
+// after one that asks something.
+func FollowUpEvery(slot int) bool { return saved(slot).FollowUpEvery }
+
 // FollowUps is how many follow-ups in a row a wake word opens, zero for no limit.
 func FollowUps(slot int) int { return saved(slot).FollowUps }
 

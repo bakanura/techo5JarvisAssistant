@@ -68,6 +68,7 @@ func TestSlotSettingsAreIndependent(t *testing.T) {
 		func() error { return st.Set().Wake(0).Threshold(0.97) },
 		func() error { return st.Set().Wake(0).Tone(ToneRise) },
 		func() error { return st.Set().Wake(0).FollowUp(8) },
+		func() error { return st.Set().Wake(0).FollowUpEvery(true) },
 		func() error { return st.Set().Wake(1).ID("hey_jarvis") },
 		func() error { return st.Set().Wake(1).Delivery(DeliveryStream) },
 	} {
@@ -89,6 +90,9 @@ func TestSlotSettingsAreIndependent(t *testing.T) {
 	if v := got.Slot(0).FollowUp; v != 8 {
 		t.Errorf("slot 1 follow-up = %d", v)
 	}
+	if !got.Slot(0).FollowUpEvery {
+		t.Errorf("slot 1 follows up only after questions, want every reply")
+	}
 	if v := got.Slot(0).Delivery; v != DefaultDelivery {
 		t.Errorf("slot 1 delivery = %q, want slot 2's change not to reach it", v)
 	}
@@ -101,6 +105,9 @@ func TestSlotSettingsAreIndependent(t *testing.T) {
 	}
 	if v := got.Slot(1).FollowUp; v != DefaultFollowUp {
 		t.Errorf("slot 2 follow-up = %d, want off", v)
+	}
+	if got.Slot(1).FollowUpEvery {
+		t.Errorf("slot 2 follows up after every reply, want questions only")
 	}
 }
 

@@ -52,6 +52,7 @@ type slot struct {
 	followUp     *esphome.Number
 	followUps    *esphome.Number
 	followUpTone *esphome.Select
+	followAfter  *esphome.Select
 	maxListen    *esphome.Number
 	maxThink     *esphome.Number
 }
@@ -181,6 +182,15 @@ func newSlot(n int) slot {
 			},
 			Options: append([]string{component.EffectDefault}, config.Labels(speaker.WakeTones())...),
 		},
+		followAfter: &esphome.Select{
+			Base: esphome.Base{
+				ObjectID: fmt.Sprintf("follow_up_after_%d", n+1),
+				Name:     "Follow-up after",
+				Icon:     "mdi:comment-question",
+				Category: esphome.CategoryConfig,
+			},
+			Options: []string{followAfterQuestions, followAfterEvery},
+		},
 		maxListen: &esphome.Number{
 			Base: esphome.Base{
 				ObjectID: fmt.Sprintf("max_listen_%d", n+1),
@@ -203,12 +213,12 @@ func newSlot(n int) slot {
 		},
 	}
 
-	// All thirteen on a page of their own.
+	// All fourteen on a page of their own.
 	for _, b := range []*esphome.Base{
 		&s.wake.Base, &s.threshold.Base, &s.tone.Base, &s.effect.Base,
 		&s.thinking.Base, &s.replying.Base, &s.delivery.Base,
 		&s.buffer.Base, &s.followUp.Base, &s.followUps.Base, &s.followUpTone.Base,
-		&s.maxListen.Base, &s.maxThink.Base,
+		&s.followAfter.Base, &s.maxListen.Base, &s.maxThink.Base,
 	} {
 		b.DeviceID = on
 	}
@@ -278,6 +288,16 @@ func newSlot(n int) slot {
 			slog.Error("saving the follow-up tone failed", "slot", n+1, "err", err)
 		}
 	}
+	s.followAfter.OnCommand = func(label string) {
+		if label != followAfterQuestions && label != followAfterEvery {
+			slog.Warn("unknown follow-up choice", "slot", n+1, "value", label)
+			return
+		}
+		s.followAfter.Set(label)
+		if err := config.Set().Wake(n).FollowUpEvery(label == followAfterEvery); err != nil {
+			slog.Error("saving when to follow up failed", "slot", n+1, "err", err)
+		}
+	}
 	s.maxListen.OnCommand = func(v float32) {
 		s.maxListen.Set(v)
 		if err := config.Set().Wake(n).MaxListen(int(v)); err != nil {
@@ -296,6 +316,19 @@ func newSlot(n int) slot {
 // deliveries is how a reply can arrive, in the order it is offered.
 func deliveries() []config.Delivery {
 	return []config.Delivery{config.DeliveryWhole, config.DeliveryStream}
+}
+
+// What the follow-up time is listened for after: a reply that asks something, or every reply.
+const (
+	followAfterQuestions = "Questions only"
+	followAfterEvery     = "Every reply"
+)
+
+func followAfterLabel(every bool) string {
+	if every {
+		return followAfterEvery
+	}
+	return followAfterQuestions
 }
 
 // followUpToneFor is what the select's label means as a setting: Default is the wake word's own tone,
@@ -367,7 +400,7 @@ func (w *WakeWord) Entities() []esphome.Entity {
 	var ents []esphome.Entity
 	for _, s := range w.slots {
 		ents = append(ents, s.wake, s.threshold, s.tone, s.effect, s.thinking, s.replying,
-			s.delivery, s.buffer, s.followUp, s.followUps, s.followUpTone, s.maxListen, s.maxThink)
+			s.delivery, s.buffer, s.followUp, s.followUps, s.followUpTone, s.followAfter, s.maxListen, s.maxThink)
 	}
 	return ents
 }
@@ -390,6 +423,7 @@ func (w *WakeWord) Restore(c config.Config) {
 		s.followUp.Set(float32(saved.FollowUp))
 		s.followUps.Set(float32(saved.FollowUps))
 		s.followUpTone.Set(followUpToneLabel(saved.FollowUpTone))
+		s.followAfter.Set(followAfterLabel(saved.FollowUpEvery))
 		s.maxListen.Set(float32(saved.MaxListen))
 		s.maxThink.Set(float32(saved.MaxThink))
 	}

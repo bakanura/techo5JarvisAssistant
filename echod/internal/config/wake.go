@@ -72,6 +72,11 @@ type WakeWord struct {
 	// listened for.
 	FollowUps int `json:"follow_ups,omitempty"`
 
+	// FollowUpEvery has FollowUp listen after every reply. Left false, it listens only after a reply
+	// that asks something, so a plain answer closes the conversation and the screen as soon as it has
+	// been heard. Home Assistant asking to continue is listened for either way.
+	FollowUpEvery bool `json:"follow_up_every,omitempty"`
+
 	// FollowUpTone is what a turn opened without a wake word sounds like. Empty is the wake word's own
 	// tone, which is what a follow-up has always done; None makes the follow-up silent, and any other
 	// tone gives it a sound of its own so the two are told apart by ear.
@@ -234,6 +239,10 @@ func (w WakeWriter) FollowUp(seconds int) error {
 
 func (w WakeWriter) FollowUps(n int) error {
 	return w.word(func(word *WakeWord) { word.FollowUps = n })
+}
+
+func (w WakeWriter) FollowUpEvery(v bool) error {
+	return w.word(func(word *WakeWord) { word.FollowUpEvery = v })
 }
 
 func (w WakeWriter) FollowUpTone(v Tone) error {

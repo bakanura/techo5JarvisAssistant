@@ -1,3 +1,5 @@
+//go:build !dot && !spot
+
 package display
 
 import (

@@ -47,6 +47,7 @@ var registered = []string{
 	"failure_effect",
 	"firmware",
 	"follow_up_1",
+	"follow_up_after_1",
 	"follow_up_tone_1",
 	"follow_ups_1",
 	"free_space",
