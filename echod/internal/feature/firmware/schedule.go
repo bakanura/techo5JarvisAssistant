@@ -11,18 +11,18 @@ import (
 // checkEvery is how often the device looks for a newer build of itself.
 //
 // It has to look on its own: esphome entities do not poll, so the only check Home Assistant ever sends
-// is somebody pressing refresh, and a device left alone would never learn a release exists. Every hour:
-// a manifest is a few hundred bytes from the release's download, not GitHub's rate-limited API, and a
-// build released in the evening should be on the screen and said out loud that evening, not the next
-// morning.
-const checkEvery = time.Hour
+// is somebody pressing refresh, and a device left alone would never learn a release exists. Every ten
+// minutes: a manifest is a few hundred bytes from the release's download, not GitHub's rate-limited API,
+// so six an hour cost nothing, and a fix released while somebody stands at the Show should be on it
+// before they have walked off.
+const checkEvery = 10 * time.Minute
 
 // A check that got no answer is tried again sooner. clockRetry while the clock is not set yet, which is
 // a minute or two after boot, or as soon as Home Assistant says what time it is; failRetry after
 // anything else, a network that is down or GitHub having a bad hour.
 const (
 	clockRetry = time.Minute
-	failRetry  = 30 * time.Minute
+	failRetry  = 5 * time.Minute
 )
 
 // nextCheck is how long after a check that ended with err the next one is.
