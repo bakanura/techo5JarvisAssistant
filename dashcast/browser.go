@@ -9,9 +9,13 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
+	"time"
 
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/cdproto/page"
+	"github.com/chromedp/cdproto/target"
 	"github.com/chromedp/chromedp"
 )
 
@@ -206,12 +210,20 @@ func (b *browser) open(ctx context.Context, token, path string, w, h int, allowe
 	// Show's own user gets a profile of its own (a browser context, thrown away with the tab): in
 	// the shared one the last tab opened would have signed every other tab in as its user.
 	var opts []chromedp.ContextOption
+	drop := func() {}
 	if token == "" {
 		token = b.cfg.token
 	} else {
-		opts = append(opts, chromedp.WithNewBrowserContext())
+		id, d, err := b.ownTab()
+		if err != nil {
+			return nil, nil, err
+		}
+		opts = append(opts, chromedp.WithTargetID(id))
+		drop = d
 	}
-	tab, cancel := chromedp.NewContext(b.ctx, opts...)
+	tab, closeTab := chromedp.NewContext(b.ctx, opts...)
+	// Run by the tab's own context ending and by whoever opened it, whichever comes first.
+	cancel := sync.OnceFunc(func() { closeTab(); drop() })
 	stop := context.AfterFunc(ctx, cancel)
 
 	// The frontend keeps its sign-in in local storage; putting a long-lived token there before any
@@ -249,6 +261,36 @@ func (b *browser) open(ctx context.Context, token, path string, w, h int, allowe
 		return nil, nil, err
 	}
 	return tab, func() { stop(); cancel() }, nil
+}
+
+// ownTab is a new tab in a profile of its own, and what throws the profile away. chromedp's
+// WithNewBrowserContext asks for the tab without a window, which the headless shell allows and a
+// full Chrome refuses ("no browser is open": it has no window for a profile it has just made), so
+// the tab is asked for in a new window of its own.
+func (b *browser) ownTab() (target.ID, func(), error) {
+	c := chromedp.FromContext(b.ctx)
+	if c == nil || c.Browser == nil {
+		return "", nil, fmt.Errorf("the browser is not running")
+	}
+	profile, err := target.CreateBrowserContext().Do(cdp.WithExecutor(b.ctx, c.Browser))
+	if err != nil {
+		return "", nil, err
+	}
+	drop := func() {
+		// The tab's context may have ended already, so the profile is thrown away on one of its own.
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = target.DisposeBrowserContext(profile).Do(cdp.WithExecutor(ctx, c.Browser))
+	}
+	id, err := target.CreateTarget("about:blank").
+		WithBrowserContextID(profile).
+		WithNewWindow(true).
+		Do(cdp.WithExecutor(b.ctx, c.Browser))
+	if err != nil {
+		drop()
+		return "", nil, err
+	}
+	return id, drop, nil
 }
 
 // haOrigin is Home Assistant's address as a page sees its own origin: the scheme and host in lower

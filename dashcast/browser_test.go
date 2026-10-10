@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chromedp/cdproto/cdp"
+	"github.com/chromedp/cdproto/target"
 	"github.com/chromedp/chromedp"
 )
 
@@ -346,5 +348,28 @@ func TestEachShowUserHasItsOwnSignIn(t *testing.T) {
 		if got := signedIn(tabs[i]); got != want {
 			t.Errorf("tab %d is signed in with %q, want %q", i+1, got, want)
 		}
+	}
+
+	// A closed Show's profile goes with its tab.
+	profiles := func() int {
+		t.Helper()
+		c := chromedp.FromContext(b.ctx)
+		ids, _, err := target.GetBrowserContexts().Do(cdp.WithExecutor(ctx, c.Browser))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(ids)
+	}
+	before := profiles()
+	_, closeTab, err := b.open(ctx, "show-c", "/lovelace/0", 480, 480, allowed, true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := profiles(); got != before+1 {
+		t.Errorf("%d profiles with a Show's tab open, want %d", got, before+1)
+	}
+	closeTab()
+	if got := profiles(); got != before {
+		t.Errorf("%d profiles after its tab closed, want %d", got, before)
 	}
 }
