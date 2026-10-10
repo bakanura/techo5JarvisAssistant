@@ -242,15 +242,16 @@ class HomeAssistant:
 class _Frames:
     """Just enough of RFC 6455 for a short exchange: text frames out, masked; text frames in."""
 
-    def __init__(self, sock: Any, buffered: bytes = b"") -> None:
+    def __init__(self, sock: Any, buffered: bytes = b"", peer: str = "Home Assistant") -> None:
         self.sock = sock
         self.buf = buffered
+        self.peer = peer
 
     def _take(self, n: int) -> bytes:
         while len(self.buf) < n:
             chunk = self.sock.recv(65536)
             if not chunk:
-                raise ValueError("Home Assistant closed the websocket")
+                raise ValueError(f"{self.peer} closed the websocket")
             self.buf += chunk
         out, self.buf = self.buf[:n], self.buf[n:]
         return out
@@ -283,7 +284,7 @@ class _Frames:
                 payload = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
             opcode = b0 & 0x0F
             if opcode == 8:
-                raise ValueError("Home Assistant closed the websocket")
+                raise ValueError(f"{self.peer} closed the websocket")
             if opcode == 9:
                 self.send(payload, opcode=10)
                 continue
@@ -294,15 +295,17 @@ class _Frames:
                 return json.loads(message)
 
 
-def _ws_exchange(sock: Any, host: str, token: str, message: dict, *, key: str | None = None) -> Any:
+def ws_open(sock: Any, host: str, path: str, *, key: str | None = None,
+            peer: str = "Home Assistant") -> _Frames:
+    """The websocket handshake on a connected socket; returns its frames."""
     key = key or base64.b64encode(os.urandom(16)).decode()
-    sock.sendall((f"GET /api/websocket HTTP/1.1\r\nHost: {host}\r\nUpgrade: websocket\r\n"
+    sock.sendall((f"GET {path} HTTP/1.1\r\nHost: {host}\r\nUpgrade: websocket\r\n"
                   f"Connection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n").encode())
     head = b""
     while b"\r\n\r\n" not in head:
         chunk = sock.recv(4096)
         if not chunk:
-            raise ValueError("Home Assistant closed the connection before the websocket opened")
+            raise ValueError(f"{peer} closed the connection before the websocket opened")
         head += chunk
     head, rest = head.split(b"\r\n\r\n", 1)
     lines = head.decode("latin-1").split("\r\n")
@@ -312,7 +315,11 @@ def _ws_exchange(sock: Any, host: str, token: str, message: dict, *, key: str | 
     accept = next((l.split(":", 1)[1].strip() for l in lines[1:] if l.lower().startswith("sec-websocket-accept:")), "")
     if accept != want:
         raise ValueError("the websocket answer does not match what was asked")
-    frames = _Frames(sock, rest)
+    return _Frames(sock, rest, peer)
+
+
+def _ws_exchange(sock: Any, host: str, token: str, message: dict, *, key: str | None = None) -> Any:
+    frames = ws_open(sock, host, "/api/websocket", key=key)
     if frames.recv().get("type") != "auth_required":
         raise ValueError("Home Assistant did not ask for the token")
     frames.send({"type": "auth", "access_token": token})

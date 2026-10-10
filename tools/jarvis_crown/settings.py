@@ -7,7 +7,7 @@ Secrets are never remembered by this tool, never put in an argument list, and re
 only as files readable by the owner, in a folder that is gone when the install ends.
 
 Keyring entries are looked up with secret-tool (or $JARVIS_SHOW_SECRET_TOOL) under
-    application jarvis-show secret <ha-token | ha-admin-token | dashcast-key>
+    application jarvis-show secret <ha-token | ha-admin-token | dashcast-key | music-assistant-token>
     application jarvis-show secret wifi network <ssid>
 """
 from __future__ import annotations
@@ -45,6 +45,9 @@ class Settings:
     dashcast_key: str | None = None
     music_assistant: str | None = None
     ha_admin_token: str | None = None
+    # Only with --music-assistant-local-metadata: a Music Assistant token, used once to switch its
+    # online lookups off (music_assistant.py), and kept nowhere.
+    music_assistant_token: str | None = None
 
     def summary(self) -> list[str]:
         """What will be set, without a single secret in it."""
@@ -52,6 +55,8 @@ class Settings:
         out.append(f"Home Assistant: {self.ha_url}" if self.ha_url and self.ha_token else "Home Assistant access: not now")
         out.append(f"DashCast: {self.dashcast}" if self.dashcast else "DashCast: not now")
         out.append(f"Music Assistant: {self.music_assistant}" if self.music_assistant else "Music Assistant: not now")
+        if self.music_assistant and self.music_assistant_token:
+            out.append("Music Assistant: online metadata lookups switched off")
         out.append("added to Home Assistant automatically" if self.ha_admin_token and self.ha_url
                    else "added to Home Assistant: by hand (no admin token)")
         return out
@@ -324,8 +329,20 @@ def gather(args, asker: Asker, *, defaults: dict[str, str] | None = None,
     say("Music Assistant (the Sendspin player):")
     music = _checked(getattr(args, "music_assistant", None), ma) or \
         asker.text("server IP or name", d.get("music_assistant"), ma)
-    s = replace(s, music_assistant=music)
+    ma_token = None
+    if music and getattr(args, "music_assistant_local_metadata", False):
+        ma_token = from_file("music_assistant_token_file", "Music Assistant token", ma_check_token) or \
+            _checked(lookup("music-assistant-token"), ma_check_token) or \
+            asker.secret("a Music Assistant token (its settings, your profile, long-lived tokens), "
+                         "used once to switch its online lookups off", ma_check_token)
+        if ma_token is None:
+            say("   no token: Music Assistant keeps looking metadata up online")
+    s = replace(s, music_assistant=music, music_assistant_token=ma_token)
     return s
+
+
+def ma_check_token(value: str) -> str:
+    return check_token(value, "the Music Assistant token")
 
 
 @contextlib.contextmanager

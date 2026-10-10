@@ -302,7 +302,10 @@ secret-tool store --label="Jarvis Show: HA token" application jarvis-show secret
 secret-tool store --label="Jarvis Show: HA admin token" application jarvis-show secret ha-admin-token
 secret-tool store --label="Jarvis Show: DashCast key" application jarvis-show secret dashcast-key
 secret-tool store --label="Jarvis Show: Wi-Fi" application jarvis-show secret wifi network "Home"
+secret-tool store --label="Jarvis Show: Music Assistant token" application jarvis-show secret music-assistant-token
 ```
+
+The Music Assistant token is only asked for with `--music-assistant-local-metadata` (below).
 
 The addresses have switches too (`--ha-url`, `--dashcast`, `--music-assistant`), and
 `--no-questions` (or `TECHO5_NO_PROMPT=1`, or no terminal) asks nothing at all.
@@ -336,6 +339,18 @@ What happens with the answers:
 
   The admin token is used for this and kept nowhere. Each step looks first at what is already
   there, so running it again changes only what is missing.
+- **In Music Assistant, only when asked.** Music Assistant looks songs, albums and artists up on the
+  internet (MusicBrainz, fanart.tv, TheAudioDB, Wikipedia and more) for pictures and biographies.
+  That is what you want with a streaming service or an untagged library, so it stays as it is. A
+  house whose own pipeline already tags the music can have it stop: `--music-assistant-local-metadata`
+  takes a Music Assistant long-lived token (made in Music Assistant under Settings, Profile, Long-lived
+  tokens; `--music-assistant-token-file`, the keyring, or a hidden question) and over Music
+  Assistant's websocket on port 8095 switches its "online metadata" setting off and disables the
+  online-only metadata providers it allows to be disabled (MusicBrainz is not one of them, but the
+  setting already keeps it quiet). The token stays on this computer; the Show never gets it. A
+  failure here is a warning and does not stop the install; it runs again with
+  `home-assistant --name NAME --music-assistant-local-metadata`. Both are ordinary Music Assistant
+  settings, switched back on in its own settings pages.
 
 Without Wi-Fi at install (it is picked on the Show's screen instead) or without an admin token, the
 tool says how to finish later. The same steps run on their own for a Show that is already installed:
@@ -433,6 +448,8 @@ uses the Home Assistant, DashCast, Music Assistant and choice switches.
 | `--dashcast HOST[:PORT]` | The DashCast server. |
 | `--dashcast-key-file FILE` | A file holding the DashCast key. |
 | `--music-assistant HOST` | The Music Assistant server. |
+| `--music-assistant-local-metadata` | Music Assistant stops looking metadata up online and keeps to the library's own tags. Off unless given. |
+| `--music-assistant-token-file FILE` | A file holding a Music Assistant long-lived token, for the switch above. |
 | `--assistant NAME` | The Assist pipeline it talks to, or `preferred`. `''` leaves it alone. |
 | `--wake-word NAME` | One of the wake words the Show offers. `''` leaves it alone. |
 | `--room NAME` | The Home Assistant area it stands in, by name or id. `''` leaves it alone. |

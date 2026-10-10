@@ -19,6 +19,7 @@ from jarvis_crown.boards import profile_for_board, profile_for_product  # noqa: 
 from jarvis_crown.device_gate import DeviceGateError, identify_show  # noqa: E402
 from jarvis_crown.flow import FlowError, InstallInputs, run_install_flow  # noqa: E402
 from jarvis_crown import home_assistant as ha_api  # noqa: E402
+from jarvis_crown import music_assistant as ma_api  # noqa: E402
 from jarvis_crown.shows import known_shows, show_named  # noqa: E402
 from jarvis_crown.settings import Asker, Settings, SettingsError, gather, save_defaults, secret_files  # noqa: E402
 from jarvis_crown.preflight import preflight_ok, print_checks, run_preflight  # noqa: E402
@@ -55,6 +56,12 @@ def parse_args() -> argparse.Namespace:
     setup.add_argument("--dashcast", help="the DashCast server, host[:port]")
     setup.add_argument("--dashcast-key-file", type=Path, help="a file holding the DashCast key; default the keyring, then ask")
     setup.add_argument("--music-assistant", help="the Music Assistant server's IP address or name")
+    setup.add_argument("--music-assistant-local-metadata", action="store_true",
+                       help="switch Music Assistant's online metadata lookups off, for a library that is already "
+                            "tagged; off unless given")
+    setup.add_argument("--music-assistant-token-file", type=Path,
+                       help="with --music-assistant-local-metadata: a file holding a Music Assistant token; "
+                            "default the keyring, then ask")
     setup.add_argument("--wake-word", help="the wake word, one the Show offers (default: ask; '' leaves it alone)")
     setup.add_argument("--assistant", help="the Assist pipeline it talks to, by name (default: ask; '' leaves it alone)")
     setup.add_argument("--room", help="the Home Assistant area it stands in, by name (default: ask; '' leaves it alone)")
@@ -229,6 +236,21 @@ def deploy_to_home_assistant(settings: Settings, args, *, name: str, key_file: P
     return 0
 
 
+def music_assistant_metadata(settings: Settings) -> None:
+    """--music-assistant-local-metadata: Music Assistant stops looking things up online. A failure
+    leaves it as it was and does not stop anything else."""
+    if not (settings.music_assistant and settings.music_assistant_token):
+        return
+    try:
+        done = ma_api.local_metadata_only(settings.music_assistant, settings.music_assistant_token)
+    except ma_api.MusicAssistantError as exc:
+        print(f"WARN: Music Assistant: {exc}; its online lookups are still on", file=sys.stderr)
+        print("WARN:   later: python3 tools/jarvis-show.py home-assistant --name NAME "
+              "--music-assistant-local-metadata", file=sys.stderr)
+        return
+    print(f"PASS: Music Assistant: {', '.join(done)}")
+
+
 def home_assistant_command(args, backups: Path) -> int:
     if not args.name:
         print("FAIL: home-assistant requires --name, the Show's name as installed", file=sys.stderr)
@@ -242,6 +264,7 @@ def home_assistant_command(args, backups: Path) -> int:
         print(f"FAIL: {exc}", file=sys.stderr)
         return 1
     save_defaults(settings)
+    music_assistant_metadata(settings)
     if not settings.ha_admin_token:
         print("FAIL: adding the Show needs a Home Assistant admin token "
               "(--ha-admin-token-file, the keyring, or the question)", file=sys.stderr)
@@ -481,6 +504,7 @@ def main() -> int:
                 print(f"FAIL: install stopped: {exc}", file=sys.stderr)
                 return 4
         print(f"PASS: {result.profile.product_id} installation flow completed")
+        music_assistant_metadata(settings)
         if not settings.wifi:
             print("INFO: join Wi-Fi on the Show's screen, then add it to Home Assistant with:")
             print(f"INFO:   python3 tools/jarvis-show.py home-assistant --name {args.name!r}")

@@ -16,6 +16,7 @@ TOOLS = ROOT / "tools"
 sys.path.insert(0, str(TOOLS))
 
 from jarvis_crown import home_assistant as ha  # noqa: E402
+from jarvis_crown import music_assistant as ma  # noqa: E402
 from jarvis_crown.settings import Asker, Settings, SettingsError, gather, load_defaults, save_defaults, secret_files  # noqa: E402
 from jarvis_crown.shows import record_show, show_named  # noqa: E402
 from techo5lib import Fail  # noqa: E402
@@ -521,6 +522,20 @@ class GatherTests(unittest.TestCase):
         with self.assertRaises(SettingsError):
             gather(args(dashcast="bad host"), Asker(False), defaults={}, lookup=lambda *a, **k: None)
 
+    def test_music_assistant_token_only_when_its_lookups_go_off(self):
+        keyring = {"music-assistant-token": "ma-token"}
+        s = gather(args(music_assistant="10.0.0.6"), Asker(False), defaults={},
+                   lookup=lambda secret, **attrs: keyring.get(secret))
+        self.assertIsNone(s.music_assistant_token)
+        s = gather(args(music_assistant="10.0.0.6", music_assistant_local_metadata=True), Asker(False),
+                   defaults={}, lookup=lambda secret, **attrs: keyring.get(secret))
+        self.assertEqual(s.music_assistant_token, "ma-token")
+        self.assertIn("Music Assistant: online metadata lookups switched off", s.summary())
+        self.assertFalse(any("ma-token" in line for line in s.summary()))
+        s = gather(args(music_assistant_local_metadata=True), Asker(False), defaults={},
+                   lookup=lambda secret, **attrs: keyring.get(secret))
+        self.assertIsNone(s.music_assistant_token)
+
     def test_defaults_keep_no_secret(self):
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td) / "jarvis-show" / "defaults.json"
@@ -539,6 +554,78 @@ class GatherTests(unittest.TestCase):
             self.assertEqual(files["ha_token"].read_text(), TOKEN + "\n")
             folder = files["ha_token"].parent
         self.assertFalse(folder.exists())
+
+
+class MusicAssistantTests(unittest.TestCase):
+    def server(self, *answers):
+        def frame(obj):
+            data = json.dumps(obj).encode()
+            n = len(data)
+            return bytes([0x81, n]) + data if n < 126 else bytes([0x81, 126]) + n.to_bytes(2, "big") + data
+
+        inbox = (b"HTTP/1.1 101 Switching Protocols\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n"
+                 + frame({"server_id": "x", "server_version": "2.10.6", "schema_version": 32})
+                 + b"".join(frame(a) for a in answers))
+
+        class Sock:
+            def __init__(self):
+                self.inbox, self.sent = inbox, b""
+
+            def recv(self, n):
+                out, self.inbox = self.inbox[:min(n, 9)], self.inbox[min(n, 9):]
+                return out
+
+            def sendall(self, data):
+                self.sent += data
+
+            def messages(self):
+                sent, out = self.sent.split(b"\r\n\r\n", 1)[1], []
+                while sent:
+                    n, at = sent[1] & 0x7F, 2
+                    if n == 126:
+                        n, at = int.from_bytes(sent[2:4], "big"), 4
+                    mask = sent[at:at + 4]
+                    out.append(json.loads(bytes(b ^ mask[i % 4] for i, b in enumerate(sent[at + 4:at + 4 + n]))))
+                    sent = sent[at + 4 + n:]
+                return out
+        return Sock()
+
+    def test_online_lookups_off_and_only_online_providers_disabled(self):
+        providers = [
+            {"domain": "lrclib", "instance_id": "lrclib", "enabled": True},
+            {"domain": "fanarttv", "instance_id": "fanarttv", "enabled": False},
+            {"domain": "musicbrainz", "instance_id": "musicbrainz", "enabled": True},
+            {"domain": "opensubsonic", "instance_id": "opensubsonic--x", "enabled": True},
+        ]
+        sock = self.server({"message_id": "1", "result": {"authenticated": True}},
+                           {"message_id": "2", "result": {}},
+                           {"message_id": "3", "result": providers},
+                           {"message_id": "4", "result": {}})
+        done = ma.exchange(sock, "10.0.0.6:8095", "ma-token", key="dGhlIHNhbXBsZSBub25jZQ==")
+        self.assertEqual(done, ["online metadata lookups off", "lrclib disabled"])
+        self.assertEqual([(m["command"], m["args"]) for m in sock.messages()], [
+            ("auth", {"token": "ma-token"}),
+            ("config/core/save", {"domain": "metadata", "values": {"enable_online_metadata": False}}),
+            ("config/providers", {}),
+            ("config/providers/save", {"provider_domain": "lrclib", "instance_id": "lrclib",
+                                       "values": {"enabled": False}}),
+        ])
+        self.assertTrue(sock.sent.startswith(b"GET /ws HTTP/1.1\r\n"))
+
+    def test_a_refused_token_changes_nothing_and_is_not_repeated(self):
+        sock = self.server({"message_id": "1", "error_code": 20, "details": "Invalid or expired token"})
+        with self.assertRaises(ma.MusicAssistantError) as cm:
+            ma.exchange(sock, "10.0.0.6:8095", "ma-token", key="dGhlIHNhbXBsZSBub25jZQ==")
+        self.assertIn("did not accept the token", str(cm.exception))
+        self.assertNotIn("ma-token", str(cm.exception))
+        self.assertEqual([m["command"] for m in sock.messages()], ["auth"])
+
+    def test_unreachable_says_where(self):
+        def refuse(*a, **k):
+            raise OSError("connection refused")
+        with self.assertRaises(ma.MusicAssistantError) as cm:
+            ma.local_metadata_only("10.0.0.6", "ma-token", connect=refuse)
+        self.assertIn("10.0.0.6:8095", str(cm.exception))
 
 
 class InstallShowSettingsTests(unittest.TestCase):
