@@ -22,8 +22,12 @@ import (
 // nowPlaying is the idle screen while music plays or sits paused: the cover as a square on the left,
 // and on the right where it plays, the song, who plays it and what comes next, the position, and one
 // row of buttons. A station's logo stands on a card in the cover's place, and a song with no picture at
-// all gets drawn notes (rings for talk radio). The ground takes a little of the cover's color, so the
-// page belongs to the song without the words having to be read off a picture.
+// all gets drawn notes (rings for talk radio).
+//
+// With a cover, the page is in the cover's colors the way Spotify's Car Thing was: the ground is
+// made from the cover, darkened until white reads on it, the words are white with all but the song
+// let through by the ground, and the controls are marks with no buttons under them. Without one it
+// keeps the theme's colors, as a logo or the drawn notes would look lost on a ground made up for them.
 //
 // It used to draw the cover across the whole screen under a wash with the words over it. A cover
 // washed dark enough for the words to read did not look like the cover any more, and one left bright
@@ -32,14 +36,14 @@ func (r *renderer) nowPlaying(s scene) {
 	rd := s.radio
 	cover, col := r.nowPlayingLayout()
 	r.cover.prepare(rd.Thumb, cover.Dx())
+	ink := themeInk()
 	if r.cover.img != nil && !rd.Logo {
-		top := lerp(walnut, r.cover.tint, 0.20)
-		bottom := lerp(walnut, r.cover.tint, 0.06)
-		r.vgradient(r.dst.Rect, top, bottom)
+		draw.Draw(r.dst, r.dst.Rect, r.cover.groundFor(r.dst.Rect.Size()), image.Point{}, draw.Src)
+		ink = coverInk()
 	}
 	r.coverArt(rd, cover)
 	if s.library {
-		r.libraryPill(r.libraryButton())
+		r.libraryPill(r.libraryButton(), ink)
 	}
 
 	station := rd.Now
@@ -65,21 +69,21 @@ func (r *renderer) nowPlaying(s scene) {
 	head := col.Min.Y + r.s(26)
 	clock := clockText(s.now)
 	cw := r.width(r.small, clock)
-	r.text(r.small, clock, col.Max.X-cw, head, dim)
+	r.text(r.small, clock, col.Max.X-cw, head, ink.faint)
 	labelEnd := col.Max.X - cw - r.s(24)
 	if s.lyrics != nil {
 		b := r.lyricsButton(s.now)
-		r.lyricsPill(b, s.showLyrics)
+		r.lyricsPill(b, s.showLyrics, ink)
 		labelEnd = b.Min.X - r.s(16)
 	}
-	r.text(r.small, r.fit(r.small, label, labelEnd-col.Min.X), col.Min.X, head, amber)
+	r.text(r.small, r.fit(r.small, label, labelEnd-col.Min.X), col.Min.X, head, ink.head)
 
 	fav, back, _, _, _ := r.nowPlayingButtons()
 	bar := back.Min.Y - r.s(34)
 	room := bar - r.s(44) // the words stop clear of the times over the bar
 
 	if s.showLyrics {
-		r.lyricWords(s, col, head, room)
+		r.lyricWords(s, col, head, room, ink)
 	} else {
 		headline := station
 		if rd.Title != "" {
@@ -98,26 +102,26 @@ func (r *renderer) nowPlaying(s scene) {
 			if i == 1 && len(lines) > 2 {
 				line = r.clipTo(face, line+" "+strings.Join(lines[2:], " "), col.Dx())
 			}
-			r.text(face, line, col.Min.X, y, cream)
+			r.text(face, line, col.Min.X, y, ink.title)
 			y += r.s(52)
 		}
 		y -= r.s(52)
-		line := func(face font.Face, text string, step int, c color.RGBA) {
+		line := func(face font.Face, text string, step int, c color.Color) {
 			if text == "" || y+step > room {
 				return
 			}
 			y += step
 			r.text(face, r.clipTo(face, text, col.Dx()), col.Min.X, y, c)
 		}
-		line(r.body, rd.Artist, r.s(48), dim)
-		line(r.small, rd.Album, r.s(42), dim)
+		line(r.body, rd.Artist, r.s(48), ink.soft)
+		line(r.small, rd.Album, r.s(42), ink.faint)
 
 		// A group says which rooms it reached; the queue says what comes next.
 		if rd.Now == "Music Assistant" && len(s.music.Rooms) > 1 {
-			line(r.small, strings.Join(s.music.Rooms, "  ·  "), r.s(40), amber)
+			line(r.small, strings.Join(s.music.Rooms, "  ·  "), r.s(40), ink.head)
 		}
 		if rd.Now == "Music Assistant" && s.music.Next != "" {
-			line(r.small, i18n.T("Next")+"  ·  "+s.music.Next, r.s(40), dim)
+			line(r.small, i18n.T("Next")+"  ·  "+s.music.Next, r.s(40), ink.faint)
 		}
 	}
 
@@ -125,12 +129,16 @@ func (r *renderer) nowPlaying(s scene) {
 	// has no position in its protocol, so an unavailable HA value leaves an honest empty bar rather
 	// than inventing timing.
 	if rd.Now == "Music Assistant" {
-		r.musicProgress(s.music, s.now, image.Rect(col.Min.X, bar, col.Max.X, bar+r.s(6)))
+		r.musicProgress(s.music, s.now, image.Rect(col.Min.X, bar, col.Max.X, bar+r.s(6)), ink)
 	}
 
 	// One row: the star, back, play or pause, forward, and stop. Sendspin routes these back to Music
 	// Assistant, so the page controls the real queue/group rather than a local shadow player.
 	_, back, play, next, stop := r.nowPlayingButtons()
+	if ink.bare {
+		r.bareButtons(s, fav, back, play, next, stop)
+		return
+	}
 	rad := float64(r.s(14))
 	ground := shift(walnut, 10)
 	if !dark() {
@@ -221,13 +229,20 @@ func (r *renderer) libraryButton() image.Rectangle {
 	return image.Rect(cover.Max.X-in-w, cover.Max.Y-in-h, cover.Max.X-in, cover.Max.Y-in)
 }
 
-// libraryPill is the button: three books on a shelf, the last one leaning.
-func (r *renderer) libraryPill(b image.Rectangle) {
-	ground := shift(walnut, 10)
-	if !dark() {
-		ground = shift(walnut, -6)
+// libraryPill is the button: three books on a shelf, the last one leaning. On a cover's ground it is
+// the cover darkened under it, so it reads on any picture without a theme's color stuck on the cover.
+func (r *renderer) libraryPill(b image.Rectangle, ink nowInk) {
+	cream := cream
+	if ink.bare {
+		r.roundFillF(float64(b.Min.X), float64(b.Min.Y), float64(b.Max.X), float64(b.Max.Y), float64(b.Dy())/2, lerp(r.pixel(b), color.RGBA{A: 255}, 0.55))
+		cream = white
+	} else {
+		ground := shift(walnut, 10)
+		if !dark() {
+			ground = shift(walnut, -6)
+		}
+		r.roundButton(b, float64(b.Dy())/2, ground)
 	}
-	r.roundButton(b, float64(b.Dy())/2, ground)
 	x := float64(b.Min.X + r.s(17))
 	cy, bw := float64(b.Min.Y+b.Max.Y)/2, float64(r.s(5))
 	foot := cy + float64(r.s(9))
@@ -241,7 +256,19 @@ func (r *renderer) libraryPill(b image.Rectangle) {
 }
 
 // lyricsPill is the button: lit while the words are up, on the ground's own color while they are not.
-func (r *renderer) lyricsPill(b image.Rectangle, on bool) {
+// On a cover's ground it is a lighter patch of that ground, and white with the ground's color for
+// lines when lit.
+func (r *renderer) lyricsPill(b image.Rectangle, on bool, page nowInk) {
+	if page.bare {
+		under := r.pixel(b)
+		ground, ink := lerp(under, white, 0.16), white
+		if on {
+			ground, ink = white, under
+		}
+		r.roundFillF(float64(b.Min.X), float64(b.Min.Y), float64(b.Max.X), float64(b.Max.Y), float64(b.Dy())/2, ground)
+		r.verseLines(b, ink)
+		return
+	}
 	ground, ink := shift(walnut, 10), cream
 	if !dark() {
 		ground = shift(walnut, -6)
@@ -250,7 +277,11 @@ func (r *renderer) lyricsPill(b image.Rectangle, on bool) {
 		ground, ink = amber, onAccent()
 	}
 	r.roundButton(b, float64(b.Dy())/2, ground)
-	// Three lines of a verse, ragged on the right.
+	r.verseLines(b, ink)
+}
+
+// verseLines is the lyrics button's mark: three lines of a verse, ragged on the right.
+func (r *renderer) verseLines(b image.Rectangle, ink color.RGBA) {
 	x := float64(b.Min.X + r.s(17))
 	cy, gap, th := float64(b.Min.Y+b.Max.Y)/2, float64(r.s(8)), float64(r.s(4))
 	for i, w := range []float64{22, 15, 19} {
@@ -262,7 +293,7 @@ func (r *renderer) lyricsPill(b image.Rectangle, on bool) {
 // lyricWords is the song's words between the head and the bar, in place of the song's details. Timed
 // words keep the line being sung near the top, lit, with the one before it above when it is short; untimed ones
 // have no line being sung and move down through the song as it goes.
-func (r *renderer) lyricWords(s scene, col image.Rectangle, head, room int) {
+func (r *renderer) lyricWords(s scene, col image.Rectangle, head, room int, ink nowInk) {
 	l := s.lyrics
 	type row struct {
 		text string
@@ -300,14 +331,13 @@ func (r *renderer) lyricWords(s scene, col image.Rectangle, head, room int) {
 		start = int(float64(len(rows)-fits+1) * elapsed.Seconds() / s.music.Duration)
 	}
 	start = min(start, max(len(rows)-fits, 0))
-	past := lerp(walnut, dim, 0.55)
 	for i, y := start, top; i < len(rows) && y <= room; i, y = i+1, y+step {
-		c := dim
+		c := ink.soft
 		switch {
 		case !l.Synced || rows[i].line == cur:
-			c = cream
+			c = ink.title
 		case rows[i].line < cur:
-			c = past
+			c = ink.past
 		}
 		r.text(r.body, rows[i].text, col.Min.X, y, c)
 	}
@@ -385,13 +415,15 @@ type coverCache struct {
 	side int
 	img  *image.RGBA
 	tint color.RGBA
+	// ground is the page's ground made from the cover, for the panel's size; see groundFor.
+	ground *image.RGBA
 }
 
 func (c *coverCache) prepare(src *image.RGBA, side int) {
 	if src == c.src && side == c.side {
 		return
 	}
-	c.src, c.side, c.img = src, side, nil
+	c.src, c.side, c.img, c.ground = src, side, nil, nil
 	if src == nil || side <= 0 {
 		return
 	}
@@ -402,6 +434,133 @@ func (c *coverCache) prepare(src *image.RGBA, side int) {
 		xdraw.CatmullRom.Scale(c.img, c.img.Bounds(), src, src.Bounds(), draw.Src, nil)
 	}
 	c.tint = averageColor(c.img)
+}
+
+// nowInk is what the now-playing page draws its words and marks in: the head (where it plays), the
+// song, who plays it, the rest, and lyrics already sung. bare is for a cover's ground, where the
+// controls are marks with no buttons under them.
+type nowInk struct {
+	head, title, soft, faint, past color.Color
+	bare                           bool
+}
+
+// themeInk is the theme's own colors, for a page with no cover to take its colors from. A function,
+// because the theme can change under a running Show.
+func themeInk() nowInk {
+	return nowInk{head: amber, title: cream, soft: dim, faint: dim, past: lerp(walnut, dim, 0.55)}
+}
+
+// coverInk is white over a cover's ground: the song at full strength and the rest let through by the
+// ground, so each line is in the cover's color as well as white. The colors are premultiplied, which
+// is what the text drawing lays over the ground.
+func coverInk() nowInk {
+	see := func(a uint8) color.RGBA { return color.RGBA{a, a, a, a} }
+	return nowInk{head: see(200), title: white, soft: see(178), faint: see(150), past: see(95), bare: true}
+}
+
+var white = color.RGBA{0xff, 0xff, 0xff, 0xff}
+
+// pixel is the color already drawn in the middle of b, for a part laid over the cover's ground that
+// has to be the ground's own color made lighter or darker.
+func (r *renderer) pixel(b image.Rectangle) color.RGBA {
+	p := image.Pt((b.Min.X+b.Max.X)/2, (b.Min.Y+b.Max.Y)/2)
+	if !p.In(r.dst.Rect) {
+		return walnut
+	}
+	i := r.dst.PixOffset(p.X, p.Y)
+	return color.RGBA{r.dst.Pix[i], r.dst.Pix[i+1], r.dst.Pix[i+2], 255}
+}
+
+// groundFor is the page's ground for a cover, made once per cover and panel: each corner of the page
+// takes the color of the same corner of the cover, and the colors run into each other across it.
+// Each corner is the cover's most colorful part there rather than its mean, which on most covers is
+// a brown, and is darkened until white words read on it. The foot is darker still, under the controls.
+func (c *coverCache) groundFor(size image.Point) *image.RGBA {
+	if c.ground != nil && c.ground.Rect.Size() == size {
+		return c.ground
+	}
+	h := c.img.Bounds().Dx() / 2
+	var corner [4]color.RGBA // top left, top right, bottom left, bottom right
+	for i := range corner {
+		corner[i] = groundTone(vividColor(c.img, image.Rect(i%2*h, i/2*h, i%2*h+h, i/2*h+h)))
+	}
+	g := image.NewRGBA(image.Rectangle{Max: size})
+	for y := 0; y < size.Y; y++ {
+		fy := float64(y) / float64(max(size.Y-1, 1))
+		left, right := lerp(corner[0], corner[2], fy), lerp(corner[1], corner[3], fy)
+		foot := 1 - 0.35*fy*fy
+		for x := 0; x < size.X; x++ {
+			col := lerp(left, right, float64(x)/float64(max(size.X-1, 1)))
+			i := g.PixOffset(x, y)
+			g.Pix[i], g.Pix[i+1], g.Pix[i+2], g.Pix[i+3] = uint8(float64(col.R)*foot), uint8(float64(col.G)*foot), uint8(float64(col.B)*foot), 255
+		}
+	}
+	c.ground = g
+	return g
+}
+
+// vividColor is the mean of a part of a picture with each pixel counted by how much color it has, so
+// a red jacket on a grey wall gives red, and a grey picture still gives its grey.
+func vividColor(img *image.RGBA, b image.Rectangle) color.RGBA {
+	var rs, gs, bs, n float64
+	for y := b.Min.Y; y < b.Max.Y; y += 6 {
+		for x := b.Min.X; x < b.Max.X; x += 6 {
+			i := img.PixOffset(x, y)
+			cr, cg, cb := float64(img.Pix[i]), float64(img.Pix[i+1]), float64(img.Pix[i+2])
+			w := 8 + max(cr, cg, cb) - min(cr, cg, cb)
+			w *= w
+			rs, gs, bs, n = rs+cr*w, gs+cg*w, bs+cb*w, n+w
+		}
+	}
+	if n == 0 {
+		return walnut
+	}
+	return color.RGBA{uint8(rs / n), uint8(gs / n), uint8(bs / n), 255}
+}
+
+// groundTone makes a cover's color into ground for white words: no lighter than a dark mid-tone, a
+// little more colorful than it was so the darkening does not turn it to mud, and never quite black.
+func groundTone(c color.RGBA) color.RGBA {
+	r, g, b := float64(c.R), float64(c.G), float64(c.B)
+	luma := 0.299*r + 0.587*g + 0.114*b
+	k := 1.0
+	if luma > 70 {
+		k = 70 / luma
+	}
+	out := func(v float64) uint8 {
+		v = (luma + (v-luma)*1.3) * k
+		return uint8(min(max(v, 14), 255))
+	}
+	return color.RGBA{out(r), out(g), out(b), 255}
+}
+
+// bareButtons is the row of controls on a cover's ground: white marks with nothing under them, and
+// play or pause as a white disc with the mark cut in the ground's color. The tap regions are the same
+// rectangles the buttons fill on the theme's page.
+func (r *renderer) bareButtons(s scene, fav, back, play, next, stop image.Rectangle) {
+	cx := func(b image.Rectangle) float64 { return float64(b.Min.X+b.Max.X) / 2 }
+	cy := float64(play.Min.Y+play.Max.Y) / 2
+	u := float64(r.s(14))
+	under := r.pixel(play)
+	rad := float64(play.Dy()) / 2
+	r.roundFillF(cx(play)-rad, cy-rad, cx(play)+rad, cy+rad, rad, white)
+	r.markSkip(cx(back), cy, u, false, white)
+	r.markSkip(cx(next), cy, u, true, white)
+	m := u * 0.9
+	if s.paused {
+		r.aaPoly([][2]float64{{cx(play) - m*0.7, cy - m*1.15}, {cx(play) + m*1.1, cy}, {cx(play) - m*0.7, cy + m*1.15}}, under)
+	} else {
+		bw := m * 0.62
+		r.roundFillF(cx(play)-m*0.8, cy-m*1.05, cx(play)-m*0.8+bw, cy+m*1.05, bw/3, under)
+		r.roundFillF(cx(play)+m*0.8-bw, cy-m*1.05, cx(play)+m*0.8, cy+m*1.05, bw/3, under)
+	}
+	side := lerp(r.pixel(fav), white, 0.7)
+	star := side
+	if s.faved {
+		star = amber
+	}
+	r.aaStar(cx(fav), cy, u*1.4, star)
+	r.roundFillF(cx(stop)-u*0.75, cy-u*0.75, cx(stop)+u*0.75, cy+u*0.75, u*0.2, lerp(r.pixel(stop), white, 0.7))
 }
 
 // averageColor is a picture's mean color, from every eighth pixel each way, which is plenty for a tint.
@@ -511,24 +670,27 @@ func prettyMusicName(v string) string {
 // musicProgress is the position as a rounded bar in b, with the time gone and the length over its ends.
 // The position moves on from Music Assistant's last report while the song plays, so the time gone
 // counts up between reports rather than jumping.
-func (r *renderer) musicProgress(v home.MusicPlaybackView, now time.Time, b image.Rectangle) {
+func (r *renderer) musicProgress(v home.MusicPlaybackView, now time.Time, b image.Rectangle, ink nowInk) {
 	pos := v.Elapsed(now)
 	rad := float64(b.Dy()) / 2
-	track := shift(walnut, 18)
+	track, fillC := shift(walnut, 18), amber
 	if !dark() {
 		track = shift(walnut, -18)
+	}
+	if ink.bare {
+		track, fillC = lerp(r.pixel(b), white, 0.22), white
 	}
 	r.roundFillF(float64(b.Min.X), float64(b.Min.Y), float64(b.Max.X), float64(b.Max.Y), rad, track)
 	if v.Duration > 0 {
 		p := min(max(pos/v.Duration, 0), 1)
 		fill := float64(b.Min.X) + float64(b.Dx())*p
 		if fill > float64(b.Min.X)+2*rad {
-			r.roundFillF(float64(b.Min.X), float64(b.Min.Y), fill, float64(b.Max.Y), rad, amber)
+			r.roundFillF(float64(b.Min.X), float64(b.Min.Y), fill, float64(b.Max.Y), rad, fillC)
 		}
 		left := mediaClock(pos)
 		right := mediaClock(v.Duration)
-		r.text(r.tiny, left, b.Min.X, b.Min.Y-r.s(12), dim)
-		r.text(r.tiny, right, b.Max.X-r.width(r.tiny, right), b.Min.Y-r.s(12), dim)
+		r.text(r.tiny, left, b.Min.X, b.Min.Y-r.s(12), ink.faint)
+		r.text(r.tiny, right, b.Max.X-r.width(r.tiny, right), b.Min.Y-r.s(12), ink.faint)
 	}
 }
 
