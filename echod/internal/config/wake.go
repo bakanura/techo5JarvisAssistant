@@ -98,7 +98,7 @@ type WakeWord struct {
 }
 
 const (
-	// DefaultThreshold is where Hey Jarvis wakes in a quiet room. Said on purpose across a living room
+	// DefaultThreshold is where a wake word wakes in a quiet room, measured on Hey Jarvis. Said on purpose across a living room
 	// it peaks between 0.88 and 0.91, so ESPHome's 0.92 missed it nearly every time. The false wakes
 	// that once led there all came while the device's own speaker played and the threshold had slack
 	// under it; wake words get none now (detect.thresholdFor), and in a quiet room nothing that was
@@ -140,8 +140,13 @@ func DefaultWakeWord() WakeWord {
 	}
 }
 
-// DefaultWakeID is the word a new device answers to; the model ships in the image.
-const DefaultWakeID = "hey_jarvis"
+// DefaultWakeID is the word a new device answers to; the model ships in the image. Okay Nabu rather
+// than Hey Jarvis: Hey Jarvis wakes badly for German speakers, and Okay Nabu is the better trained
+// model. Genbu takes its place once it exists (docs/genbu-wake-word-plan.md).
+const DefaultWakeID = "okay_nabu"
+
+// heyJarvis was DefaultWakeID while the earlier default thresholds were in use.
+const heyJarvis = "hey_jarvis"
 
 // defaultWords is the one slot a new device comes with.
 func defaultWords() []WakeWord {
@@ -169,7 +174,7 @@ func (c *Config) settleCutoff() {
 	}
 	for i := range c.Wake.Words {
 		w := &c.Wake.Words[i]
-		if w.ID == DefaultWakeID && math.Abs(w.Threshold-old) < 0.005 {
+		if w.ID == heyJarvis && math.Abs(w.Threshold-old) < 0.005 {
 			w.Threshold = DefaultThreshold
 		}
 	}

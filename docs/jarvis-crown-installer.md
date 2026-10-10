@@ -249,7 +249,7 @@ The pre-staged path also skips the upstream GitHub release lookup completely.  B
 local wrapper-verified inputs, so the destructive stage cannot substitute an asset fetched from the
 network.
 
-Fresh Jarvis behavior (Hey Jarvis, follow-up turns, stop threshold, streamed `/jarvis-display`, and the
+Fresh Jarvis behavior (Okay Nabu as the wake word, follow-up turns, stop threshold, streamed `/jarvis-display`, and the
 other product defaults) is compiled into the Jarvis Crown rootfs.  J22 intentionally does not create a
 large `state.json` that would freeze today's defaults forever; it writes only persistent identity/
 credentials and the profile marker.  Future OTA updates therefore retain user settings while still

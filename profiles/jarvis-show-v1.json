@@ -6,9 +6,9 @@
     "checkers"
   ],
   "assistant": {
-    "wake_word": "hey_jarvis",
+    "wake_word": "okay_nabu",
     "wake_fallbacks": [
-      "okay_nabu",
+      "hey_jarvis",
       "alexa"
     ],
     "wake_slots": 1,

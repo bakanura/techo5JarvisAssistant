@@ -28,6 +28,9 @@ Rule: complete and validate one job before starting the next. Do not build a rel
   - One logical wake selector; second slot disabled by policy.
   - Implemented in fork commit `8b62921`.
   - Fresh-device fallback order: `hey_jarvis` → `okay_nabu` → `alexa` → any installed model.
+  - 2026-10-10: `Okay Nabu` is the default now, since Hey Jarvis wakes badly for German speakers.
+    Order `okay_nabu` → `hey_jarvis` → `alexa` → any installed model. "Hey Genbu" takes over once
+    it is trained ([plan](genbu-wake-word-plan.md)).
   - Exactly one wake model active at a time; explicit `No wake word` still survives restart.
   - Static/parser validation passed; Go test execution deferred because this environment has Go 1.23.2 and the repo requires Go 1.26.0.
 

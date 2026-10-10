@@ -167,7 +167,7 @@ QUESTIONS = {
     "assistant": ("Which assistant should the Show talk to?",
                   {"preferred": "the one Home Assistant has as preferred"}, ("jarvis",)),
     "wake word": ("Which wake word should it listen for?",
-                  {"no_wake_word": "none, no wake word"}, ("hey jarvis", "jarvis")),
+                  {"no_wake_word": "none, no wake word"}, ("okay nabu", "nabu")),
     "room": ("Which room is it in? (it plays and shows that room's music)", {}, ()),
     "room dashboard": ("The room has no dashboard of its own. Make a small one? (heating, temperature, "
                        "lights, blinds; the Show swipes on to it)", {}, ()),

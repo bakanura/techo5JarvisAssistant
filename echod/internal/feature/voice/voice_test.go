@@ -25,6 +25,7 @@ func TestWakeWordsPreselectsTheDefault(t *testing.T) {
 		"the configured word sorts last":   {[]string{wake.DefaultModel, "custom_wake", config.DefaultWakeID}, config.DefaultWakeID},
 		"only the shipped model":           {[]string{"custom_wake", wake.DefaultModel}, wake.DefaultModel},
 		"nabu precedes recovery alexa":     {[]string{"alexa", wake.DefaultModel}, wake.DefaultModel},
+		"nabu precedes hey jarvis":         {[]string{"hey_jarvis", "okay_nabu"}, "okay_nabu"},
 		"only the recovery model":          {[]string{"custom_wake", "alexa"}, "alexa"},
 		"neither is installed":             {[]string{"custom_wake"}, "custom_wake"},
 		"nothing installed":                {nil, ""},

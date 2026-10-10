@@ -1213,7 +1213,7 @@ func activeWakeWords(models []wake.Model, slots int) []string {
 	if len(active) == 0 && !saved.NoneChosen {
 		// Jarvis Crown deliberately prefers maintained local models in this order. Alexa remains
 		// only a recovery model; exactly one detector is armed at a time.
-		for _, id := range []string{"hey_jarvis", "okay_nabu", "alexa"} {
+		for _, id := range []string{"okay_nabu", "hey_jarvis", "alexa"} {
 			if m, ok := wake.Find(models, id); ok {
 				active = []string{m.ID}
 				break
