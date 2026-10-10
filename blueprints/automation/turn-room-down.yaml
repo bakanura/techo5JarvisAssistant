@@ -6,9 +6,10 @@ blueprint:
     hears and you can hear the answer. They stay down for the whole conversation, follow-up
     questions included, and come back up once it has been quiet for a few seconds.
 
-    A speaker that isn't playing is left alone. One whose volume was changed during the turn, say by
-    "lauter", keeps the new volume. The Show turns down what it plays itself, so don't pick its own
-    speaker.
+    A speaker that isn't playing is left alone. One stepped up or down during the turn ("lauter",
+    "leiser") comes back to its old volume plus that step, and one set outright ("Lautstärke auf
+    30", a slider) keeps what it was set to. The Show turns down what it plays itself, so don't pick
+    its own speaker.
   domain: automation
   source_url: https://github.com/vardstein/techo5JarvisAssistant/blob/jarvis-crown-v1/blueprints/automation/turn-room-down.yaml
   input:
@@ -94,33 +95,61 @@ actions:
           data:
             volume_level: "{{ down[repeat.item] }}"
           continue_on_error: true
-  # Until it has been idle for the whole of quiet. A trigger would miss a turn that was over before
-  # this got here, so it looks at the state instead.
+  # Until it has been idle for the whole of quiet. Each time round it works out from the state how
+  # long that still is, so a turn that was over before this got here counts too, and starts again
+  # whenever the assistant moves. Five minutes without it going idle is a stuck assistant, and the
+  # music comes back up anyway.
+  #
+  # Meanwhile it notes the speakers somebody sets outright. "Lautstärke auf 30" and a slider both
+  # call volume_set, which shows up as a call_service event; "lauter" and "leiser" step the speaker
+  # directly and do not, so a speaker that moved without one was stepped.
+  - variables:
+      set_outright: []
   - repeat:
       sequence:
-        - wait_template: "{{ is_state(satellite, 'idle') }}"
+        - variables:
+            idle_for: >-
+              {{ (now() - states[satellite].last_changed).total_seconds()
+                 if is_state(satellite, 'idle') else -1 }}
+        - wait_for_trigger:
+            - trigger: state
+              entity_id: !input satellite
+            - trigger: event
+              event_type: call_service
+              event_data:
+                domain: media_player
+                service: volume_set
           timeout:
-            minutes: 5
-        - delay:
-            seconds: "{{ quiet }}"
+            seconds: "{{ [quiet - idle_for, 0.1] | max if idle_for >= 0 else 300 }}"
+        - if:
+            - condition: template
+              value_template: "{{ wait.trigger is not none and wait.trigger.event is defined }}"
+          then:
+            - variables:
+                set_outright: >-
+                  {% set e = wait.trigger.event.data.service_data.entity_id | default([]) %}
+                  {% set e = [e] if e is string else e | list %}
+                  {{ (set_outright + (e | select('in', was) | list)) | unique | list }}
       until:
         - condition: template
-          value_template: >-
-            {{ not wait.completed or repeat.index > 20
-               or (is_state(satellite, 'idle')
-                   and (now() - states[satellite].last_changed).total_seconds() >= quiet - 0.5) }}
+          value_template: "{{ wait.trigger is none or repeat.index > 100 }}"
   - repeat:
       for_each: "{{ was | list }}"
       sequence:
-        # Only if it is still where this left it: a volume somebody chose since stays.
+        - variables:
+            moved: >-
+              {{ state_attr(repeat.item, 'volume_level') | float(down[repeat.item]) - down[repeat.item] }}
+        # Set outright, it stays. Otherwise back to where it was, plus whatever it was stepped by:
+        # 0.62 turned down to 0.06 and stepped to 0.16 comes back at 0.72.
         - if:
             - condition: template
-              value_template: >-
-                {{ (state_attr(repeat.item, 'volume_level') | float(-1) - down[repeat.item]) | abs < 0.02 }}
+              value_template: "{{ repeat.item not in set_outright }}"
           then:
             - action: media_player.volume_set
               target:
                 entity_id: "{{ repeat.item }}"
               data:
-                volume_level: "{{ was[repeat.item] }}"
+                volume_level: >-
+                  {{ was[repeat.item] if moved | abs < 0.02
+                     else ([[was[repeat.item] + moved, 0] | max, 1] | min) | round(2) }}
               continue_on_error: true
