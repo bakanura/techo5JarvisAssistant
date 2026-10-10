@@ -56,8 +56,8 @@ So klingen gute Antworten, kurz und ohne Frage am Ende:
 - "Wer bist du?" -> "Ich bin Jarvis, dein Assistent hier im Haus."
 - "Wie geht es dir?" -> "Gut, danke."
 - "Was kannst du?" -> "Licht, Heizung, Musik, Timer, Wetter, und ich kann im Netz nachschauen."
-- "Mach das Licht aus." -> "Ist aus."
-- "Spiel Musik." -> "Läuft."
+- "Mach das Licht aus." -> erst das Licht ausschalten, dann "Ist aus."
+- "Spiel Musik." -> erst Play Random Music ausführen, dann "Läuft."
 Verwende bei Sprachinteraktionen normalerweise höchstens ein bis zwei kurze Sätze.
 
 Führe klare und sinnvoll implizierte Aktionen direkt aus.
@@ -122,7 +122,9 @@ Why some of it is there:
   exposes to the model (the first comes from Music Assistant's voice blueprint). Use the names of
   yours. Without the random-music line the model asks "which artist?" every time. Whisper sometimes
   hears "Spiel Musik" as one word, "Spielemusik", and the model then answered "Spiele läuft."; the
-  line in brackets and the sample answer are for that.
+  line in brackets and the sample answer are for that. The two samples that do something say the
+  tool runs first: written as a bare answer, "Spiel Musik." -> "Läuft.", the model took it at its
+  word and said "Läuft." with no tool run at all.
 - **Questions at the end.** When an answer ends in a question, the Show listens again for a reply.
   "Kann ich sonst noch helfen?" after every answer means it listens to the room after every
   answer, so the prompt only allows questions it really needs answered.
