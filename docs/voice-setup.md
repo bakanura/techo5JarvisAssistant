@@ -32,6 +32,14 @@ an error, only an assistant that ignores its prompt. Set it in **Settings → De
 Ollama →** the conversation entry, **Reconfigure**, **Context window size**. Exposing fewer
 entities shrinks the request too.
 
+**Anything else that talks to the same model has to ask for the same window.** Ollama reloads a
+model when a request asks for a different context size. If some other client loads it with the
+default (a keep-warm script, say, that sends `{"model": ..., "keep_alive": ...}` every 20 minutes),
+Ollama reloads the model at 8192, and the next question reloads it at 16384 again. On our 6 GB card
+each reload cost 12 to 18 seconds, so the first question after every keep-warm ping was slow. Give
+the other client `"options": {"num_ctx": 16384}`, or set `OLLAMA_CONTEXT_LENGTH=16384` on the Ollama
+server so the default matches.
+
 ### The instructions
 
 This is the prompt we run (German, for a German household). Paste it into the same Reconfigure
@@ -40,7 +48,15 @@ dialog, **Instructions**:
 ```text
 Du bist Jarvis, der lokale Sprachassistent dieses Zuhauses.
 
-Sprich standardmäßig Deutsch. Antworte ruhig, präzise, souverän und kurz.
+Sprich standardmäßig Deutsch. Antworte locker, präzise und kurz.
+Duze die Person, mit der du sprichst, immer. Nie "Sie":
+"Du bist im Wohnzimmer.", nicht "Sie befinden sich im Wohnzimmer."
+
+So klingen gute Antworten, kurz und ohne Frage am Ende:
+- "Wer bist du?" -> "Ich bin Jarvis, dein Assistent hier im Haus."
+- "Wie geht es dir?" -> "Gut, danke."
+- "Was kannst du?" -> "Licht, Heizung, Musik, Timer, Wetter, und ich kann im Netz nachschauen."
+- "Mach das Licht aus." -> "Ist aus."
 Verwende bei Sprachinteraktionen normalerweise höchstens ein bis zwei kurze Sätze.
 
 Führe klare und sinnvoll implizierte Aktionen direkt aus.
@@ -95,6 +111,11 @@ Fernseher und Hintergrund:
 
 Why some of it is there:
 
+- **"du".** Without the line the model switches to "Sie" now and then ("Sie befinden sich im
+  Wohnzimmer"). Showing the wrong form next to the right one is what made it stick.
+- **The sample answers.** A 4B model follows examples better than rules. Before they were there it
+  answered "Wer bist du?" with three sentences retelling its instructions, and "Wie geht es dir?"
+  with "Und du?", which makes the Show listen again. With them, both come back as one short sentence.
 - **Music.** "Music Assistant LLM Voice" and "Play Random Music" are scripts our Home Assistant
   exposes to the model (the first comes from Music Assistant's voice blueprint). Use the names of
   yours. Without the random-music line the model asks "which artist?" every time.
@@ -105,6 +126,38 @@ Why some of it is there:
   is what stops that.
 - **The TV.** Whatever Whisper hears, the model gets. The Show's own updates are offered by the Show
   (it asks, and takes a plain yes or no), which is why the model must not offer them.
+
+## Answers that don't need the model
+
+With **Prefer handling commands locally** on, Home Assistant tries its own sentences first, and your
+automations' sentence triggers count as its own. Anything Home Assistant already knows is worth a
+sentence trigger: it answers in a few hundredths of a second instead of a few seconds, and the
+answer comes from Home Assistant's own data, not from the model's guess. Home Assistant answers the
+weather, timers and switching things by itself. "Wo sind wir?" it doesn't. The model needed one
+second for it, or 18 when it had to reload first. This automation answers with the room of the
+device that was asked:
+
+```yaml
+alias: Jarvis - Where are we
+mode: parallel
+triggers:
+  - trigger: conversation
+    command:
+      - "wo (sind wir|bin ich) [gerade|hier|jetzt]"
+      - "in welchem raum (sind wir|bin ich|bist du) [gerade|hier|jetzt]"
+      - "wo (bist|stehst) du [gerade|hier|jetzt]"
+      - "welcher raum ist das"
+actions:
+  - set_conversation_response: >-
+      {% set de = {'living_room': 'im Wohnzimmer', 'kitchen': 'in der Küche', 'balcony': 'auf dem Balkon'} %}
+      {% set a = area_id(trigger.device_id) if trigger.device_id else none %}
+      {% if a in de %}Wir sind {{ de[a] }}.{% elif a %}Wir sind in {{ area_name(a) }}.{% else %}Das weiß ich nicht, ich bin keinem Raum zugeordnet.{% endif %}
+```
+
+The map is there for the grammar (im, in der, auf dem) and because our areas have English names
+with German aliases. Put your own area ids in it. Note that calling the agent directly, for
+example with `conversation.process` and the Ollama agent's id, skips this step; only the pipeline
+tries local sentences first.
 
 ## Whisper
 
