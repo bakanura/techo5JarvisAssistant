@@ -99,9 +99,11 @@ func (d *Display) dashboardAsked(up bool) {
 }
 
 // dashScene decides whether the dashboard is the page, and fetches what it shows. Everything else
-// that takes the screen - a sheet, the drawer, a camera, the weather, a turn - comes first; music
-// comes first only when the dashboard is standing in for the clock rather than asked for.
-func (d *Display) dashScene(s *scene, sheetOrDrawer bool) {
+// that takes the screen - a ringing alarm or a call (busy), the drawer, a camera, the weather, a
+// turn - comes first; music comes first only when the dashboard is standing in for the clock rather
+// than asked for. The settings and the drawer only cover it: it stays connected under them, and the
+// drawer is drawn over it, so putting either away is the dashboard again at once.
+func (d *Display) dashScene(s *scene, busy bool) {
 	f := dashboard.Get()
 	mode := f.Mode()
 	d.mu.Lock()
@@ -117,15 +119,17 @@ func (d *Display) dashScene(s *scene, sheetOrDrawer bool) {
 	if page != "" {
 		mode = config.DashboardStreamed
 	}
-	want := mode != config.DashboardOff && s.phase == "idle" && !sheetOrDrawer &&
+	covered := s.showSheet || s.showDrawer
+	shown := mode != config.DashboardOff && s.phase == "idle" && !busy &&
 		!s.showCamera && !s.showWeather && !s.showRadar && !s.showCalendar && !s.showWifi && !s.bt.Pairing &&
 		(asked || (f.Idle() && !away && !s.nowPlaying))
-	s.showDash, s.dashMode, s.dashPage = want, mode, page
+	want, behind := shown && !covered, shown && covered
+	s.dashMode, s.dashPage = mode, page
 
-	streamed := want && mode == config.DashboardStreamed
+	streamed := shown && mode == config.DashboardStreamed
 	// Paused music gives way to the dashboard once the player goes idle, so the stream connects while
 	// the music page is still up and the switch is the page itself rather than a wait on black.
-	warm := !want && !asked && mode == config.DashboardStreamed && s.phase == "idle" && s.nowPlaying &&
+	warm := !shown && !asked && mode == config.DashboardStreamed && s.phase == "idle" && s.nowPlaying &&
 		!s.playing && !s.music.Playing && f.Idle() && !away
 	if (streamed || warm) && d.r != nil {
 		s.dash = f.Stream(d.r.w, d.r.h, page)
@@ -133,10 +137,10 @@ func (d *Display) dashScene(s *scene, sheetOrDrawer bool) {
 	// Standing in for the clock, the dashboard waits behind it for its first picture. One asked for
 	// shows that it is connecting, since somebody is looking for it.
 	if streamed && !asked && !s.dash.Ready && s.dash.Problem == "" {
-		want = false
-		s.showDash = false
+		want, behind = false, false
 	}
-	if want && mode == config.DashboardDrawn {
+	s.showDash, s.dashBehind = want, behind
+	if (want || behind) && mode == config.DashboardDrawn && d.r != nil {
 		s.drawn = f.Drawn(d.r.w)
 		d.mu.Lock()
 		// A different dashboard starts at its top, and none is scrolled past its end: a short one

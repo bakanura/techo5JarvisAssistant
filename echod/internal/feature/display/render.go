@@ -60,6 +60,7 @@ type scene struct {
 	// The dashboard page, drawn instead of the clock while showDash is set: how it is shown, and
 	// when streamed, what arrived.
 	showDash   bool
+	dashBehind bool // the dashboard would be the page, but the settings or the drawer is over it
 	dashMode   config.DashboardMode
 	dashPage   string // dashboard.PageMusic for Music Assistant in the dashboard's place
 	dash       dashboard.View
@@ -486,6 +487,16 @@ func (r *renderer) draw(s scene) {
 		// The bolt strikes in the gap between today's reading and the five days.
 		r.sky(s.sky, s.now, r.dst.Rect, image.Rect(r.w/2-r.s(80), r.s(70), r.w/2-r.s(10), r.s(400)))
 		r.footer(s)
+		if s.showVolume {
+			r.volumeBar(s)
+		}
+		return
+	}
+	// The drawer is laid over the dashboard as it is over the clock, dimming it rather than taking
+	// its place: closing the drawer is the dashboard again, already there.
+	if s.dashBehind && s.showDrawer {
+		r.dashboardPage(s)
+		r.drawer(s)
 		if s.showVolume {
 			r.volumeBar(s)
 		}
