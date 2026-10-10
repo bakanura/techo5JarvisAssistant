@@ -28,7 +28,8 @@ When no usable network is saved, the network keeper does not reboot the device i
 ## USB recovery
 
 If the screen path is unavailable or the device has moved to a completely different network, use the
-same installer front-end over the persistent USB serial console:
+same installer front-end over the USB serial console. The console is only there while USB debugging
+is on (Settings → Privacy & Security on the Show); see [USB debugging](install.md#usb-debugging).
 
 ```sh
 python3 tools/jarvis-show.py wifi --wifi 'Network Name'

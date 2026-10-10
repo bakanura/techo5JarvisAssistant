@@ -122,8 +122,23 @@ fi
 # --- Screen: the daemon paints it (feature/display); the bootloader's logo stays until then.
 # `fbprobe -hold 1m` is still there for a bare-panel check from the console.
 
-# --- Root shell on USB serial (techo5-console attaches to it).
-t5_usb_acm
+# --- USB: the root shell on serial (techo5-console attaches to it), only while USB debugging is on.
+# Otherwise the port is closed both ways; the daemon keeps the flag and switches it live.
+# The installer's flag holds for this one boot: it moves to /run, so a cut-off install doesn't
+# leave the port open past the next start.
+if [ "$(cat $T5_USB_DEBUG 2>/dev/null)" = install ]; then
+	rm -f $T5_USB_DEBUG
+	: > /run/techo5/usb_install
+	t5_usb_acm
+	t5_usb_host 1
+	log "usb: open for the installer's first boot"
+elif [ -e $T5_USB_DEBUG ]; then
+	t5_usb_acm
+	t5_usb_host 1
+else
+	t5_usb_off
+	log "usb: closed (USB debugging is off)"
+fi
 
 # --- Network. Credentials: the file on userdata, first written from Android's saved network.
 t5_wifi_conf $LOGDIR/wpa_supplicant.conf

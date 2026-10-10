@@ -7,6 +7,10 @@ type Security struct {
 	SSH    bool `json:"ssh"`
 	Camera bool `json:"camera_web"`
 	Screen bool `json:"screen_web"`
+
+	// USB is USB debugging: the root shell on the USB serial port, and USB devices let in. Off, the
+	// port shows a computer nothing and takes nothing plugged into it.
+	USB bool `json:"usb_debug"`
 }
 
 // Everything closed on a device nobody has set: SSH has no key until Home Assistant sends one, and
@@ -25,4 +29,8 @@ func (w SecurityWriter) Camera(v bool) error {
 
 func (w SecurityWriter) Screen(v bool) error {
 	return w.st.Update(func(c *Config) { c.Security.Screen = v })
+}
+
+func (w SecurityWriter) USB(v bool) error {
+	return w.st.Update(func(c *Config) { c.Security.USB = v })
 }

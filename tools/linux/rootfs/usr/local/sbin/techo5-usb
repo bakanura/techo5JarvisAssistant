@@ -1,0 +1,18 @@
+#!/bin/sh
+# techo5-usb on|off: USB debugging, run by the daemon (feature/security) when the switch changes.
+# On, the port carries the root shell on serial and lets USB devices in; off, it does neither. The
+# daemon keeps the flag boot.sh reads, so the choice holds from the start of the next boot.
+log() { echo "techo5-usb: $*" > /dev/kmsg; }
+[ -r /etc/techo5/device.conf ] && . /etc/techo5/device.conf
+. /lib/techo5-lib.sh
+case $1 in
+on)
+	t5_usb_acm
+	t5_usb_host 1
+	;;
+off) t5_usb_off ;;
+*)
+	echo "usage: techo5-usb on|off" >&2
+	exit 2
+	;;
+esac

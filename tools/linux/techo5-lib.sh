@@ -85,6 +85,35 @@ t5_usb_acm() {
 	[ -e /dev/ttyGS0 ] || mdev -s
 }
 
+# T5_USB_DEBUG is the flag the daemon keeps while USB debugging is switched on (Privacy & Security on
+# the screen, or the switch in Home Assistant). Without it the port is closed both ways.
+T5_USB_DEBUG=/data/misc/techo5/usb_debug
+
+# t5_usb_off: nothing on the USB port. A computer sees no device at all, and nothing plugged into
+# the port is let in: a keyboard or a stick on an OTG adapter stays unused.
+t5_usb_off() {
+	A=/sys/class/android_usb/android0
+	G=/sys/kernel/config/usb_gadget/g1
+	if [ -e $A/functions ]; then
+		[ "$(cat $A/enable 2>/dev/null)" = 0 ] || { echo 0 > $A/enable && log "usb: legacy gadget disabled"; }
+	elif [ -n "$(cat $G/UDC 2>/dev/null)" ]; then
+		echo "" > $G/UDC && log "usb: gadget unbound"
+	fi
+	t5_usb_host 0
+}
+
+# t5_usb_host 0|1: whether devices on the port's host side are let in. New ones follow the root hub's
+# default; ones already there (plugged in before boot) are put out or let back in.
+t5_usb_host() {
+	for d in /sys/bus/usb/devices/usb*; do
+		[ -e $d/authorized_default ] && echo $1 > $d/authorized_default
+	done
+	for d in /sys/bus/usb/devices/*; do
+		case ${d##*/} in usb*|*:*) continue ;; esac
+		[ -e $d/authorized ] && echo $1 > $d/authorized
+	done
+}
+
 # t5_wifi_store_records <xml>: the networks in an Android WifiConfigStore, three
 # lines each on stdout - S:<name>, K:<key management>, P:<key> - with the name
 # and the key still in the form Android wrote them (a quoted string, or hex for

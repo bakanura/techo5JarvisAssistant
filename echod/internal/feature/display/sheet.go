@@ -167,6 +167,13 @@ func securityRows(sv sheetView) []settingRow {
 			settingRow{id: "ssh", label: "SSH", sub: sub, kind: ctlToggle, on: sec.SSH},
 			settingRow{label: "SSH keys", sub: "Sent from Home Assistant", kind: ctlValue, value: keys})
 	}
+	if sec.USBAvailable {
+		sub := "Closed to computers and USB devices"
+		if sec.USB {
+			sub = "Root shell on the USB port"
+		}
+		rows = append(rows, settingRow{id: "usbdebug", label: "USB debugging", sub: sub, kind: ctlToggle, on: sec.USB})
+	}
 	rows = append(rows, settingRow{id: "dropin", label: "Allow Drop In", sub: "Intercom calls connect by themselves, after a chime",
 		kind: ctlToggle, on: config.Get().Home.DropIn})
 	link := settingRow{label: "Home Assistant link", sub: "Encrypted with this device's key", kind: ctlValue, value: "Encrypted"}
@@ -813,6 +820,8 @@ func (d *Display) rowTap(id string, p part, opt int) {
 		sp.SetEnabled(!sp.Enabled())
 	case "ssh":
 		security.Get().SetSSH(!config.Get().Security.SSH)
+	case "usbdebug":
+		security.Get().SetUSB(!config.Get().Security.USB)
 	case "camweb":
 		security.Get().SetCamera(!config.Get().Security.Camera)
 	case "screenweb":

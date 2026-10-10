@@ -803,6 +803,10 @@ def main():
             "(umask 077; printf '%%s\\n' %s > /data/misc/techo5/psk)" % (quote(a.name), quote(psk)))
     if a.jarvis_show_prestaged:
         prov += " && printf 'jarvis-%s-v1\\n' > /data/misc/techo5/profile" % a.jarvis_show_board
+    # A running Show keeps its USB port shut unless USB debugging is on. This flag keeps it open for
+    # the first boot only (boot.sh moves it to /run), which is watched over the serial console; the
+    # end of the install closes it.
+    prov += " && printf 'install\\n' > /data/misc/techo5/usb_debug"
     if pub:
         prov += (" && mkdir -p -m 700 /data/misc/techo5/ssh && (umask 077; printf '%%s\\n' %s > /data/misc/techo5/ssh/authorized_keys)"
                  % quote(pub))
@@ -854,13 +858,19 @@ def main():
         with open(os.path.join(backup, 'address'), 'w') as f:
             f.write(addr + '\n')
 
+    # Closed from the unit's side a moment after it answers, so the console isn't cut mid-line.
+    console.run('rm -f /data/misc/techo5/usb_debug /run/techo5/usb_install; sync; [ -x /usr/local/sbin/techo5-usb ] && '
+                '{ (sleep 1; /usr/local/sbin/techo5-usb off) >/dev/null 2>&1 & }; echo USB-CLOSING', 4)
+    note('USB closed; Settings -> Privacy & Security -> USB debugging opens the serial console again')
+
     print("\nDone. '%s' runs TECHO5 %s from slot a; the slot commits itself after five healthy minutes." % (a.name, version))
     print('Home Assistant finds it as an ESPHome device. When it asks for the encryption key, paste:\n\n    %s\n\n(kept in %s)' % (psk, key_file))
     if settings:
         print('Ready for: %s.' % ', '.join(describe_settings(False, settings) + (['Home Assistant at %s' % settings['ha_url']] if settings.get('ha_url') else [])))
     if twrp and not wifi:
         print('It has no Wi-Fi yet: the Show opens its Wi-Fi picker automatically after boot. You can also use Settings -> Connections -> Wi-Fi.')
-        print('USB fallback: python3 tools/jarvis-show.py wifi --wifi YOUR_NETWORK [--serial DEVICE_SERIAL]')
+        print('USB fallback: turn on USB debugging (Settings -> Privacy & Security), then')
+        print('  python3 tools/jarvis-show.py wifi --wifi YOUR_NETWORK [--serial DEVICE_SERIAL]')
     print("Later versions arrive through Home Assistant's update card.")
 
 

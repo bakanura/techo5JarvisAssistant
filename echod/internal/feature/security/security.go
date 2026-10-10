@@ -1,6 +1,6 @@
-// Package security is what the device lets in besides Home Assistant's own link: an SSH server, and
-// the camera and screen pages on the web port. Each is a switch in Home Assistant and a row on the
-// settings sheet's Security tab, and each starts off.
+// Package security is what the device lets in besides Home Assistant's own link: an SSH server, the
+// USB port (usb.go), and the camera and screen pages on the web port. Each is a switch in Home
+// Assistant and a row on the settings sheet's Security tab, and each starts off.
 //
 // SSH keys only ever come from Home Assistant (the ssh_keys action), whose link is encrypted with
 // the device key: the screen can open or close the server but cannot let anyone new in, and the
@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	esphome "github.com/ygelfand/go-esphome-device"
@@ -35,8 +36,13 @@ const recheck = time.Minute
 
 // Feature is the switches and what they control.
 type Feature struct {
-	ssh, camera, screen *esphome.Switch
-	wake                chan struct{}
+	ssh, camera, screen, usb *esphome.Switch
+	wake                     chan struct{}
+
+	// usbApplied is what the USB port was last set to, nil before the first time; Run's alone.
+	// usbTouched is set once the switch is flipped, which takes the port from the installer.
+	usbApplied *bool
+	usbTouched atomic.Bool
 
 	// Changed fires when a setting changes or the keys do; listeners must not block.
 	Changed hook.Hook[struct{}]
@@ -47,6 +53,8 @@ type State struct {
 	SSHAvailable bool // this is a slot boot of the Linux image, with dropbear in it
 	SSH          bool
 	SSHRunning   bool
+	USBAvailable bool // the rootfs has techo5-usb to open and close the port
+	USB          bool
 	Keys         []string // one label per authorized key: its comment, or its type
 	Camera       bool
 	Screen       bool
@@ -67,6 +75,7 @@ func build() *Feature {
 	f.ssh = sw("ssh", "SSH", "mdi:ssh", f.SetSSH)
 	f.camera = sw("camera_web_access", "Camera web access", "mdi:webcam", f.SetCamera)
 	f.screen = sw("screen_web_access", "Screen web access", "mdi:monitor-screenshot", f.SetScreen)
+	f.usb = sw("usb_debugging", "USB debugging", "mdi:usb-port", f.usbFromHA)
 	return f
 }
 
@@ -76,6 +85,9 @@ func (f *Feature) Entities() []esphome.Entity {
 	var out []esphome.Entity
 	if sshAvailable() {
 		out = append(out, f.ssh)
+	}
+	if usbAvailable() {
+		out = append(out, f.usb)
 	}
 	if webPages {
 		out = append(out, f.camera, f.screen)
@@ -87,14 +99,16 @@ func (f *Feature) Restore(c config.Config) {
 	f.ssh.Set(c.Security.SSH)
 	f.camera.Set(c.Security.Camera)
 	f.screen.Set(c.Security.Screen)
+	f.usb.Set(c.Security.USB)
 }
 
-// Run keeps the SSH server matching the switch.
+// Run keeps the SSH server and the USB port matching their switches.
 func (f *Feature) Run(ctx context.Context) error {
 	t := time.NewTicker(recheck)
 	defer t.Stop()
 	for {
 		f.settleSSH()
+		f.settleUSB()
 		select {
 		case <-ctx.Done():
 			return nil
@@ -152,6 +166,32 @@ func (f *Feature) SetSSH(on bool) {
 	}
 }
 
+// SetUSB is USB debugging from the screen, where whoever taps it is at the device anyway.
+func (f *Feature) SetUSB(on bool) {
+	f.usbTouched.Store(true)
+	f.set(f.usb, on, config.Set().Security().USB)
+	f.poke()
+}
+
+// usbFromHA is the same switch from Home Assistant. Like SSH it is refused while the link is plain
+// text, so nobody on the network can open a root shell for whoever holds a cable later.
+func (f *Feature) usbFromHA(on bool) {
+	if on && !encrypted() {
+		slog.Warn("usb: refused to switch debugging on while Home Assistant's link has no device key")
+		f.usb.Set(false)
+		f.Changed.Emit(struct{}{})
+		return
+	}
+	f.SetUSB(on)
+}
+
+func (f *Feature) poke() {
+	select {
+	case f.wake <- struct{}{}:
+	default:
+	}
+}
+
 func (f *Feature) SetCamera(on bool) { f.set(f.camera, on, config.Set().Security().Camera) }
 func (f *Feature) SetScreen(on bool) { f.set(f.screen, on, config.Set().Security().Screen) }
 
@@ -167,7 +207,8 @@ func (f *Feature) set(s *esphome.Switch, on bool, save func(bool) error) {
 // State is read by the screen each frame; a few small file reads.
 func (f *Feature) State() State {
 	c := config.Get().Security
-	st := State{SSHAvailable: sshAvailable(), SSH: c.SSH, Camera: c.Camera, Screen: c.Screen, Encrypted: encrypted()}
+	st := State{SSHAvailable: sshAvailable(), SSH: c.SSH, Camera: c.Camera, Screen: c.Screen, Encrypted: encrypted(),
+		USBAvailable: usbAvailable(), USB: c.USB}
 	if st.SSHAvailable {
 		st.SSHRunning = sshRunning()
 		for _, k := range readKeys() {

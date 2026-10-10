@@ -37,6 +37,7 @@ The security boundary is therefore the device/service credential, not merely "sa
 | Device web TCP 8181 | closed unless feature opens it | setup writes and camera/screen diagnostic reads require the physical-presence session | J32 closed the anonymous-read path. |
 | Sendspin TCP 8928 | off/unpaired by default | exact Music Assistant server IP, provisioned over encrypted HA API; every other source rejected before WebSocket upgrade | J32 closed the arbitrary-IoT-peer injection path. |
 | SSH TCP 22 | off | key-only; requires encrypted HA link + authorized key | Keep opt-in; audit binding/logging. |
+| USB port (serial root shell, USB host) | closed unless USB debugging is on | switch on the Show or from Home Assistant (encrypted link only); the installer opens it for the first boot only (a mark in /run) | rescue keeps its serial shell on purpose: it is the way back when a system won't start. |
 | Remote ADB TCP 5555 | disabled | no Jarvis Show control exists; legacy saved state is one-way cleared | J32 removed the network-ADB path entirely; use USB/TWRP/serial recovery instead. |
 | SIP | opt-in | TLS certificate validation + SRTP | Keep secure-only; credentials stay private. |
 | House announcements/intercom | opt-in/peer discovery | HMAC/replay protection and encrypted peer protocol | Keep; no plaintext fallback. |

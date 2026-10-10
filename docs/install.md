@@ -100,6 +100,19 @@ python3 tools/show-wifi.py "MyNetwork"
 
 It asks for the passphrase, saves the network on the unit, restarts it, and says whether it joined.
 
+### USB debugging
+
+A running Show keeps its USB port shut: no serial console for a computer, and nothing plugged into it
+as a host (a keyboard, a stick) is taken in. That way somebody who can pick the unit up can't get a
+root shell from its cable. The installer keeps the port open for the first boot, which it watches over
+the console, and closes it at the end. To have the console again, turn on **Settings → Privacy &
+Security → USB debugging** on the Show; it stays on across restarts until it is turned off there.
+`show-wifi.py` and `jarvis-show.py wifi` need it on. Home Assistant shows the same switch, but it
+only turns it on over an encrypted link (a device key set), like SSH.
+
+The rescue environment is different: it is what is left when a system won't start, so its serial
+console is always there.
+
 If an install stops partway, after the boot image was flashed, the unit is left in the rescue
 environment (its screen says RESCUE) and a re-run can't see it over adb; the installer says so. The
 unit isn't lost: the steps from [step 4](#4-create-the-slot-store-and-install) on can be done by hand
@@ -229,6 +242,10 @@ mkdir -p -m 700 /data/misc/techo5/ssh
 cp /root/.ssh/authorized_keys /data/misc/techo5/ssh/authorized_keys
 chmod 600 /data/misc/techo5/ssh/authorized_keys
 printf '{"security":{"ssh":true}}\n' > /data/misc/techo5/state.json   # only on a unit with no state.json yet
+
+# Keep the USB console for the first boot, so you can watch it (see USB debugging above). It is
+# closed again at the next restart; turn on USB debugging on the Show to keep it.
+printf 'install\n' > /data/misc/techo5/usb_debug
 sync
 ```
 
@@ -344,7 +361,8 @@ again on its own is this, not a fault.
 | The daemon restarts every few seconds on a fresh install, log shows `slice bounds out of range` in `microwakeword` | v0.2.5 shipped damaged wake word models. Use v0.2.6 or later; on a unit already installed, copy good `.tflite` files over `/data/misc/techo5/models/`. |
 | An update from Home Assistant fails with `context deadline exceeded` | The download was too slow, usually on 2.4 GHz next to the unit's own Bluetooth. Press Install again; from v0.2.5 the unit moves itself to the network's 5 GHz radio when one is in range. |
 | The screen shows "hacked fastboot" | A leftover `reboot bootloader` request: `fastboot -s <serial> continue`. |
-| No SSH after the switch to the slot | SSH is off unless step 5 was done: turn on the SSH switch in Home Assistant and send a key with the `ssh_keys` action, or use the USB serial console. |
+| No SSH after the switch to the slot | SSH is off unless step 5 was done: turn on the SSH switch in Home Assistant and send a key with the `ssh_keys` action, or use the USB serial console (with USB debugging on). |
+| No serial console from a running Show | USB debugging is off, which is the default after an install: Settings → Privacy & Security → USB debugging. |
 | The unit sits in rescue | The screen says so: **RESCUE**, with the reason on the last line. No bootable slot. `slotctl status` shows why; the daemon still runs from a slot in rescue, so Home Assistant keeps working while you look. |
 
 To go back to LineageOS: boot TWRP from `recovery`, flash the LineageOS zip (which rewrites `system`)

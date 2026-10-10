@@ -3,7 +3,8 @@
 
 For a Show that has no network it knows: installed from TWRP without --wifi, or moved to a house with
 a different Wi-Fi. It talks to the unit's USB serial console, the same one the installer uses, so
-nothing else has to work first.
+nothing else has to work first. The console is there only while USB debugging is on in the Show's
+Settings -> Privacy & Security.
 
     python3 tools/show-wifi.py MyNetwork
     python3 tools/show-wifi.py MyNetwork --serial <serial>
@@ -53,9 +54,14 @@ def main():
     serial = a.serial
     if not serial:
         ports = list_consoles(CONSOLE_TECHO5)
-        if len(ports) != 1:
+        if len(ports) > 1:
             fail('found %d Shows on USB; pass --serial' % len(ports))
+        if not ports:
+            fail('no Show answers on USB. Its serial console is only there while USB debugging is on:\n'
+                 '   Settings -> Privacy & Security -> USB debugging, then run this again')
         port, serial = ports[0]
+        if serial == 'genbu':
+            serial = ''  # a running system names itself on USB, not by its serial number
         if not serial:
             # Windows does not always report the USB serial: the unit's kernel command line has it.
             serial = (console_exchange(port, "tr ' ' '\\n' < /proc/cmdline | sed -n 's/^androidboot.serialno=//p'", 8) or '').strip()
@@ -63,7 +69,8 @@ def main():
             fail('the Show on %s did not say its serial; pass --serial' % port)
     console = Console(serial, CONSOLE_TECHO5)
     if 'UNIT-OK' not in (console.run('echo UNIT-OK', 8) or ''):
-        fail('%s does not answer on its USB console: keep the cable in and try again' % serial)
+        fail('%s does not answer on its USB console: keep the cable in, check that USB debugging is on\n'
+             '   (Settings -> Privacy & Security) and try again' % serial)
     note('%s on %s' % (serial, console.port))
 
     step('Wi-Fi')
