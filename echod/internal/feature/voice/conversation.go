@@ -143,6 +143,10 @@ type conversation struct {
 	// between starting and canceling, and posting either is safe whichever it picks.
 	visible atomic.Int32
 
+	// listeningAgain is whether that phase is a follow-up listening for a reply, published the same
+	// way for the stop word.
+	listeningAgain atomic.Bool
+
 	// Below here belongs to the run goroutine alone.
 	phase phase
 
@@ -784,6 +788,7 @@ func (c *conversation) showPhase(override string) {
 func (c *conversation) enter(p phase) {
 	c.phase = p
 	c.visible.Store(int32(p))
+	c.listeningAgain.Store(p == phaseListening && c.followUp)
 	c.shown.Phase = p.String()
 	Changed.Emit(c.shown)
 }
@@ -929,6 +934,9 @@ func (c *conversation) startAsked() { c.post(event{kind: evAsked}) }
 
 // Cancel gives up on whatever is happening.
 func (c *conversation) Cancel() { c.post(event{kind: evCancel}) }
+
+// ListeningAgain reports whether a follow-up is listening for a reply.
+func (c *conversation) ListeningAgain() bool { return c.listeningAgain.Load() }
 
 // Busy reports whether there is anything to cancel.
 func (c *conversation) Busy() bool { return c.Phase() != phaseIdle }

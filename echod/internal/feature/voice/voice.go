@@ -203,28 +203,62 @@ func (v *Voice) Action() {
 
 // Interrupt is the stop word.
 //
-// It only acts while the device is making a sound. "Stop" is an ordinary word: somebody halfway through
-// "stop the timer" is talking to Home Assistant, not to the device, and cutting their turn off there
-// would be worse than not listening for it at all. Nothing is playing then, so there is nothing the word
-// could sensibly mean.
+// It only acts while the device is making a sound, or listening for a reply. "Stop" is an ordinary
+// word: somebody halfway through "stop the timer" after the wake word is talking to Home Assistant,
+// not to the device, and cutting their turn off there would be worse than not listening for it at all.
 func (v *Voice) Interrupt() {
+	playing, _ := media.Get().Playing()
+	switch stopMeans(v.turn.Phase() == phaseListening, v.turn.ListeningAgain(), ring.IsSounding(), playing,
+		speaker.Sound().Busy()) {
+	case stopConversation:
+		slog.Info("stop word in a follow-up: ending the conversation")
+		v.turn.Cancel()
+	case stopMusic:
+		slog.Info("stop word after the wake word: pausing the music")
+		v.turn.Cancel()
+		media.Get().Pause()
+	case stopSound:
+		v.Stop()
+	default:
+		slog.Debug("stop word ignored, nothing to stop")
+	}
+}
+
+// stopMeaning is what the stop word is taken to ask for.
+type stopMeaning int
+
+const (
+	// stopNothing leaves the word to whatever is listening.
+	stopNothing stopMeaning = iota
+	// stopConversation ends the turn and leaves the music alone.
+	stopConversation
+	// stopMusic ends the turn and pauses the track.
+	stopMusic
+	// stopSound is the general ladder, Stop.
+	stopSound
+)
+
+// stopMeans decides what the stop word means from what the device is doing.
+func stopMeans(listening, followUp, ringing, playing, sounding bool) stopMeaning {
+	switch {
+	// A timer or an alarm ringing is what the word is for, whatever else is going on.
+	case ringing:
+		return stopSound
+	// "Stopp" as the reply to a follow-up ends the conversation. Sent on, Home Assistant hears a
+	// pause command in it, pauses whatever plays in the room and says "Pausiert". Nobody asked for
+	// that: the word was for the device that just asked something. The music, here or in the room,
+	// stays, and comes back up with the turn over.
+	case listening && followUp:
+		return stopConversation
 	// "<wake word>, stop" over music: the stop word hears "stop" while the turn the wake word opened is
 	// still listening, and it is the music that was meant, not the question that has not been asked.
-	if v.turn.Phase() == phaseListening && !ring.IsSounding() {
-		if playing, _ := media.Get().Playing(); playing {
-			slog.Info("stop word after the wake word: pausing the music")
-			v.turn.Cancel()
-			media.Get().Pause()
-			return
-		}
+	case listening && playing:
+		return stopMusic
+	case sounding || playing:
+		return stopSound
 	}
-	if !speaker.Sound().Busy() && !ring.IsSounding() {
-		if playing, _ := media.Get().Playing(); !playing {
-			slog.Debug("stop word ignored, nothing to stop")
-			return
-		}
-	}
-	v.Stop()
+	// Nothing is playing, so there is nothing the word could sensibly mean to the device.
+	return stopNothing
 }
 
 // LookHere says the answer being given put something on the screen, so it is not followed by
