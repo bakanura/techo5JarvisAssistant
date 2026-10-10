@@ -193,6 +193,29 @@ class SetUpTests(unittest.TestCase):
         self.assertEqual(fake.configs[("automation", "jarvis_local_where_are_we")]["alias"], "Jarvis - Where are we")
         self.assertIn("automation jarvis_local_where_are_we replaced; the old one is in /b/x.json", log)
 
+    def test_several_that_differ_are_asked_about_once(self):
+        mine = {"alias": "mine", "triggers": [], "actions": []}
+        for answer, replaced, questions in (("all", 2, 1), ("none", 0, 1), ("each", 1, 3)):
+            fake = FakeHA()
+            fake.configs[("automation", "jarvis_local_where_are_we")] = dict(mine)
+            fake.configs[("script", "jarvis_play_radio")] = {"alias": "mine", "sequence": []}
+            asked, kept = [], []
+
+            def choose(label, current, options, names):
+                asked.append(label)
+                if label.startswith("2 of"):
+                    self.assertEqual(options, ["none", "all", "each"])
+                    return answer
+                return "yes" if "an automation" in label else "no"
+            log = run(fake, choose=choose, keep=lambda what, config: kept.append(what) or "/b/x.json")
+            self.assertEqual(len(asked), questions, answer)
+            self.assertIn("automation jarvis_local_where_are_we, script jarvis_play_radio", asked[0])
+            self.assertEqual(len(kept), replaced, answer)
+            self.assertEqual(sum("replaced; the old one is in" in line for line in log), replaced)
+            if answer == "each":
+                self.assertIn("a script jarvis_play_radio", asked[2])
+                self.assertEqual(fake.configs[("script", "jarvis_play_radio")]["alias"], "mine")
+
     def test_nothing_is_replaced_when_it_cannot_be_saved_first(self):
         fake = FakeHA()
         fake.configs[("script", "jarvis_play_radio")] = {"alias": "mine", "sequence": []}

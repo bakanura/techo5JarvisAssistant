@@ -13,7 +13,7 @@ Keyring entries are looked up with secret-tool (or $JARVIS_SHOW_SECRET_TOOL) und
 from __future__ import annotations
 
 import contextlib
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 import getpass
 import json
 import os
@@ -25,6 +25,7 @@ import subprocess
 import tempfile
 from typing import Callable, Iterator
 
+from jarvis_crown import ui
 from jarvis_crown.home_assistant import (check_dashcast_key, check_token, normalize_dashcast,
                                          normalize_ha_url, normalize_music_assistant)
 
@@ -148,22 +149,68 @@ def _resolve(host: str) -> str:
 
 @dataclass
 class Asker:
-    """The terminal, or nothing when nobody is at it (then every answer has to come from a switch)."""
+    """The terminal, or nothing when nobody is at it (then every answer has to come from a switch).
+
+    A question reads
+
+          ? the question                     Enter: what Enter does
+            a dim line or two of help
+            › the answer
+
+    and goes through say, so a test sees the same lines a person does."""
 
     interactive: bool
     ask: Callable[[str], str] = input
     ask_secret: Callable[[str], str] = getpass.getpass
     say: Callable[[str], None] = print
+    out: ui.Out = field(default_factory=lambda: ui.out)
+
+    # -------------------------------------------------------------- lines between the questions
+
+    def heading(self, text: str, help: str = "") -> None:
+        if self.interactive:
+            self._say(self.out.heading_lines(text) + (self.out.note_lines(help, indent=2) if help else []))
+
+    def note(self, text: str) -> None:
+        if self.interactive:
+            self._say(self.out.note_lines(text))
+
+    def warn(self, text: str) -> None:
+        if self.interactive:
+            self._say(self.out.lines("warn", text, paint="33"))
+
+    def command(self, text: str) -> None:
+        if self.interactive:
+            self.say("      " + self.out.bold(text))
+
+    def _say(self, lines: list[str]) -> None:
+        for line in lines:
+            self.say(line)
+
+    def _question(self, label: str, enter: str, help: str) -> None:
+        self._say(self.out.lines("ask", label, paint="1"))
+        if enter and "Enter" not in help:  # the help says what Enter does already
+            self._say(self.out.note_lines(enter))
+        if help:
+            self._say(self.out.note_lines(help))
+
+    def _prompt(self, text: str = "") -> str:
+        return "    " + self.out.mark("prompt", prompt=True) + " " + (self.out.dim(text, prompt=True) + " " if text else "")
+
+    def _wrong(self, text: str) -> None:
+        self._say(self.out.lines("warn", text, paint="33"))
+
+    # -------------------------------------------------------------------------------- questions
 
     def text(self, label: str, default: str | None, check: Callable[[str], str],
-             skip: str = "Enter to skip") -> str | None:
+             skip: str = "Enter to skip", *, help: str = "") -> str | None:
         """A value, re-asked until the Show would take it. Enter keeps the default; '-' is none."""
         if not self.interactive:
             return None
-        hint = f" [{default}]" if default else f" ({skip})"
+        self._question(label, f"Enter keeps {default}, - for none" if default else skip, help)
         while True:
             try:
-                raw = self.ask(f"   {label}{hint}: ").strip()
+                raw = self.ask(self._prompt()).strip()
             except EOFError:
                 return None
             if raw == "-" or (not raw and not default):
@@ -171,22 +218,46 @@ class Asker:
             try:
                 return check(raw or default or "")
             except ValueError as exc:
-                self.say(f"   {exc}")
+                self._wrong(str(exc))
+
+    def choices(self, options: list[str], *, current: str = "", names: dict[str, str] | None = None) -> None:
+        """options numbered, in two columns when there are many short ones."""
+        names = names or {}
+        now = self.out.dim("← now" if self.out.fancy else "(now)")
+        width = len(str(len(options)))
+        cells = [(f"{i:>{width}}  {names.get(o, o)}", o == current) for i, o in enumerate(options, 1)]
+        column = max(len(c) for c, _ in cells) + 8
+        if len(cells) > 8 and 6 + 2 * column <= self.out.width:
+            half = (len(cells) + 1) // 2
+            for left, right in zip(cells[:half], cells[half:] + [("", False)]):
+                shown = self._cell(left, now)
+                self.say(("      " + shown.ljust(column + self._hidden(shown)) + self._cell(right, now)).rstrip())
+            return
+        for cell in cells:
+            self.say("      " + self._cell(cell, now))
+
+    @staticmethod
+    def _cell(cell: tuple[str, bool], now: str) -> str:
+        return cell[0] + ("  " + now if cell[1] else "")
+
+    @staticmethod
+    def _hidden(text: str) -> int:
+        """How many characters of text are colour codes, which take no room."""
+        return len(text) - len(ui.visible(text))
 
     def pick(self, label: str, current: str, options: list[str], *, default: str | None = None,
-             names: dict[str, str] | None = None) -> str | None:
+             names: dict[str, str] | None = None, help: str = "") -> str | None:
         """One of options by number, name or a piece of a name. Enter takes default (None: leave it as it
         is); None also when nobody is asked."""
         if not self.interactive or not options:
             return None
         names = names or {}
-        self.say(f"   {label}")
-        for i, option in enumerate(options, 1):
-            self.say(f"     {i}) {names.get(option, option)}" + ("  (now)" if option == current else ""))
-        enter = f"Enter: {names.get(default, default)}" if default else "Enter: leave it"
+        enter = f"Enter: {names.get(default, default)}" if default else "Enter leaves it as it is"
+        self._question(label, "", help)
+        self.choices(options, current=current, names=names)
         while True:
             try:
-                raw = self.ask(f"   number or name [{enter}]: ").strip()
+                raw = self.ask(self._prompt(f"number or name ({enter})")).strip()
             except EOFError:
                 return None
             if not raw:
@@ -198,28 +269,29 @@ class Asker:
                           [o for o in options if want in o.casefold() or want in names.get(o, o).casefold()]):
                 if len(found) == 1:
                     return found[0]
-            self.say(f"   type 1 to {len(options)} or a name from the list ({enter})")
+            self._wrong(f"type 1 to {len(options)} or a name from the list ({enter})")
 
     def secret(self, label: str, check: Callable[[str], str], *, strip: bool = True,
-               confirm: bool = False) -> str | None:
+               confirm: bool = False, help: str = "") -> str | None:
         """A hidden value. confirm asks for it twice, for one nobody can see the typo in."""
         if not self.interactive:
             return None
+        self._question(label, "", help)
         while True:
             try:
-                raw = self.ask_secret(f"   {label} (hidden; Enter to skip): ")
+                raw = self.ask_secret(self._prompt("hidden as you type, Enter to skip"))
                 raw = raw.strip() if strip else raw.rstrip("\r\n")
                 if not raw:
                     return None
                 value = check(raw)
-                if confirm and self.ask_secret("   again, to be sure: ").rstrip("\r\n") != raw:
-                    self.say("   the two did not match; once more")
+                if confirm and self.ask_secret(self._prompt("once more, to be sure")).rstrip("\r\n") != raw:
+                    self._wrong("the two did not match; once more")
                     continue
                 return value
             except EOFError:
                 return None
             except ValueError as exc:
-                self.say(f"   {exc}")
+                self._wrong(str(exc))
 
 
 def check_network(value: str) -> str:
@@ -277,7 +349,6 @@ def gather(args, asker: Asker, *, defaults: dict[str, str] | None = None,
            nearby: Callable[[], list[str]] = nearby_networks) -> Settings:
     """Everything the Show is set up with: switches first, then the keyring, then the terminal."""
     d = defaults if defaults is not None else load_defaults()
-    say = asker.say if asker.interactive else (lambda _text: None)
 
     def ma(value: str) -> str:
         return normalize_music_assistant(value, resolve)
@@ -291,29 +362,24 @@ def gather(args, asker: Asker, *, defaults: dict[str, str] | None = None,
 
     s = Settings()
     if want_root_password:
-        say("Root password (the Show's USB console asks for it):")
+        asker.heading("Root password", "The Show's USB console asks for it.")
         pw = from_file("root_password_file", "root password", check_root_password) or \
             _checked(lookup("root-password", strip=False), check_root_password)
         if pw is None and asker.interactive:
-            pw = asker.secret("root password", check_root_password, strip=False, confirm=True)
+            pw = asker.secret("a root password for the Show", check_root_password, strip=False, confirm=True,
+                              help="8 to 128 characters. It goes onto the Show only; this computer keeps no copy.")
             if pw is None:
-                say("   without one, whoever switches USB debugging on at the Show gets a root shell;")
-                say("   Enter again leaves it without (techo5-passwd on the Show sets one later)")
-                pw = asker.secret("root password", check_root_password, strip=False, confirm=True)
+                asker.warn("without one, whoever switches USB debugging on at the Show gets a root shell")
+                asker.note("Enter again leaves it without; techo5-passwd on the Show sets one later.")
+                pw = asker.secret("a root password for the Show", check_root_password, strip=False, confirm=True)
             if pw:
-                say("   to skip this next time, keep it in the keyring:")
-                say("     secret-tool store --label='Jarvis Show: root password' application jarvis-show "
-                    "secret root-password")
+                _keyring_hint(asker, "root password", "secret root-password")
         s = replace(s, root_password=pw)
     if want_wifi:
-        say("Wi-Fi (the Show joins it on first boot):")
+        asker.heading("Wi-Fi", "The Show joins it on first boot.")
         wifi = _checked(getattr(args, "wifi", None), check_network)
         if not wifi and asker.interactive:
             seen = nearby()
-            if seen:
-                say("   networks this computer can see (a number picks one):")
-                for i, name in enumerate(seen, 1):
-                    say(f"     {i}) {name}")
 
             def network(value: str) -> str:
                 if value.isdigit() and seen:
@@ -322,56 +388,65 @@ def gather(args, asker: Asker, *, defaults: dict[str, str] | None = None,
                     return seen[int(value) - 1]
                 return check_network(value)
 
+            if seen:
+                asker.note("Networks this computer can see; a number picks one:")
+                asker.choices(seen)
             wifi = asker.text("network name (SSID)", d.get("wifi"), network,
                               skip="Enter: pick it on the Show's screen instead")
         passphrase = None
         if wifi and not getattr(args, "wifi_passphrase_file", None):
             passphrase = _checked(lookup("wifi", network=wifi, strip=False), check_wifi_passphrase)
             if passphrase is None:
-                passphrase = asker.secret(f"passphrase for {wifi!r}", check_wifi_passphrase,
-                                          strip=False, confirm=True)
+                passphrase = asker.secret(f"passphrase for {wifi}", check_wifi_passphrase, strip=False, confirm=True,
+                                          help="It goes onto the Show only; this computer keeps no copy.")
                 if passphrase:
-                    say("   to skip this next time, keep it in the keyring:")
-                    say(f"     secret-tool store --label='Jarvis Show: Wi-Fi' application jarvis-show "
-                        f"secret wifi network {shlex.quote(wifi)}")
+                    _keyring_hint(asker, "Wi-Fi", f"secret wifi network {shlex.quote(wifi)}")
             if passphrase is None and asker.interactive:
-                say("   no passphrase: the Show will ask for the network on its screen instead")
+                asker.note("No passphrase: the Show asks for the network on its screen instead.")
                 wifi = None
         s = replace(s, wifi=wifi, wifi_passphrase=passphrase)
 
-    say("Home Assistant:")
+    asker.heading("Home Assistant")
     ha_url = _checked(getattr(args, "ha_url", None), normalize_ha_url) or \
-        asker.text("address, as the Show reaches it", d.get("ha_url"), normalize_ha_url)
+        asker.text("address, as the Show reaches it", d.get("ha_url"), normalize_ha_url,
+                   help="Like http://homeassistant.local:8123. Enter skips Home Assistant for now.")
     token = admin = None
     own = bool(getattr(args, "own_ha_user", False))
     if ha_url and not own:
         token = from_file("ha_token_file", "Home Assistant token", ha_token) or \
             _checked(lookup("ha-token"), ha_token) or \
-            asker.secret("the Show's own long-lived token (photos, weather, cameras)", ha_token)
+            asker.secret("the Show's own long-lived token", ha_token,
+                         help="For photos, weather and cameras. Make it as the user the Show should be (profile, "
+                              "Security, Long-lived access tokens). It goes onto the Show only; this computer "
+                              "keeps no copy.")
     if ha_url:
         admin = from_file("ha_admin_token_file", "Home Assistant admin token", ha_token) or \
             _checked(lookup("ha-admin-token"), ha_token) or \
-            asker.secret("an admin token, used once to add the Show to Home Assistant", ha_token)
+            asker.secret("an admin's long-lived token", ha_token,
+                         help="Used for this run only, to add the Show to Home Assistant and set up its room, "
+                              "dashboard and voice. It is dropped when the run ends and never stored anywhere, "
+                              "not even encrypted. Enter skips it, and you add the Show in Home Assistant by hand.")
     if ha_url and own:
         if not admin:
             raise SettingsError("--own-ha-user needs the admin token, which makes the Show's user")
-        say("   the Show becomes a Home Assistant user of its own when it is added, and gets its token then")
+        asker.note("The Show becomes a Home Assistant user of its own when it is added, and gets its token then.")
     s = replace(s, ha_url=ha_url, ha_token=token, ha_admin_token=admin, own_ha_user=own and bool(ha_url))
 
-    say("DashCast (the streamed dashboard):")
+    asker.heading("DashCast", "The dashboard, streamed to the Show.")
     dashcast = _checked(getattr(args, "dashcast", None), normalize_dashcast) or \
         asker.text("server, host[:port]", d.get("dashcast"), normalize_dashcast)
     key = None
     if dashcast:
         key = from_file("dashcast_key_file", "DashCast key", check_dashcast_key) or \
             _checked(lookup("dashcast-key"), check_dashcast_key) or \
-            asker.secret("the DashCast key", check_dashcast_key)
+            asker.secret("the DashCast key", check_dashcast_key,
+                         help="It goes onto the Show only; this computer keeps no copy.")
         if key is None:
-            say("   no key: DashCast left for later")
+            asker.note("No key: DashCast is left for later.")
             dashcast = None
     s = replace(s, dashcast=dashcast, dashcast_key=key)
 
-    say("Music Assistant (the Sendspin player):")
+    asker.heading("Music Assistant", "The Show plays through it as a Sendspin player.")
     music = _checked(getattr(args, "music_assistant", None), ma) or \
         asker.text("server IP or name", d.get("music_assistant"), ma)
     ma_token = None
@@ -379,15 +454,25 @@ def gather(args, asker: Asker, *, defaults: dict[str, str] | None = None,
         local = getattr(args, "music_assistant_local_metadata", False)
         ma_token = from_file("music_assistant_token_file", "Music Assistant token", ma_check_token) or \
             _checked(lookup("music-assistant-token"), ma_check_token) or \
-            asker.secret("a Music Assistant admin's token (its settings, your profile, long-lived tokens), "
-                         "used once to give the Show a user of its own for lyrics"
-                         + (" and to switch its online lookups off" if local else ""), ma_check_token)
+            asker.secret("a Music Assistant admin's token (optional)", ma_check_token,
+                         help="Used once, for this run only: it makes the Show a plain Music Assistant user of "
+                              "its own, which the lyrics need" +
+                              (", and switches Music Assistant's online lookups off" if local else "") +
+                              ". Your token is dropped when the run ends and never stored anywhere, not even "
+                              "encrypted; the Show only keeps the token of its own user. Make one in Music "
+                              "Assistant under Settings, your profile, Long-lived tokens. Enter skips it, but "
+                              "then lyrics won't work on the Show.")
         if ma_token is None:
-            say("   no token: the Show shows no lyrics" +
-                ("; Music Assistant keeps looking metadata up online" if local else ""))
+            asker.note("No token: music plays, but lyrics won't work on the Show" +
+                       ("; Music Assistant keeps looking metadata up online." if local else "."))
     s = replace(s, music_assistant=music, music_assistant_token=ma_token,
                 music_assistant_local_metadata=bool(music and getattr(args, "music_assistant_local_metadata", False)))
     return s
+
+
+def _keyring_hint(asker: Asker, label: str, attrs: str) -> None:
+    asker.note("To skip this next time, keep it in the desktop keyring:")
+    asker.command(f"secret-tool store --label='Jarvis Show: {label}' application jarvis-show {attrs}")
 
 
 def ma_check_token(value: str) -> str:

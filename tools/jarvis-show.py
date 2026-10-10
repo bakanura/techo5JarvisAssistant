@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -20,6 +21,7 @@ from jarvis_crown.boards import profile_for_board, profile_for_product  # noqa: 
 from jarvis_crown.device_gate import DeviceGateError, identify_show  # noqa: E402
 from jarvis_crown.flow import FlowError, InstallInputs, run_install_flow  # noqa: E402
 from jarvis_crown import home_assistant as ha_api  # noqa: E402
+from jarvis_crown import ui  # noqa: E402
 from jarvis_crown import music_assistant as ma_api  # noqa: E402
 from jarvis_crown.shows import known_shows, show_named  # noqa: E402
 from jarvis_crown.settings import Asker, Settings, SettingsError, gather, save_defaults, secret_files  # noqa: E402
@@ -28,6 +30,20 @@ from jarvis_crown.recovery import RecoveryError, adb_recovery_serials, identify_
 from jarvis_crown.unlock import UnlockError, unlock_show  # noqa: E402
 
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+# How the install flow's stages read as they start.
+STAGES = {
+    "preflight": "checking this computer and the files",
+    "identify": "finding out which Show this is",
+    "unlock": "unlocking the bootloader",
+    "unlock-skipped": "the bootloader is already unlocked",
+    "recovery": "starting TWRP",
+    "backup": "backing up the Show as it is",
+    "validate-install-inputs": "checking the install files",
+    "stage-lineage": "putting LineageOS in place",
+    "install": "installing Jarvis",
+    "complete": "the install is through",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -115,10 +131,8 @@ def _validate_optional_sha(label: str, value: str | None) -> str | None:
 
 
 def _print_identity(identity, profile, source: str) -> None:
-    print(f"PASS: detected {profile.model}")
-    print(f"PASS: product={identity.product}")
-    print(f"PASS: {source} serial={identity.serial}")
-    print(f"PASS: unlock_status={'true' if identity.unlocked else 'false'}")
+    ui.out.title(f"{profile.model}", f"{identity.product} · serial ending {identity.serial[-4:]} · seen over {source}")
+    ui.out.field("bootloader", "unlocked" if identity.unlocked else "locked")
 
 
 def _detect_profile(board: str | None, *, allow_recovery: bool = False):
@@ -168,17 +182,18 @@ def _find_host(name: str):
 
 
 # How the assistant, wake word, room and room dashboard questions read, by the label deploy() asks them with.
-QUESTIONS = {
-    "assistant": ("Which assistant should the Show talk to?",
+QUESTIONS = {  # label: (question, help, names for the options, the answers Enter takes when offered)
+    "assistant": ("Which assistant should the Show talk to?", "",
                   {"preferred": "the one Home Assistant has as preferred"}, ("jarvis",)),
-    "wake word": ("Which wake word should it listen for?",
+    "wake word": ("Which wake word should it listen for?", "",
                   {"no_wake_word": "none, no wake word"}, ("okay nabu", "nabu")),
-    "room": ("Which room is it in? (it plays and shows that room's music)", {}, ()),
-    "room dashboard": ("The room has no dashboard of its own. Make a small one? (heating, temperature, "
-                       "lights, blinds; the Show swipes on to it)", {}, ()),
-    "voice extras": ("Set up the voice extras? (the room's music goes quiet while the Show listens; with a "
-                     "German assistant also answers about the room, temperature, weather and volume, and "
-                     "music by voice; anything you made yourself is only replaced if you say so)", {}, ()),
+    "room": ("Which room is it in?", "It plays and shows that room's music.", {}, ()),
+    "room dashboard": ("The room has no dashboard of its own. Make a small one?",
+                       "Heating, temperature, lights and blinds; the Show swipes on to it.", {}, ()),
+    "voice extras": ("Set up the voice extras?",
+                     "The room's music goes quiet while the Show listens. With a German assistant it also "
+                     "answers about the room, the temperature, the weather and the volume, and plays music by "
+                     "voice. Anything you made yourself is only replaced if you say so.", {}, ()),
 }
 
 
@@ -194,11 +209,11 @@ def _chooser(args):
     def choose(label: str, current: str, options: list[str], shown: dict[str, str] | None = None) -> str | None:
         if given.get(label) is not None:
             return None
-        question, names, liked = QUESTIONS.get(label, (label, {}, ()))
+        question, help, names, liked = QUESTIONS.get(label, (label, "", {}, ()))
         names = {**names, **(shown or {})}
         default = next((o for want in liked for o in options if o.casefold() == want), None) or \
             next((o for o in options if any(want in o.casefold() for want in liked)), None)
-        return asker.pick(question, current, options, default=default, names=names)
+        return asker.pick(question, current, options, default=default, names=names, help=help)
     return choose
 
 
@@ -210,14 +225,17 @@ def _key_file(args, backups: Path) -> Path | None:
         return backups / args.serial / "home-assistant.key"
     show = show_named(backups, args.name)
     if show is None:
-        print(f"FAIL: no Show named {args.name!r} was installed from here", file=sys.stderr)
-        for known in known_shows(backups):
-            print(f"INFO:   installed: {known.name!r} ({known.board}, serial ending {known.serial_tail})",
-                  file=sys.stderr)
-        print("INFO:   or say which with --serial or --key-file", file=sys.stderr)
+        _no_such_show(args.name, backups)
+        ui.out.note("or say which with --serial or --key-file")
         return None
-    print(f"PASS: {show.name} is the {show.board} Show with serial ending {show.serial_tail}")
+    ui.out.title(f"{show.name}", f"{show.board} · serial ending {show.serial_tail}")
     return show.key_file
+
+
+def _no_such_show(name: str, backups: Path) -> None:
+    ui.out.fail(f"no Show named {name!r} was installed from here")
+    for known in known_shows(backups):
+        ui.out.note(f"installed here: {known.name!r} ({known.board}, serial ending {known.serial_tail})")
 
 
 def _keeper(backups: Path):
@@ -235,14 +253,16 @@ def deploy_to_home_assistant(settings: Settings, args, *, name: str, key_file: P
                              wait_seconds: float, backups: Path) -> int:
     """Adds the Show to Home Assistant and hands it its settings through its own actions."""
     if not (settings.ha_url and settings.ha_admin_token):
-        print("INFO: no Home Assistant admin token, so add the Show by hand:")
-        print(f"INFO:   Settings -> Devices & services -> ESPHome, with the key in {key_file}")
-        print(f"INFO:   or later: python3 tools/jarvis-show.py home-assistant --name {name!r}")
+        ui.out.heading("Home Assistant")
+        ui.out.same("no admin token, so the Show is added by hand:")
+        ui.out.note(f"Settings → Devices & services → ESPHome, with the key in {key_file}")
+        ui.out.note("or later, with an admin token at hand:")
+        ui.out.command(f"python3 tools/jarvis-show.py home-assistant --name {shlex.quote(name)}")
         return 0
     try:
         psk = key_file.read_text(encoding="utf-8").strip()
     except OSError as exc:
-        print(f"FAIL: cannot read the Show's encryption key: {exc.strerror}", file=sys.stderr)
+        ui.out.fail(f"cannot read the Show's encryption key: {exc.strerror}")
         return 1
     if not host:
         saved = key_file.parent / "address"
@@ -257,15 +277,15 @@ def deploy_to_home_assistant(settings: Settings, args, *, name: str, key_file: P
                                        music_assistant=settings.music_assistant, own_user=settings.own_ha_user,
                                        music_assistant_login=_music_assistant_login(settings)),
         wait_seconds=wait_seconds)
-    print(f"INFO: adding {name!r} to Home Assistant at {settings.ha_url}")
+    ui.out.heading(f"Adding it to Home Assistant at {settings.ha_url}")
     try:
         ha_api.deploy(ha_api.HomeAssistant(settings.ha_url, settings.ha_admin_token), opts,
-                      progress=lambda text: print(f"INFO: {text}"), find_host=_find_host(name),
+                      progress=ui.out.progress, find_host=_find_host(name),
                       choose=_chooser(args))
     except ha_api.HomeAssistantError as exc:
-        print(f"FAIL: Home Assistant: {exc}", file=sys.stderr)
+        ui.out.fail(f"Home Assistant: {exc}")
         return 5
-    print(f"PASS: {name!r} is in Home Assistant and set up")
+    ui.out.finish(f"{name} is in Home Assistant and set up")
     return 0
 
 
@@ -279,10 +299,10 @@ def _music_assistant_login(settings: Settings):
         try:
             token, made = ma_api.show_token(settings.music_assistant, settings.music_assistant_token, name)
         except ma_api.MusicAssistantError as exc:
-            print(f"WARN: Music Assistant: {exc}", file=sys.stderr)
+            ui.out.warn(f"Music Assistant: {exc}; lyrics won't work on the Show until this runs again")
             return None
-        print(f"INFO: Music Assistant user {ma_api.show_username(name)!r} "
-              + ("made" if made else "was there; its token renewed"))
+        ui.out.done(f"Music Assistant user {ma_api.show_username(name)!r} "
+                    + ("made, for the lyrics" if made else "was there; its token renewed"))
         return token
     return login
 
@@ -296,16 +316,16 @@ def music_assistant_metadata(settings: Settings) -> None:
     try:
         done = ma_api.local_metadata_only(settings.music_assistant, settings.music_assistant_token)
     except ma_api.MusicAssistantError as exc:
-        print(f"WARN: Music Assistant: {exc}; its online lookups are still on", file=sys.stderr)
-        print("WARN:   later: python3 tools/jarvis-show.py home-assistant --name NAME "
-              "--music-assistant-local-metadata", file=sys.stderr)
+        ui.out.warn(f"Music Assistant: {exc}; its online lookups are still on")
+        ui.out.note("later:")
+        ui.out.command("python3 tools/jarvis-show.py home-assistant --name NAME --music-assistant-local-metadata")
         return
-    print(f"PASS: Music Assistant: {', '.join(done)}")
+    ui.out.done(f"Music Assistant: {', '.join(done)}")
 
 
 def home_assistant_command(args, backups: Path) -> int:
     if not args.name:
-        print("FAIL: home-assistant requires --name, the Show's name as installed", file=sys.stderr)
+        ui.out.fail("home-assistant requires --name, the Show's name as installed")
         return 1
     key_file = _key_file(args, backups)
     if key_file is None:
@@ -313,13 +333,13 @@ def home_assistant_command(args, backups: Path) -> int:
     try:
         settings = gather(args, _asker(args), want_wifi=False)
     except SettingsError as exc:
-        print(f"FAIL: {exc}", file=sys.stderr)
+        ui.out.fail(f"{exc}")
         return 1
     save_defaults(settings)
     music_assistant_metadata(settings)
     if not settings.ha_admin_token:
-        print("FAIL: adding the Show needs a Home Assistant admin token "
-              "(--ha-admin-token-file, the keyring, or the question)", file=sys.stderr)
+        ui.out.fail("adding the Show needs a Home Assistant admin token "
+                    "(--ha-admin-token-file, the keyring, or the question)")
         return 1
     return deploy_to_home_assistant(settings, args, name=args.name, key_file=key_file, host=args.host,
                                     wait_seconds=120, backups=backups)
@@ -328,20 +348,20 @@ def home_assistant_command(args, backups: Path) -> int:
 def amonet_upgrade(args, backups: Path) -> int:
     """Amonet 1.x -> 2.x for a unit already in TWRP; see jarvis_crown/amonet_upgrade.py."""
     if not args.board:
-        print("FAIL: amonet-upgrade requires --board", file=sys.stderr)
+        ui.out.fail("amonet-upgrade requires --board")
         return 1
     try:
         serials = adb_recovery_serials()
     except RecoveryError as exc:
-        print(f"FAIL: {exc}", file=sys.stderr)
+        ui.out.fail(f"{exc}")
         return 2
     if len(serials) != 1:
-        print(f"FAIL: expected exactly one Show in TWRP, found {len(serials)} (adb reboot recovery first)", file=sys.stderr)
+        ui.out.fail(f"expected exactly one Show in TWRP, found {len(serials)} (adb reboot recovery first)")
         return 2
 
     def confirm(phrase):
-        print("WARN: this rewrites the bootloader chain: preloader, lk, tee1, tee2, expdb, recovery and swdl.")
-        print("WARN: keep the Show on mains power and the USB cable in until it says PASS.")
+        ui.out.caution("this rewrites the bootloader chain: preloader, lk, tee1, tee2, expdb, recovery and swdl.")
+        ui.out.caution("keep the Show on mains power and the USB cable in until it says it is done.")
         try:
             return input(f"Type {phrase} to continue: ").strip()
         except EOFError:  # no terminal (piped or closed stdin) is a no, not a crash
@@ -356,28 +376,26 @@ def amonet_upgrade(args, backups: Path) -> int:
             (args.lineage_zip or _cached(args.board, "lineage")).resolve(),
             backups / serials[0],
             confirm=confirm,
-            progress=lambda text: print(f"INFO: {text}"),
+            progress=ui.out.progress,
         )
     except (UpgradeError, RecoveryError, ValueError) as exc:
-        print(f"FAIL: amonet-upgrade stopped: {exc}", file=sys.stderr)
+        ui.out.fail(f"amonet-upgrade stopped: {exc}")
         return 4
     if result.upgraded:
-        print(f"PASS: Amonet 2.x installed and boot is plain; backup of the old state in {result.backup}")
+        ui.out.done(f"Amonet 2.x installed and boot is plain; backup of the old state in {result.backup}")
     else:
-        print("PASS: no Amonet 1.x microloader on boot; nothing to do")
+        ui.out.done("no Amonet 1.x microloader on boot; nothing to do")
     return 0
 
 
 def boot_logo_command(args, backups: Path) -> int:
     """OpenJade's logo in kaeru's wordmark slot, over the Show's SSH; see jarvis_crown/boot_logo.py."""
     if not args.name:
-        print("FAIL: boot-logo requires --name, the Show's name as installed", file=sys.stderr)
+        ui.out.fail("boot-logo requires --name, the Show's name as installed")
         return 1
     show = show_named(backups, args.name)
     if show is None:
-        print(f"FAIL: no Show named {args.name!r} was installed from here", file=sys.stderr)
-        for known in known_shows(backups):
-            print(f"INFO:   installed: {known.name!r} ({known.board}, serial ending {known.serial_tail})", file=sys.stderr)
+        _no_such_show(args.name, backups)
         return 1
     host = args.host
     if not host:
@@ -386,14 +404,14 @@ def boot_logo_command(args, backups: Path) -> int:
         except OSError:
             host = ""
     if not host:
-        print("FAIL: the Show's address is not known; give it with --host", file=sys.stderr)
+        ui.out.fail("the Show's address is not known; give it with --host")
         return 1
     saved = show.folder / "partitions" / "p7-expdb.img"
-    print(f"PASS: {show.name} is the {show.board} Show with serial ending {show.serial_tail}, at {host}")
+    ui.out.done(f"{show.name} is the {show.board} Show with serial ending {show.serial_tail}, at {host}")
 
     def confirm(phrase):
-        print("WARN: this rewrites the logo inside the bootloader (kaeru, in expdb); nothing else is written.")
-        print("WARN: keep the Show on power until it says PASS. A broken kaeru does not start at all.")
+        ui.out.caution("this rewrites the logo inside the bootloader (kaeru, in expdb); nothing else is written.")
+        ui.out.caution("keep the Show on power until it says it is done. A broken kaeru does not start at all.")
         try:
             return input(f"Type {phrase} to continue: ").strip()
         except EOFError:  # no terminal (piped or closed stdin) is a no, not a crash
@@ -402,11 +420,11 @@ def boot_logo_command(args, backups: Path) -> int:
 
     try:
         done = put_logo(SshClient(host), show.board, saved_expdb=saved, amazon=args.amazon_logo,
-                        confirm=confirm, progress=lambda text: print(f"INFO: {text}"))
+                        confirm=confirm, progress=ui.out.progress)
     except BootLogoError as exc:
-        print(f"FAIL: boot-logo stopped: {exc}", file=sys.stderr)
+        ui.out.fail(f"boot-logo stopped: {exc}")
         return 4
-    print(f"PASS: {done}; it shows on the next cold start (unplug, plug back in)")
+    ui.out.done(f"{done}; it shows on the next cold start (unplug, plug back in)")
     return 0
 
 
@@ -421,7 +439,7 @@ def main() -> int:
     # inside this one front-end so an offline device never depends on HA, mDNS, or a second workflow.
     if args.command == "wifi":
         if not args.wifi:
-            print("FAIL: wifi recovery requires --wifi NETWORK", file=sys.stderr)
+            ui.out.fail("wifi recovery requires --wifi NETWORK")
             return 1
         cmd = [sys.executable, str(root / "tools" / "show-wifi.py"), args.wifi]
         if args.serial:
@@ -444,7 +462,7 @@ def main() -> int:
         try:
             _detect_profile(args.board)
         except DeviceGateError as exc:
-            print(f"FAIL: device identity gate: {exc}", file=sys.stderr)
+            ui.out.fail(f"device identity gate: {exc}")
             return 2
         return 0
 
@@ -459,7 +477,7 @@ def main() -> int:
                 args.board, allow_recovery=args.command == "install"
             )
         except DeviceGateError as exc:
-            print(f"FAIL: device identity gate: {exc}", file=sys.stderr)
+            ui.out.fail(f"device identity gate: {exc}")
             return 2
 
     # A bundle checked out next to the repo wins; otherwise the one fetch-show-assets unpacked from the pinned zip.
@@ -472,7 +490,7 @@ def main() -> int:
         twrp_sha256 = _validate_optional_sha("TWRP SHA-256", args.twrp_sha256)
         boot_sha256 = _validate_optional_sha("boot SHA-256", args.boot_sha256)
     except ValueError as exc:
-        print(f"FAIL: {exc}", file=sys.stderr)
+        ui.out.fail(f"{exc}")
         return 1
 
     if args.command == "install":
@@ -487,35 +505,40 @@ def main() -> int:
             if not value:
                 missing.append(name)
         if missing:
-            print("FAIL: install requires " + ", ".join(missing), file=sys.stderr)
+            ui.out.fail("install requires " + ", ".join(missing))
             return 1
         try:
             rootfs_sha256 = _validate_optional_sha("rootfs SHA-256", args.rootfs_sha256)
             assert rootfs_sha256 is not None
         except (ValueError, AssertionError) as exc:
-            print(f"FAIL: {exc}", file=sys.stderr)
+            ui.out.fail(f"{exc}")
             return 1
 
         # Everything the Show starts with, asked before anything on it is touched.
         try:
             settings = gather(args, _asker(args), want_root_password=True)
         except SettingsError as exc:
-            print(f"FAIL: {exc}", file=sys.stderr)
+            ui.out.fail(f"{exc}")
             return 1
         save_defaults(settings)
+        ui.out.heading("What the Show is set up with")
         for line in settings.summary():
-            print(f"INFO: {line}")
+            label, _, value = line.partition(": ")
+            if value:
+                ui.out.field(label, value, pad=16)
+            else:
+                ui.out.note(line, indent=2)
 
         def confirm_unlock(p):
             build = identity.lk_build_desc if identity is not None else None
-            print(f"WARN: unlocking {p.model} runs the board-specific Amonet exploit.")
-            print(f"WARN: detected LK build: {build or 'UNREADABLE'}")
-            print("WARN: bootloader exploits inherently carry brick risk; keep mains power connected and do not interrupt writes.")
+            ui.out.caution(f"unlocking {p.model} runs the board-specific Amonet exploit.")
+            ui.out.caution(f"detected LK build: {build or 'UNREADABLE'}")
+            ui.out.caution("bootloader exploits inherently carry brick risk; keep mains power connected and do not interrupt writes.")
             return input(f"Type {p.unlock_confirmation} to continue: ").strip()
 
         def confirm_install(p):
-            print("WARN: the next stage formats userdata for Lineage vendor staging, then converts system into the A/B slot store.")
-            print("WARN: the verified recovery backup already exists; do not disconnect power/USB during these writes.")
+            ui.out.caution("the next stage formats userdata for Lineage vendor staging, then converts system into the A/B slot store.")
+            ui.out.caution("the verified recovery backup already exists; do not disconnect power/USB during these writes.")
             return input(f"Type {p.install_confirmation} to continue: ").strip()
 
         with secret_files(settings) as files:
@@ -550,17 +573,17 @@ def main() -> int:
                     inputs,
                     confirm_unlock=confirm_unlock,
                     confirm_install=confirm_install,
-                    progress=lambda stage: print(f"INFO: stage={stage}"),
+                    progress=lambda stage: ui.out.step(STAGES.get(stage, stage)),
                     initial_identity=identity if identity_source == "recovery" else None,
                 )
             except (FlowError, DeviceGateError, UnlockError, RuntimeError) as exc:
-                print(f"FAIL: install stopped: {exc}", file=sys.stderr)
+                ui.out.fail(f"install stopped: {exc}")
                 return 4
-        print(f"PASS: {result.profile.product_id} installation flow completed")
+        ui.out.done(f"{result.profile.product_id} is installed")
         music_assistant_metadata(settings)
         if not settings.wifi:
-            print("INFO: join Wi-Fi on the Show's screen, then add it to Home Assistant with:")
-            print(f"INFO:   python3 tools/jarvis-show.py home-assistant --name {args.name!r}")
+            ui.out.note("Join Wi-Fi on the Show's screen, then add it to Home Assistant with:", indent=2)
+            ui.out.command(f"python3 tools/jarvis-show.py home-assistant --name {shlex.quote(args.name)}")
             return 0
         key_file = backups / result.recovery.adb_serial / "home-assistant.key"
         return deploy_to_home_assistant(settings, args, name=args.name, key_file=key_file, host=None,
@@ -576,24 +599,24 @@ def main() -> int:
     )
     print_checks(checks)
     if not preflight_ok(checks):
-        print("FAIL: host/input preflight failed; no write was attempted", file=sys.stderr)
+        ui.out.fail("host/input preflight failed; no write was attempted")
         return 1
     if args.command == "preflight":
         if identity is None:
-            print(f"PASS: offline {profile.model} host/input preflight complete; no device was queried or modified")
+            ui.out.done(f"offline {profile.model} host/input preflight complete; no device was queried or modified")
         else:
-            print(f"PASS: auto-detected {profile.model} host/input preflight complete; no device was modified")
+            ui.out.done(f"auto-detected {profile.model} host/input preflight complete; no device was modified")
         return 0
 
     # unlock reaches here only after the live target was auto-detected above.
     assert identity is not None
     if identity.unlocked:
-        print(f"PASS: {profile.model} already unlocked; Amonet will not run")
+        ui.out.done(f"{profile.model} already unlocked; Amonet will not run")
         return 0
 
-    print(f"WARN: the next stage intentionally runs Amonet for {profile.board}.")
-    print(f"WARN: detected LK build: {identity.lk_build_desc or 'UNREADABLE'}")
-    print("WARN: bootloader exploits inherently carry brick risk; keep mains power connected and do not interrupt writes.")
+    ui.out.caution(f"the next stage intentionally runs Amonet for {profile.board}.")
+    ui.out.caution(f"detected LK build: {identity.lk_build_desc or 'UNREADABLE'}")
+    ui.out.caution("bootloader exploits inherently carry brick risk; keep mains power connected and do not interrupt writes.")
     confirmation = input(f"Type {profile.unlock_confirmation} to continue: ").strip()
     try:
         result = unlock_show(
@@ -603,12 +626,12 @@ def main() -> int:
             expected_hashes=amonet_hashes,
         )
     except UnlockError as exc:
-        print(f"FAIL: {profile.board} unlock: {exc}", file=sys.stderr)
+        ui.out.fail(f"{profile.board} unlock: {exc}")
         return 3
     if not result.identity.unlocked:
-        print("FAIL: unlock result was not proven", file=sys.stderr)
+        ui.out.fail("unlock result was not proven")
         return 3
-    print("PASS: unlock_status=true re-confirmed read-only after Amonet")
+    ui.out.done("unlock_status=true re-confirmed read-only after Amonet")
     return 0
 
 

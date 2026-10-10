@@ -16,6 +16,7 @@ import sys
 from typing import Callable
 import zipfile
 
+from jarvis_crown import ui
 from jarvis_crown.boards import profile_for_board
 
 MIN_FREE_BYTES = 8 * 1024 * 1024 * 1024
@@ -250,8 +251,10 @@ def run_preflight(
 
 
 def print_checks(checks: list[Check]) -> None:
+    say = {"PASS": ui.out.done, "WARN": ui.out.warn, "FAIL": ui.out.fail}
+    ui.out.heading("Checks")
     for check in checks:
-        print(f"{check.level}: {check.name}: {check.detail}")
+        say.get(check.level, ui.out.note)(f"{check.name}: {check.detail}")
 
 
 def preflight_ok(checks: list[Check]) -> bool:

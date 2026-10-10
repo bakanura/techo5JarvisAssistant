@@ -575,8 +575,10 @@ class _Run:
     keep: Keep | None
     progress: Callable[[str], None]
 
+    differ: list[tuple[str, str, dict, dict]] = field(default_factory=list)
+
     def put(self, kind: str, item: str, config: dict) -> None:
-        """Makes the automation or script item, or replaces it when it differs and the person says so."""
+        """Makes the automation or script item. One that is there and differs waits for settle()."""
         path = f"/api/config/{kind}/config/{item}"
         try:
             old = self.ha.request("GET", path)
@@ -585,23 +587,46 @@ class _Run:
         if isinstance(old, dict):
             if {k: v for k, v in old.items() if k != "id"} == config:
                 self.progress(f"{kind} {item} is already there")
-                return
-            question = (f"Home Assistant has a {kind} {item} that differs from the installer's. "
-                        "Replace it? (its old configuration is saved first)")
-            picked = self.choose(question, "no", ["no", "yes"],
-                                 {"no": "no, keep it", "yes": "yes, replace it"}) if self.choose else None
-            if picked != "yes":
-                self.progress(f"{kind} {item} differs from the installer's and was kept")
-                return
-            if self.keep is None:
-                self.progress(f"{kind} {item} kept: there is nowhere to save the old one")
-                return
-            saved = self.keep(f"{kind}-{item}", old)
-            self.ha.request("POST", path, config)
-            self.progress(f"{kind} {item} replaced; the old one is in {saved}")
+            else:
+                self.differ.append((kind, item, config, old))
             return
         self.ha.request("POST", path, config)
         self.progress(f"{kind} {item} made")
+
+    def settle(self) -> None:
+        """Asks about the ones that differ from the installer's: once for all of them, or one by one."""
+        if not self.differ:
+            return
+        each = len(self.differ) == 1
+        if not each:
+            listed = ", ".join(f"{kind} {item}" for kind, item, _, _ in self.differ)
+            question = (f"{len(self.differ)} of the installer's automations and scripts differ from the ones "
+                        f"Home Assistant has ({listed}). Replace them? The old ones are saved first.")
+            picked = self.choose(question, "none", ["none", "all", "each"],
+                                 {"none": "no, keep all of mine", "all": "yes, replace all of them",
+                                  "each": "ask about each one"}) if self.choose else None
+            if picked == "each":
+                each = True
+            elif picked != "all":
+                for kind, item, _, _ in self.differ:
+                    self.progress(f"{kind} {item} differs from the installer's and was kept")
+                return
+        for kind, item, config, old in self.differ:
+            if each:
+                question = (f"Home Assistant has {'an' if kind[0] in 'aeiou' else 'a'} {kind} {item} that "
+                            "differs from the installer's. Replace it? Its old configuration is saved first.")
+                picked = self.choose(question, "no", ["no", "yes"],
+                                     {"no": "no, keep mine", "yes": "yes, replace it"}) if self.choose else None
+                if picked != "yes":
+                    self.progress(f"{kind} {item} differs from the installer's and was kept")
+                    continue
+            if self.keep is None:
+                self.progress(f"{kind} {item} kept: there is nowhere to save the old one")
+                continue
+            saved = self.keep(f"{kind}-{item}", old)
+            self.ha.request("POST", f"/api/config/{kind}/config/{item}", config)
+            self.progress(f"{kind} {item} replaced; the old one is in {saved}")
+        self.differ.clear()
 
     def blueprint(self, name: str) -> bool:
         """Saves the repo's blueprint into Home Assistant, over the one there only when it is ours."""
@@ -670,8 +695,15 @@ def _per_show(run: _Run, house: House, show: str, entities: list[str]) -> None:
 
 def set_up(ha: HomeAssistant, show: str, entities: list[str], *, choose: Chooser | None = None,
            keep: Keep | None = None, progress: Callable[[str], None] = print) -> None:
-    """Sets up the pieces this house can have, and this Show's turn-the-room-down automation."""
+    """Sets up the pieces this house can have, and this Show's turn-the-room-down automation. The ones
+    that are there already and differ are asked about at the end, together."""
     run = _Run(ha, choose, keep, progress)
+    _set_up(run, show, entities)
+    run.settle()
+
+
+def _set_up(run: _Run, show: str, entities: list[str]) -> None:
+    ha, progress = run.ha, run.progress
     house = look(ha)
     run.blueprint(TURN_ROOM_DOWN)
     _per_show(run, house, show, entities)

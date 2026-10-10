@@ -724,6 +724,20 @@ def _room_dashboard(ha: HomeAssistant, entities: list[str], make: bool | None,
     return f"room dashboard {url_path} made for {name}, {len(cards)} cards"
 
 
+def node_name(ha: HomeAssistant, entry_id: str) -> str | None:
+    """The ESPHome node name Home Assistant has for the entry, which names the Show's actions. It is not
+    the installed name once the Show was renamed on its screen; None when Home Assistant does not say.
+    Only this one value is taken from the diagnostics."""
+    try:
+        diag = ha.request("GET", f"/api/diagnostics/config_entry/{entry_id}")
+    except HomeAssistantError:
+        return None
+    node = diag
+    for key in ("data", "config", "data", "device_name"):
+        node = node.get(key) if isinstance(node, dict) else None
+    return node if isinstance(node, str) and node.strip() else None
+
+
 def _services(ha: HomeAssistant) -> set[str]:
     for domain in ha.request("GET", "/api/services") or []:
         if domain.get("domain") == "esphome":
@@ -869,7 +883,10 @@ def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], 
     progress(f"ESPHome entry {'added' if made else 'already there'}: {opts.name}")
     progress("device actions " + ("allowed" if allow_actions(ha, entry_id) else "were already allowed"))
 
-    prefix = service_prefix(opts.name)
+    node = node_name(ha, entry_id)
+    if node and service_prefix(node) != service_prefix(opts.name):
+        progress(f"Home Assistant knows the Show as {node!r} (renamed since it was installed as {opts.name!r})")
+    prefix = service_prefix(node or opts.name)
     wanted = []
     s = opts.settings
     if s.dashcast and s.dashcast_key:
@@ -895,13 +912,17 @@ def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], 
     while True:
         entities = entry_entities(ha, entry_id) if want_entities else []
         services = _services(ha) if wanted else set()
-        ready = (not want_entities or any(e.startswith("select.") for e in entities)) and \
-            all(svc in services for svc, _, _ in wanted) and (not want_selects or _selects_ready(ha, entities))
+        missing = [svc[len(prefix) + 1:] for svc, _, _ in wanted if svc not in services]
+        selects = not want_selects or _selects_ready(ha, entities)
+        ready = (not want_entities or any(e.startswith("select.") for e in entities)) and not missing and selects
         if ready or clock() >= deadline:
             break
-        if want_selects and entities and last != "selects":
-            progress("waiting for the Show to tell Home Assistant its assistant and wake words")
-            last = "selects"
+        left = max(0, int(deadline - clock()))
+        waiting = (f"its actions ({', '.join(missing)})" if missing else
+                   "its assistant and wake words" if not selects else "its entities")
+        if waiting != last:
+            progress(f"waiting for the Show to give Home Assistant {waiting}; up to {left} s more")
+            last = waiting
         sleep(5)
 
     if opts.assistant or choose:
@@ -925,12 +946,13 @@ def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], 
     own_given = False
     for svc, data, what in wanted:
         if svc not in services:
-            progress(f"WARN: the Show has no esphome.{svc} action in Home Assistant yet; {what} not set")
+            progress(f"WARN: the Show has no esphome.{svc} action in Home Assistant yet, so {what} was not "
+                     "given; run this again once the Show is online")
             continue
         if data is None and svc == f"{prefix}_music_assistant":
-            token = s.music_assistant_login(opts.name)
+            token = s.music_assistant_login(node or opts.name)
             if not token:
-                progress(f"WARN: {what} not set; the Show shows no lyrics")
+                progress(f"WARN: {what} not set, so lyrics won't work on the Show")
                 continue
             data = {"token": token}
         elif data is None:

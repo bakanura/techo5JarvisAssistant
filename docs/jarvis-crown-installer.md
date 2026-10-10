@@ -261,23 +261,60 @@ allowing new defaults to apply correctly to genuinely fresh devices.
 the moment it boots:
 
 ```
-Wi-Fi (the Show joins it on first boot):
-   networks this computer can see (a number picks one):
-     1) Home
-     2) Home Guest
-   network name (SSID) [Home]:
-   passphrase for 'Home' (hidden; Enter to skip):
-   again, to be sure:
-Home Assistant:
-   address, as the Show reaches it [http://10.0.0.2:8123]:
-   the Show's own long-lived token (photos, weather, cameras) (hidden; Enter to skip):
-   an admin token, used once to add the Show to Home Assistant (hidden; Enter to skip):
-DashCast (the streamed dashboard):
-   server, host[:port] [10.0.0.3:9555]:
-   the DashCast key (hidden; Enter to skip):
-Music Assistant (the Sendspin player):
-   server IP or name [10.0.0.2]:
-   a Music Assistant admin's token (its settings, your profile, long-lived tokens), used once to give the Show a user of its own for lyrics (hidden; Enter to skip):
+── Wi-Fi ─────────────────────────────────────────────────────────────────────
+  The Show joins it on first boot.
+    Networks this computer can see; a number picks one:
+      1  Home
+      2  Home Guest
+  ? network name (SSID)
+    Enter: pick it on the Show's screen instead
+    › 1
+  ? passphrase for Home
+    It goes onto the Show only; this computer keeps no copy.
+    › hidden as you type, Enter to skip
+    › once more, to be sure
+    To skip this next time, keep it in the desktop keyring:
+      secret-tool store --label='Jarvis Show: Wi-Fi' application jarvis-show secret wifi network Home
+
+── Home Assistant ────────────────────────────────────────────────────────────
+  ? address, as the Show reaches it
+    Like http://homeassistant.local:8123. Enter skips Home Assistant for now.
+    › http://10.0.0.2:8123
+  ? the Show's own long-lived token
+    For photos, weather and cameras. Make it as the user the Show should be
+    (profile, Security, Long-lived access tokens). It goes onto the Show only;
+    this computer keeps no copy.
+    › hidden as you type, Enter to skip
+  ? an admin's long-lived token
+    Used for this run only, to add the Show to Home Assistant and set up its
+    room, dashboard and voice. It is dropped when the run ends and never
+    stored anywhere, not even encrypted. Enter skips it, and you add the Show
+    in Home Assistant by hand.
+    › hidden as you type, Enter to skip
+
+── DashCast ──────────────────────────────────────────────────────────────────
+  The dashboard, streamed to the Show.
+  ? server, host[:port]
+    Enter to skip
+    › 10.0.0.3:9555
+  ? the DashCast key
+    It goes onto the Show only; this computer keeps no copy.
+    › hidden as you type, Enter to skip
+
+── Music Assistant ───────────────────────────────────────────────────────────
+  The Show plays through it as a Sendspin player.
+  ? server IP or name
+    Enter to skip
+    › 10.0.0.2
+  ? a Music Assistant admin's token (optional)
+    Used once, for this run only: it makes the Show a plain Music Assistant
+    user of its own, which the lyrics need. Your token is dropped when the run
+    ends and never stored anywhere, not even encrypted; the Show only keeps
+    the token of its own user. Make one in Music Assistant under Settings,
+    your profile, Long-lived tokens. Enter skips it, but then lyrics won't
+    work on the Show.
+    › hidden as you type, Enter to skip
+    No token: music plays, but lyrics won't work on the Show.
 ```
 
 The Wi-Fi network is picked by number from the ones this computer sees (NetworkManager's list, when
@@ -286,7 +323,12 @@ for WPA's 8 to 63 characters; spaces at its ends are kept. Only the WPA key made
 the Show, never the passphrase itself, and the Show is on that network from its first boot. Enter
 at the network name leaves Wi-Fi to the Show's screen instead.
 
-Enter takes the value in brackets, `-` leaves a setting out. The addresses are remembered in
+Each part has a heading, each question a `?` line with what it is for underneath, and what you type
+goes after `›`. Hidden answers show nothing as you type. A wrong answer gets a `!` line saying why,
+and the question again. Colour and the symbols are left out when the terminal can't show them
+(`NO_COLOR`, `TERM=dumb`, or output into a file or pipe); the layout stays the same.
+
+Where a question already has a value, Enter keeps it; `-` leaves a setting out. The addresses are remembered in
 `~/.config/jarvis-show/defaults.json`, so the second Show is mostly Enter. Secrets are never
 remembered by this tool and never put on a command line. Each secret is taken from the first of
 these that has it:
@@ -309,10 +351,12 @@ secret-tool store --label="Jarvis Show: Music Assistant token" application jarvi
 The admin tokens are better not kept at all: make one for the install, give it at the question, and
 delete it afterwards. What the Show needs it gets a token of its own for.
 
-The Music Assistant token is asked for whenever there is a Music Assistant server. It is an admin's,
-used once to make the Show a plain Music Assistant user of its own for the lyrics on the now-playing
-page ([Lyrics](lyrics.md)), and with `--music-assistant-local-metadata` (below) to switch the online
-lookups off. Enter skips it; the Show then plays as before, without lyrics.
+The Music Assistant token is optional and asked for whenever there is a Music Assistant server. It is
+an admin's, used for this run only: to make the Show a plain Music Assistant user of its own for the
+lyrics on the now-playing page ([Lyrics](lyrics.md)), and with `--music-assistant-local-metadata`
+(below) to switch the online lookups off. It is dropped when the run ends and never stored anywhere,
+not even encrypted; the Show keeps only the token of its own user. Enter skips it: music plays as
+before, but lyrics won't work on the Show.
 
 The addresses have switches too (`--ha-url`, `--dashcast`, `--music-assistant`), and
 `--no-questions` (or `TECHO5_NO_PROMPT=1`, or no terminal) asks nothing at all.
@@ -371,7 +415,8 @@ What happens with the answers:
      What the house lacks (no weather, no Music Assistant, no German pipeline) is left out and said
      so. Every automation and script is looked at first. Missing ones are made and identical ones
      left alone. One that differs, because you changed it or an older installer made it, is only
-     replaced when you say yes, and its old configuration is saved first in
+     replaced when you say yes. When several differ, you're asked once (keep all, replace all, or
+     ask about each), and every old configuration is saved first in
      `backups/home-assistant/`. Which scripts Assist may use (Settings → Voice assistants → Expose)
      is not touched; expose `jarvis_play_radio` and `jarvis_play_mood` there if the model should
      reach them;
@@ -381,8 +426,14 @@ What happens with the answers:
      "Jarvis Show 5", not an admin, with a random password nobody keeps) and gives the Show a token
      for it, replacing the one made last time. See [Lyrics](lyrics.md).
 
+  The Show's actions are named after its ESPHome node (`esphome.<node>_dashboard_server` and so on).
+  The tool takes the node from Home Assistant, so a Show renamed since it was installed is still
+  reached, and says so ("Home Assistant knows the Show as 'kitchen-show'"). While it waits for the
+  Show to come online, it says what it waits for and for how much longer.
+
   The admin tokens are used for this and kept nowhere. Each step looks first at what is already
-  there, so running it again changes only what is missing.
+  there, so running it again changes only what is missing. The last line says it's done, or done
+  with how many things to look at, each marked `!` above.
 - **In Music Assistant, only when asked.** Music Assistant looks songs, albums and artists up on the
   internet (MusicBrainz, fanart.tv, TheAudioDB, Wikipedia and more) for pictures and biographies.
   That is what you want with a streaming service or an untagged library, so it stays as it is. A

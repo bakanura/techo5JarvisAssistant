@@ -17,6 +17,7 @@ sys.path.insert(0, str(TOOLS))
 
 from jarvis_crown import home_assistant as ha  # noqa: E402
 from jarvis_crown import music_assistant as ma  # noqa: E402
+from jarvis_crown import ui  # noqa: E402
 from jarvis_crown.settings import Asker, Settings, SettingsError, gather, load_defaults, save_defaults, secret_files  # noqa: E402
 from jarvis_crown.shows import record_show, show_named  # noqa: E402
 from techo5lib import Fail  # noqa: E402
@@ -79,6 +80,7 @@ class FakeHA:
 
     def __init__(self, *, flow_errors=(), allowed=False, entry=False, unconfigured=0):
         self.calls = []
+        self.node = "jarvis-show-5"  # the ESPHome node name the diagnostics give; None: they say nothing
         self.unconfigured = unconfigured  # times the wake word select still reads unavailable
         self.flow_errors = list(flow_errors)
         self.allowed = allowed
@@ -111,6 +113,11 @@ class FakeHA:
 
     def request(self, method, path, body=None):
         self.calls.append((method, path, body))
+        if method == "GET" and path == "/api/diagnostics/config_entry/E1":
+            if self.node is None:
+                raise ha.NotFound("GET /api/diagnostics/config_entry/E1: HTTP 404")
+            return {"home_assistant": {}, "data": {"config": {"data": {"device_name": self.node,
+                                                                        "noise_psk": "**REDACTED**"}}}}
         if path.startswith("/api/config/config_entries/entry"):
             return list(self.entries)
         if method == "GET" and path == "/api/config/config_entries/flow":
@@ -141,8 +148,9 @@ class FakeHA:
         if path == "/api/template":
             return "\n".join(list(self.states) + ["select.jarvis_show_5_assistant_2"])
         if path == "/api/services" and method == "GET":
-            names = ["jarvis_show_5_dashboard_server", "jarvis_show_5_home_assistant", "jarvis_show_5_sendspin_server",
-                     "jarvis_show_5_music_assistant"]
+            prefix = ha.service_prefix(self.node or "Jarvis Show 5")
+            names = [f"{prefix}_{action}" for action in
+                     ("dashboard_server", "home_assistant", "sendspin_server", "music_assistant")]
             return [{"domain": "light", "services": {}}, {"domain": "esphome", "services": {n: {} for n in names}}]
         if path == "/api/states" and method == "GET":
             return [{"entity_id": e["entity_id"], "state": "on",
@@ -226,17 +234,51 @@ class DeployTests(unittest.TestCase):
             self.assertNotIn(TOKEN, line)
             self.assertNotIn(DASH_KEY, line)
 
+    def test_a_renamed_show_is_reached_by_the_name_home_assistant_has(self):
+        fake, names = FakeHA(), []
+        fake.node = "genbushow5"
+        _, log = run_deploy(fake, host="10.0.0.9", login=lambda name: names.append(name) or "MA-SHOW-TOKEN")
+        actions = dict(fake.posted("/api/services/esphome/"))
+        self.assertEqual(actions["/api/services/esphome/genbushow5_sendspin_server"], {"ip": "10.0.0.6"})
+        self.assertEqual(actions["/api/services/esphome/genbushow5_music_assistant"], {"token": "MA-SHOW-TOKEN"})
+        self.assertEqual(names, ["genbushow5"])
+        self.assertTrue(any("knows the Show as 'genbushow5'" in line for line in log))
+        self.assertFalse(any(line.startswith("WARN") for line in log))
+
+    def test_without_diagnostics_the_installed_name_is_used(self):
+        fake = FakeHA()
+        fake.node = None
+        run_deploy(fake, host="10.0.0.9")
+        self.assertIn("/api/services/esphome/jarvis_show_5_sendspin_server", dict(fake.posted("/api/services/esphome/")))
+
+    def test_the_wait_says_what_it_waits_for(self):
+        fake = FakeHA()
+        fake.node = "somewhere-else"
+        services = fake.request
+
+        def request(method, path, body=None):
+            if path == "/api/services" and method == "GET":
+                return [{"domain": "esphome", "services": {}}]
+            return services(method, path, body)
+        fake.request = request
+        _, log = run_deploy(fake, host="10.0.0.9", wait_seconds=30)
+        waits = [line for line in log if line.startswith("waiting for the Show")]
+        self.assertEqual(len(waits), 1)
+        self.assertIn("its actions (dashboard_server, home_assistant, sendspin_server)", waits[0])
+        self.assertIn("up to 30 s more", waits[0])
+        self.assertTrue(any("run this again once the Show is online" in line for line in log))
+
     def test_music_assistant_token_made_for_the_show_by_name(self):
         fake, names = FakeHA(), []
         run_deploy(fake, host="10.0.0.9", login=lambda name: names.append(name) or "MA-SHOW-TOKEN")
-        self.assertEqual(names, ["Jarvis Show 5"])
+        self.assertEqual(names, ["jarvis-show-5"])
         self.assertEqual(dict(fake.posted("/api/services/esphome/"))
                          ["/api/services/esphome/jarvis_show_5_music_assistant"], {"token": "MA-SHOW-TOKEN"})
         fake = FakeHA()
         _, log = run_deploy(fake, host="10.0.0.9", login=lambda name: None)
         self.assertNotIn("/api/services/esphome/jarvis_show_5_music_assistant",
                          dict(fake.posted("/api/services/esphome/")))
-        self.assertTrue(any("no lyrics" in line for line in log))
+        self.assertTrue(any("lyrics won't work" in line for line in log))
         fake = FakeHA()
         run_deploy(fake, host="10.0.0.9")
         self.assertNotIn("/api/services/esphome/jarvis_show_5_music_assistant",
@@ -304,7 +346,7 @@ class DeployTests(unittest.TestCase):
             picked = show_cli._chooser(args)("assistant", "preferred", ["preferred", "Jarvis", "Basic"],
                                                 {"Jarvis": "Jarvis (default)"})
         self.assertEqual(picked, "Jarvis")
-        self.assertIn("     2) Jarvis (default)", said)
+        self.assertIn("      2  Jarvis (default)", said)
 
     def test_known_show_is_only_brought_up_to_date(self):
         fake = FakeHA(entry=True, allowed=True)
@@ -541,7 +583,8 @@ def args(**kw):
 class GatherTests(unittest.TestCase):
     def asker(self, answers, secrets):
         answers, secrets, said = list(answers), list(secrets), []
-        return Asker(True, ask=lambda _: answers.pop(0), ask_secret=lambda _: secrets.pop(0), say=said.append), said
+        return Asker(True, ask=lambda _: answers.pop(0), ask_secret=lambda _: secrets.pop(0), say=said.append,
+                     out=ui.Out(io.StringIO(), color=False, fancy=True, width=78)), said
 
     def test_pick_by_number_name_or_enter(self):
         asker, said = self.asker(["9", "2"], [])
@@ -561,7 +604,7 @@ class GatherTests(unittest.TestCase):
         asker, said = self.asker(["1"], [])
         self.assertEqual(asker.pick("q", "preferred", ["preferred", "Jarvis"], names={"preferred": "the usual"}),
                          "preferred")
-        self.assertIn("     1) the usual  (now)", said)
+        self.assertIn("      1  the usual  ← now", said)
 
     def test_everything_asked(self):
         asker, _ = self.asker(["Home", "http://ha:8123/", "10.0.0.5", "10.0.0.6"],
@@ -593,7 +636,7 @@ class GatherTests(unittest.TestCase):
                    nearby=lambda: ["Upstairs", "Garden IoT", "Neighbour"], want_wifi=True)
         self.assertEqual(s.wifi, "Garden IoT")
         self.assertEqual(s.wifi_passphrase, "  spaced pass ", "spaces at the ends belong to the passphrase")
-        self.assertTrue(any("2) Garden IoT" in line for line in said))
+        self.assertTrue(any("2  Garden IoT" in line for line in said))
         self.assertTrue(any("pick 1 to 3" in line for line in said))
         self.assertTrue(any("8 to 63" in line for line in said))
         self.assertTrue(any("did not match" in line for line in said))
@@ -677,7 +720,7 @@ class GatherTests(unittest.TestCase):
         asker, said = self.asker(["-", "-", "-"], ["", ""])
         s = gather(args(), asker, defaults={}, lookup=lambda *a, **k: None, want_wifi=False, want_root_password=True)
         self.assertIsNone(s.root_password)
-        self.assertTrue(any("root shell" in line for line in said))
+        self.assertIn("gets a root shell", " ".join(line.strip() for line in said))
         self.assertIn("root password: none (the USB console needs none)", s.summary())
 
     def test_defaults_keep_no_secret(self):
@@ -884,7 +927,7 @@ class KeyFileTests(unittest.TestCase):
             backups = pathlib.Path(tmp)
             record_show(backups / "BBBB08TU", name="Kitchen", board="crown")
             err = io.StringIO()
-            with contextlib.redirect_stderr(err):
+            with contextlib.redirect_stderr(err), contextlib.redirect_stdout(err):
                 self.assertIsNone(show_cli._key_file(self._args("Jarvis Show 5"), backups))
             self.assertIn("'Kitchen' (crown, serial ending 08TU)", err.getvalue())
             self.assertNotIn("BBBB08TU", err.getvalue())
@@ -1046,7 +1089,7 @@ class OwnUserTests(unittest.TestCase):
         fake.request = request
         log = self.deploy(fake)
         self.assertEqual(fake.users, [])
-        self.assertTrue(any("as its own user not set" in line for line in log))
+        self.assertTrue(any("as its own user was not given" in line for line in log))
 
     def test_failed_sign_in_says_why_and_keeps_the_password_out(self):
         fake = OwnUserHA()
