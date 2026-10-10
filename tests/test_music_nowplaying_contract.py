@@ -23,11 +23,11 @@ class MusicNowPlayingContractTests(unittest.TestCase):
     def test_fullscreen_page_shows_route_album_progress_and_next(self):
         render = (ROOT / "echod/internal/feature/display/render_nowplaying.go").read_text(encoding="utf-8")
         for marker in (
-            "musicRouteLabel(s.music)",
-            '"Album  ·  " + rd.Album',
-            '"Rooms  ·  " + strings.Join(s.music.Rooms',
-            '"Next  ·  " + s.music.Next',
-            "r.musicProgress(s.music)",
+            "musicPlace(s.music)",
+            "line(r.small, rd.Album",
+            'strings.Join(s.music.Rooms, "  ·  ")',
+            'i18n.T("Next")+"  ·  "+s.music.Next',
+            "r.musicProgress(s.music, s.now",
         ):
             self.assertIn(marker, render)
 
@@ -57,7 +57,7 @@ class MusicNowPlayingContractTests(unittest.TestCase):
         art = (ROOT / "echod/internal/feature/home/maart.go").read_text(encoding="utf-8")
         decode = (ROOT / "echod/internal/feature/home/decode.go").read_text(encoding="utf-8")
         self.assertIn('st.Attributes["entity_picture"]', route)
-        self.assertIn("hass.Get().FetchURL(picture)", route)
+        self.assertIn("hass.Get().FetchURL(fetch)", route)
         self.assertIn("RemoteArt(b, nil)", route)
         self.assertIn("layoutArt", art)
         self.assertIn("maxArtPixels", decode)

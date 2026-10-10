@@ -23,9 +23,9 @@ class MusicFailoverRegressionContractTests(unittest.TestCase):
         route_test = (ROOT / "echod/internal/feature/home/music_failover_test.go").read_text(encoding="utf-8")
         display_test = (ROOT / "echod/internal/feature/display/render_nowplaying_test.go").read_text(encoding="utf-8")
         self.assertIn("Now Playing claimed the unavailable preferred speaker", route_test)
-        self.assertIn("TestMusicRouteLabelReportsTheResolvedDestination", display_test)
-        self.assertIn("Playing on  Living Room Jarvis", display_test)
-        self.assertIn("Playing in  Wohnung", display_test)
+        self.assertIn("TestMusicPlaceReportsTheResolvedDestination", display_test)
+        self.assertIn('want: "Living Room Jarvis"', display_test)
+        self.assertIn('want: "Wohnung"', display_test)
 
     def test_playback_cache_tracks_external_picture_without_compile_gap(self):
         source = (ROOT / "echod/internal/feature/home/music_route.go").read_text(encoding="utf-8")
