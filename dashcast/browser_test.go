@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -207,5 +209,90 @@ func TestMusicBackstopReachesTheFrame(t *testing.T) {
 	}
 	if h := hash(); h != "#/" {
 		t.Fatalf("the frame is at %q, want #/", h)
+	}
+}
+
+// maSidebar is Music Assistant's sidebar and user menu as its 2.10 frontend draws them, cut down to
+// what the guard goes by: the System group holding only the settings, the user menu with Profile and
+// Edit menu under the name, and the Home Assistant button in the footer.
+const maSidebar = `<!doctype html><title>ma</title>
+<div data-slot="sidebar-group" id="library"><div data-slot="sidebar-group-label">Library</div><a href="#/artists">Artists</a></div>
+<div data-slot="sidebar-group" id="system"><div data-slot="sidebar-group-label">System</div><a href="#/settings">Settings</a></div>
+<div data-slot="sidebar-footer"><button id="ha" aria-label="Home Assistant"><img src="data:image/svg+xml,%3csvg%3e%3c/svg%3e"><span>Home Assistant</span></button><button id="collapse"><svg></svg></button></div>
+<div data-slot="dropdown-menu-content" role="menu">
+  <div data-slot="dropdown-menu-label"><span data-slot="avatar">D</span>dashcastuser</div>
+  <div data-slot="dropdown-menu-separator"></div>
+  <div data-slot="dropdown-menu-item" id="profile">Profile</div>
+  <div data-slot="dropdown-menu-item" id="edit">Edit menu</div>
+</div>
+<div data-slot="dropdown-menu-content" role="menu" id="other">
+  <div data-slot="dropdown-menu-separator"></div>
+  <div data-slot="dropdown-menu-item" id="play">Play</div>
+</div>
+<script>parent.postMessage({type: "home-assistant/toggle-menu"}, "*"); parent.postMessage({type: "done"}, "*");</script>`
+
+// In a real browser: the ways into Music Assistant's settings are hidden and the rest of its menu is
+// not, and its Home Assistant button, if pressed anyway, does not reach Home Assistant.
+func TestMusicWaysToTheSettingsAreHidden(t *testing.T) {
+	if chromePath("") == "" {
+		if os.Getenv("DASHCAST_REQUIRE_BROWSER") != "" {
+			t.Fatal("no Chrome or headless-shell to run")
+		}
+		t.Skip("no Chrome or headless-shell to run")
+	}
+	ha := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		if strings.HasPrefix(r.URL.Path, "/api/hassio_ingress/") {
+			_, _ = w.Write([]byte(maSidebar))
+			return
+		}
+		_, _ = w.Write([]byte(`<!doctype html><title>panel</title><script>
+			window.heard = [];
+			addEventListener("message", (e) => window.heard.push(e.data.type));
+		</script><iframe id="f" src="/api/hassio_ingress/abc/#/"></iframe>`))
+	}))
+	defer ha.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	b, err := newBrowser(ctx, config{ha: ha.URL})
+	if err != nil {
+		if os.Getenv("DASHCAST_REQUIRE_BROWSER") != "" {
+			t.Fatal(err)
+		}
+		t.Skipf("the browser did not start: %v", err)
+	}
+	defer b.close()
+	tab, closeTab, err := b.open(ctx, "/ma", 480, 480, map[string]bool{"ma": true}, true, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeTab()
+	shown := func(id string) string {
+		var d string
+		_ = chromedp.Run(tab, chromedp.Evaluate(`(() => { const e = document.getElementById("f")?.contentDocument?.getElementById(`+
+			strconv.Quote(id)+`); return e ? getComputedStyle(e).display : "missing"; })()`, &d))
+		return d
+	}
+	for end := time.Now().Add(5 * time.Second); shown("system") != "none" && time.Now().Before(end); time.Sleep(100 * time.Millisecond) {
+	}
+	for _, id := range []string{"system", "profile", "ha"} {
+		if d := shown(id); d != "none" {
+			t.Errorf("%s shows (display %q)", id, d)
+		}
+	}
+	for _, id := range []string{"library", "edit", "collapse", "play"} {
+		if d := shown(id); d == "none" || d == "missing" {
+			t.Errorf("%s is hidden too (display %q)", id, d)
+		}
+	}
+	var heard []string
+	for end := time.Now().Add(5 * time.Second); time.Now().Before(end); time.Sleep(100 * time.Millisecond) {
+		_ = chromedp.Run(tab, chromedp.Evaluate(`window.heard`, &heard))
+		if slices.Contains(heard, "done") {
+			break
+		}
+	}
+	if !slices.Contains(heard, "done") || slices.Contains(heard, "home-assistant/toggle-menu") {
+		t.Errorf("the page heard %q, want done and no toggle-menu", heard)
 	}
 }

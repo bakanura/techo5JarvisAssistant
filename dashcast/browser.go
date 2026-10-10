@@ -49,8 +49,9 @@ func newBrowser(parent context.Context, cfg config) (*browser, error) {
 func (b *browser) close() { b.cancel() }
 
 // initScript is what runs in the tab before any of Home Assistant's own code: the sign-in, the
-// sidebar kept closed, the page kept on dashboards, and with kiosk the top bar hidden. Frames get
-// none of that, the token least of all; with music, Music Assistant's own frame gets musicScript.
+// sidebar kept closed (a frame asking Home Assistant to open it is not heard), the page kept on
+// dashboards, and with kiosk the top bar hidden. Frames get none of that, the token least of all;
+// with music, Music Assistant's own frame gets musicScript.
 func initScript(origin, tokens, allowed []byte, kiosk, music bool) string {
 	extra, frame := "", ""
 	if kiosk {
@@ -65,6 +66,9 @@ func initScript(origin, tokens, allowed []byte, kiosk, music bool) string {
     return;
   }
   localStorage.setItem("hassTokens", %s); localStorage.setItem("dockedSidebar", '"always_hidden"');
+  addEventListener("message", (e) => {
+    if (e.data && e.data.type === "home-assistant/toggle-menu") e.stopImmediatePropagation();
+  }, true);
   const allowed = new Set(%s);
   const ok = (u) => {
     try {
@@ -83,10 +87,16 @@ func initScript(origin, tokens, allowed []byte, kiosk, music bool) string {
 
 // musicScript keeps Music Assistant, in its panel's frame, out of its settings: anyone can touch the
 // screen, and the settings are where its music sources and players are set up. Its menu stays, for the
-// library, the queue and the players; only the way to the settings is hidden, and a page that gets
+// library, the queue and the players; only the ways to the settings are hidden, and a page that gets
 // there anyway - a link elsewhere, the back button - goes straight back to Music Assistant's home.
 // It is a single-page app that moves with the history API and its #/ addresses, so it is watched
 // after each move, and every second for whatever moves without either.
+//
+// The ways in are the settings link, the System group around it (left as a bare heading otherwise),
+// and Profile in the user menu, which is a page of the settings; Edit menu stays, so the menu can be
+// put in order. The Home Assistant button Music Assistant shows when it sees Home Assistant's sidebar
+// gone opens that sidebar, so it goes too. Each is a rule of its own: a selector the browser does not
+// take drops only its own rule.
 const musicScript = `
     if (location.pathname.startsWith("/api/hassio_ingress/")) {
       const away = () => {
@@ -103,7 +113,13 @@ const musicScript = `
         if (!document.head || document.getElementById("techo5-no-settings")) return;
         const s = document.createElement("style");
         s.id = "techo5-no-settings";
-        s.textContent = 'a[href^="#/settings"]{display:none!important}';
+        s.textContent = [
+          'a[href^="#/settings"]',
+          '[data-slot=sidebar-group]:has(a[href^="#/settings"])',
+          '[data-slot=dropdown-menu-content]:has([data-slot=avatar]) [data-slot=dropdown-menu-separator] + [data-slot=dropdown-menu-item]',
+          '[data-slot=sidebar-footer] button:has(> img[src^="data:image/svg+xml"])',
+          '.ha-escape-button',
+        ].map((q) => q + "{display:none!important}").join("\n");
         document.head.appendChild(s);
       };
       addEventListener("DOMContentLoaded", hide);
