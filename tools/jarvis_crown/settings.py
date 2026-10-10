@@ -147,6 +147,15 @@ def _resolve(host: str) -> str:
     return socket.getaddrinfo(host, None, socket.AF_INET, socket.SOCK_STREAM)[0][4][0]
 
 
+def _readline():
+    """The line editor input() uses, where Python has one; None where it hasn't."""
+    try:
+        import readline
+    except ImportError:
+        return None
+    return readline
+
+
 @dataclass
 class Asker:
     """The terminal, or nothing when nobody is at it (then every answer has to come from a switch).
@@ -189,13 +198,22 @@ class Asker:
 
     def _question(self, label: str, enter: str, help: str) -> None:
         self._say(self.out.lines("ask", label, paint="1"))
-        if enter and "Enter" not in help:  # the help says what Enter does already
+        if enter:
             self._say(self.out.note_lines(enter))
         if help:
             self._say(self.out.note_lines(help))
 
     def _prompt(self, text: str = "") -> str:
         return "    " + self.out.mark("prompt", prompt=True) + " " + (self.out.dim(text, prompt=True) + " " if text else "")
+
+    def _filled(self, value: str) -> str:
+        """input() with value already on the line, to keep, edit or clear."""
+        readline = _readline()
+        readline.set_startup_hook(lambda: readline.insert_text(value))
+        try:
+            return input(self._prompt())
+        finally:
+            readline.set_startup_hook()
 
     def _wrong(self, text: str) -> None:
         self._say(self.out.lines("warn", text, paint="33"))
@@ -207,13 +225,20 @@ class Asker:
         """A value, re-asked until the Show would take it. Enter keeps the default; '-' is none."""
         if not self.interactive:
             return None
-        self._question(label, f"Enter keeps {default}, - for none" if default else skip, help)
+        filled = bool(default) and self.ask is input and _readline() is not None
+        if filled:
+            enter = "Enter keeps what is there; edit it, or clear the line to leave it out"
+        elif default:
+            enter = f"Enter keeps {default}, - for none"
+        else:
+            enter = "" if "Enter" in help else skip  # the help says what Enter does already
+        self._question(label, enter, help)
         while True:
             try:
-                raw = self.ask(self._prompt()).strip()
+                raw = (self._filled(default) if filled else self.ask(self._prompt())).strip()
             except EOFError:
                 return None
-            if raw == "-" or (not raw and not default):
+            if raw == "-" or (not raw and (filled or not default)):
                 return None
             try:
                 return check(raw or default or "")
@@ -409,7 +434,7 @@ def gather(args, asker: Asker, *, defaults: dict[str, str] | None = None,
     asker.heading("Home Assistant")
     ha_url = _checked(getattr(args, "ha_url", None), normalize_ha_url) or \
         asker.text("address, as the Show reaches it", d.get("ha_url"), normalize_ha_url,
-                   help="Like http://homeassistant.local:8123. Enter skips Home Assistant for now.")
+                   help="Like http://homeassistant.local:8123. Leave it empty to skip Home Assistant for now.")
     token = admin = None
     own = bool(getattr(args, "own_ha_user", False))
     if ha_url and not own:

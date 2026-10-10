@@ -278,7 +278,8 @@ the moment it boots:
 
 ── Home Assistant ────────────────────────────────────────────────────────────
   ? address, as the Show reaches it
-    Like http://homeassistant.local:8123. Enter skips Home Assistant for now.
+    Like http://homeassistant.local:8123. Leave it empty to skip Home Assistant
+    for now.
     › http://10.0.0.2:8123
   ? the Show's own long-lived token
     For photos, weather and cameras. Make it as the user the Show should be
@@ -328,7 +329,8 @@ goes after `›`. Hidden answers show nothing as you type. A wrong answer gets a
 and the question again. Colour and the symbols are left out when the terminal can't show them
 (`NO_COLOR`, `TERM=dumb`, or output into a file or pipe); the layout stays the same.
 
-Where a question already has a value, Enter keeps it; `-` leaves a setting out. The addresses are remembered in
+Where a question already has a value (the addresses from last time), it is already on the line:
+Enter keeps it, or edit it, or clear the line to leave the setting out. The addresses are remembered in
 `~/.config/jarvis-show/defaults.json`, so the second Show is mostly Enter. Secrets are never
 remembered by this tool and never put on a command line. Each secret is taken from the first of
 these that has it:
