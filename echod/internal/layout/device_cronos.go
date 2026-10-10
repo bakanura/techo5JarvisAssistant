@@ -31,7 +31,10 @@ const (
 	// LogTag is the daemon's logcat tag: `adb logcat -s techo5`.
 	LogTag = "techo5"
 
-	Manufacturer = "TECHO5"
+	// Manufacturer and System are what Home Assistant and the other house services are told made
+	// this and what it runs: the hardware is Amazon's, everything on it is OpenJade's.
+	Manufacturer = "OpenJade"
+	System       = "Genbu Show"
 
 	// DefaultName is the fallback display name when a device has none recorded.
 	DefaultName = "Echo Show"
@@ -52,11 +55,14 @@ var AnimationScripts = []string{}
 // TECHO5-CROWN crown-port-notes.md, off the repository because the dump beside it is unredacted.
 var (
 	Board = showBoard(kernelCmdline(), gatingDir)
-	Model = map[string]string{
-		boardCronos:   "Echo Show 5 2nd gen (cronos)",
-		boardCheckers: "Echo Show 5 1st gen (checkers)",
-		boardCrown:    "Echo Show 8 1st gen (crown)",
+	// Hardware is the Echo for people, Model the same with the board's codename for whoever reads a
+	// diagnostics bundle.
+	Hardware = map[string]string{
+		boardCronos:   "Echo Show 5 2nd gen",
+		boardCheckers: "Echo Show 5 1st gen",
+		boardCrown:    "Echo Show 8 1st gen",
 	}[Board]
+	Model = Hardware + " (" + Board + ")"
 )
 
 const (

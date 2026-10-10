@@ -32,6 +32,8 @@ const (
 	LogTag = "echolocal"
 
 	Manufacturer = "TECHO5"
+	System       = "TECHO5"
+	Hardware     = "Echo Dot 2"
 	Model        = "Echo Dot 2 (biscuit)"
 	Board        = "biscuit"
 

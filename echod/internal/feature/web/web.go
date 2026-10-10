@@ -26,6 +26,7 @@ import (
 
 	"github.com/HuskerMinion/techo5/echod/internal/component"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/security"
+	"github.com/HuskerMinion/techo5/echod/internal/layout"
 )
 
 func init() {
@@ -160,7 +161,7 @@ func (f *Feature) mux() *http.ServeMux {
 		sort.Slice(on, func(i, j int) bool { return on[i].label < on[j].label })
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprint(w, "<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\">"+
-			"<title>TECHO5</title><h1>TECHO5</h1><ul>")
+			"<title>"+layout.System+"</title><h1>"+layout.System+"</h1><ul>")
 		for _, p := range on {
 			if p.private && !LetIn(r) {
 				continue

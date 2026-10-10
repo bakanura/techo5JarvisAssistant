@@ -25,6 +25,8 @@ const (
 	LogTag = "techo5"
 
 	Manufacturer = "TECHO5"
+	System       = "TECHO5"
+	Hardware     = "Echo Spot"
 	Model        = "Echo Spot (rook)"
 	Board        = "rook"
 

@@ -130,10 +130,12 @@ func (a *API) Start(ctx context.Context) error {
 			FriendlyName: device.Name,
 			MACAddress:   mac,
 			Manufacturer: layout.Manufacturer,
-			// The model carries the daemon's own release, since the version field is Home Assistant's
-			// ESPHome version: given this daemon's release number there, it reads an ancient ESPHome and
-			// raises a repair to update firmware the device does not run (compat.go).
-			Model:             layout.Model + " · TECHO5 " + layout.Version,
+			// The model says what the hardware is and what runs on it, release and all, since the
+			// version field is Home Assistant's ESPHome version: given this daemon's release number
+			// there, it reads an ancient ESPHome and raises a repair to update firmware the device does
+			// not run (compat.go). Home Assistant shows it as "Echo Show 5 1st gen (custom) · Genbu
+			// Show v1.2.0 by OpenJade".
+			Model:             layout.Hardware + " (custom) · " + layout.System + " " + layout.Version,
 			Version:           ESPHomeCompat,
 			VoiceFeatures:     voice.Features,
 			BluetoothFeatures: bluetooth.Get().Features(),
