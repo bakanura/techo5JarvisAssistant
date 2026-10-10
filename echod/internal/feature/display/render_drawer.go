@@ -42,7 +42,10 @@ func (p *paint) drawerSeg() int  { return p.s(drawerSegBase) }
 
 var drawerTabs = []string{"Cameras", "Radio", "Announce", "Call"}
 
-func (r *renderer) drawer(s scene) {
+// drawer draws the drawer at the menu size.
+func (r *renderer) drawer(s scene) { r.zoomed(func() { r.drawerAt(s) }) }
+
+func (r *renderer) drawerAt(s scene) {
 	fc := r.faces()
 	r.pending = r.pending[:0]
 	r.dimAll(0.55)

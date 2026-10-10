@@ -44,6 +44,10 @@ type Screen struct {
 	// default five seconds, -1 until they are tapped away.
 	AnswerSeconds int `json:"answer_seconds,omitempty"`
 
+	// MenuSize is how large the settings screen, the drawer and their lists are drawn, in percent of
+	// their own size: 0 for that size.
+	MenuSize int `json:"menu_size,omitempty"`
+
 	// ClockPosition is where the home screen's clock sits: empty for the center, "bottom-left" or
 	// "bottom-right"; DateColor the date's color, empty for the theme's (display/clock_layout.go).
 	ClockPosition string `json:"clock_position,omitempty"`
@@ -182,6 +186,10 @@ func (w ScreenWriter) DateColor(v string) error {
 
 func (w ScreenWriter) AnswerSeconds(v int) error {
 	return w.st.Update(func(c *Config) { c.Screen.AnswerSeconds = v })
+}
+
+func (w ScreenWriter) MenuSize(v int) error {
+	return w.st.Update(func(c *Config) { c.Screen.MenuSize = v })
 }
 
 func (w ScreenWriter) TurnStyle(v string) error {

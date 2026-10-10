@@ -64,6 +64,10 @@ type paint struct {
 	// piece of text. Zero means 1:1, so a paint that never sets these behaves exactly as before.
 	sNum, sDen int
 
+	// moreLines is how many lines past rowLines a row's words may wrap to: the menu size draws them
+	// larger in the same card, and a longer name wraps further rather than be cut (menu_size.go).
+	moreLines int
+
 	// over is drawing words over a photo (readable.go).
 	over overPhoto
 }
@@ -462,10 +466,10 @@ func (r *paint) restore(under []uint8, b image.Rectangle) {
 // scrollHints fades a scrolled list into its edges where there is more, and draws a thin bar where
 // the view sits in the whole.
 func (r *paint) scrollHints(list image.Rectangle, scroll, maxScroll int, bg color.RGBA) {
-	const fade = 26
+	fade := r.s(26)
 	for i := range fade {
-		a := 1 - float64(i)/fade
-		for x := list.Min.X + 8; x < list.Max.X-8; x++ {
+		a := 1 - float64(i)/float64(fade)
+		for x := list.Min.X + r.s(8); x < list.Max.X-r.s(8); x++ {
 			if scroll > 0 {
 				r.blendAt(x, list.Min.Y+i, bg, a*0.9)
 			}
@@ -487,10 +491,10 @@ func (r *paint) scrollHints(list image.Rectangle, scroll, maxScroll int, bg colo
 		r.aaRing(cx, cy, rad, 3, at, at+thumb, lerp(dim, cream, 0.3))
 		return
 	}
-	h := max(float64(list.Dy())*float64(list.Dy())/total, 30)
-	y0 := float64(list.Min.Y+4) + (float64(list.Dy()-8)-h)*float64(scroll)/float64(maxScroll)
-	x := float64(list.Max.X - 10)
-	r.aaLine(x, y0+2, x, y0+h-2, 4, lerp(dim, cream, 0.2))
+	h := max(float64(list.Dy())*float64(list.Dy())/total, r.sf(30))
+	y0 := float64(list.Min.Y+r.s(4)) + (float64(list.Dy()-r.s(8))-h)*float64(scroll)/float64(maxScroll)
+	x := float64(list.Max.X - r.s(10))
+	r.aaLine(x, y0+r.sf(2), x, y0+h-r.sf(2), r.sf(4), lerp(dim, cream, 0.2))
 }
 
 // pickRows is how many choices a long list shows at once, and pickScrollOver how many choices make
@@ -508,7 +512,7 @@ func (r *paint) picker(p pickerView, scroll int) int {
 	r.addZone(zone{r: r.dst.Rect, kind: zoneDismiss})
 	r.dimAll(0.5)
 
-	const optH, pad, titleH, gap = 54, 18, 62, 8
+	optH, pad, titleH, gap := r.s(54), r.s(18), r.s(62), r.s(8)
 	n := len(p.opts)
 	cols, scrolls := 1, n > pickScrollOver
 	switch {
@@ -519,31 +523,38 @@ func (r *paint) picker(p pickerView, scroll int) int {
 		cols = 2
 	}
 	per := (n + cols - 1) / cols
-	optW := 300
+	// most is how many choices stand in a column on this panel. A large menu size can leave room for
+	// fewer than a short list has: that list scrolls, like a long one, rather than run off the panel.
+	most := max((r.h-titleH-pad-r.s(16))/optH, 2)
+	if per > most {
+		cols, per, scrolls = 1, n, true
+	}
+	optW := r.s(300)
 	switch {
 	case scrolls:
-		optW = 640
+		optW = r.s(640)
 	case cols == 3:
-		optW = 220
+		optW = r.s(220)
 	case cols == 2:
-		optW = 250
+		optW = r.s(250)
 	}
 	if !scrolls {
 		for _, o := range p.opts {
-			optW = max(optW, min(r.width(fc.value, o)+90, (r.w-80)/cols-gap))
+			optW = max(optW, min(r.width(fc.value, o)+r.s(90), (r.w-r.s(80))/cols-gap))
 		}
 	}
-	if tw := r.width(fc.header, p.title) + 12; cols*optW+(cols-1)*gap < tw {
+	if tw := r.width(fc.header, p.title) + r.s(12); cols*optW+(cols-1)*gap < tw {
 		optW = (tw - (cols-1)*gap + cols - 1) / cols // the title sets the width: the choices share it
 	}
+	optW = min(optW, (r.w-2*pad-r.s(16)-(cols-1)*gap)/cols) // and never past the panel's sides
 	shown := per
 	if scrolls {
-		shown = pickRows
+		shown = min(pickRows, most)
 	}
 	w := cols*optW + (cols-1)*gap + 2*pad
 	h := titleH + shown*optH + pad
 	card := image.Rect((r.w-w)/2, (r.h-h)/2, (r.w+w)/2, (r.h+h)/2)
-	list := image.Rect(card.Min.X+4, card.Min.Y+titleH, card.Max.X+2, card.Min.Y+titleH+shown*optH)
+	list := image.Rect(card.Min.X+r.s(4), card.Min.Y+titleH, card.Max.X+r.s(2), card.Min.Y+titleH+shown*optH)
 	maxScroll := 0
 	if scrolls {
 		maxScroll = per*optH - list.Dy()
@@ -552,7 +563,7 @@ func (r *paint) picker(p pickerView, scroll int) int {
 		scroll = 0
 	}
 
-	r.roundShadow(card, r.cardRad(), 26, 10, shadowAlpha()*1.2)
+	r.roundShadow(card, r.cardRad(), r.sf(26), r.s(10), shadowAlpha()*1.2)
 	r.roundFill(card, r.cardRad(), surface(4), surface(3))
 	r.roundHighlight(card, r.cardRad())
 	// The card before its choices go on, to clip a scrolled list back to its window after.
@@ -568,28 +579,29 @@ func (r *paint) picker(p pickerView, scroll int) int {
 		if y0+optH <= list.Min.Y || y0 >= list.Max.Y {
 			continue
 		}
-		b := image.Rect(x0, y0+3, x0+optW, y0+optH-3)
+		b := image.Rect(x0, y0+r.s(3), x0+optW, y0+optH-r.s(3))
 		fg := cream
+		rad, k := r.sf(14), r.sf(100)/100
 		if i == p.cur {
-			r.roundFill(b, 14, shift(amber, 12), shift(amber, -12))
-			r.roundHighlight(b, 14)
+			r.roundFill(b, rad, shift(amber, 12), shift(amber, -12))
+			r.roundHighlight(b, rad)
 			fg = onAccent()
-			cx, cy := float64(b.Max.X-26), float64(b.Min.Y+b.Dy()/2)
-			r.aaLine(cx-8, cy, cx-3, cy+6, 2.8, fg)
-			r.aaLine(cx-3, cy+6, cx+8, cy-6, 2.8, fg)
+			cx, cy := float64(b.Max.X-r.s(26)), float64(b.Min.Y+b.Dy()/2)
+			r.aaLine(cx-8*k, cy, cx-3*k, cy+6*k, 2.8*k, fg)
+			r.aaLine(cx-3*k, cy+6*k, cx+8*k, cy-6*k, 2.8*k, fg)
 		} else {
-			r.roundFill(b, 14, surface(6), surface(5))
+			r.roundFill(b, rad, surface(6), surface(5))
 		}
-		tx := b.Min.X + 18
+		tx := b.Min.X + r.s(18)
 		if i < len(p.swatches) {
 			sw := p.swatches[i]
-			cx, cy := float64(b.Min.X+30), float64(b.Min.Y+b.Dy()/2)
-			r.aaDisc(cx, cy, 13, sw[0])
-			r.aaRing(cx, cy, 13, 1.4, 0, 2*math.Pi, lerp(sw[0], color.RGBA{255, 255, 255, 255}, 0.3))
-			r.aaDisc(cx, cy, 6.5, sw[1])
-			tx = b.Min.X + 54
+			cx, cy := float64(b.Min.X+r.s(30)), float64(b.Min.Y+b.Dy()/2)
+			r.aaDisc(cx, cy, 13*k, sw[0])
+			r.aaRing(cx, cy, 13*k, 1.4*k, 0, 2*math.Pi, lerp(sw[0], color.RGBA{255, 255, 255, 255}, 0.3))
+			r.aaDisc(cx, cy, 6.5*k, sw[1])
+			tx = b.Min.X + r.s(54)
 		}
-		r.text(fc.value, r.fit(fc.value, o, b.Max.X-44-tx), tx, b.Min.Y+b.Dy()/2+9, fg)
+		r.text(fc.value, r.fit(fc.value, o, b.Max.X-r.s(44)-tx), tx, b.Min.Y+b.Dy()/2+r.s(9), fg)
 		zr := image.Rect(x0-gap/2, y0, x0+optW+gap/2, y0+optH)
 		if scrolls {
 			zr = zr.Intersect(list)
@@ -601,7 +613,7 @@ func (r *paint) picker(p pickerView, scroll int) int {
 		r.restore(under, image.Rect(card.Min.X, list.Max.Y, card.Max.X, card.Max.Y+optH))
 		r.scrollHints(list, scroll, maxScroll, surface(3))
 	}
-	r.text(fc.header, p.title, card.Min.X+pad+6, card.Min.Y+44, cream)
+	r.text(fc.header, p.title, card.Min.X+pad+r.s(6), card.Min.Y+r.s(44), cream)
 	return maxScroll
 }
 
@@ -635,10 +647,14 @@ func (r *paint) settingRow(card image.Rectangle, top int, row settingRow) {
 	if row.bold {
 		face = fc.labelBold
 	}
-	labels, subs, labelEnd := r.rowWords(card, row, face)
+	labels, subs, labelEnd, stacked := r.rowLayout(card, row, face)
 	h := r.rowFor(labels, subs)
-	bottom := top + h
 	right, cy := card.Max.X-r.s(26), top+h/2
+	if stacked {
+		cy = top + h + r.s(stackLine)/2 - r.s(6)
+		h += r.s(stackLine)
+	}
+	bottom := top + h
 	y := top + r.s(30) + r.rowAir(labels, subs)/2
 	if len(subs) == 0 {
 		y += r.s(10)
@@ -664,15 +680,15 @@ func (r *paint) settingRow(card image.Rectangle, top int, row settingRow) {
 	switch row.kind {
 	case ctlValue:
 		v := fit(row.value, right)
-		r.text(fc.value, v, right-r.width(fc.value, v), cy+9, dim)
+		r.text(fc.value, v, right-r.width(fc.value, v), cy+r.s(9), dim)
 	case ctlToggle:
 		x := r.toggle(right, cy, row.on)
-		if v := fit(row.value, x-16); v != "" {
-			r.text(fc.value, v, x-16-r.width(fc.value, v), cy+9, dim)
+		if v := fit(row.value, x-r.s(16)); v != "" {
+			r.text(fc.value, v, x-r.s(16)-r.width(fc.value, v), cy+r.s(9), dim)
 		}
 		if row.rowTap {
 			add(whole, partRow)
-			add(image.Rect(x-14, top, card.Max.X-r.s(8), bottom), partMain)
+			add(image.Rect(x-r.s(14), top, card.Max.X-r.s(8), bottom), partMain)
 			break
 		}
 		add(whole, partMain) // the whole row flips the switch: a small target otherwise
@@ -682,17 +698,18 @@ func (r *paint) settingRow(card image.Rectangle, top int, row settingRow) {
 		chipW, chipGap := r.dayChip()
 		x0 := right - 7*chipW - 6*chipGap
 		for i, name := range []string{"S", "M", "T", "W", "T", "F", "S"} {
-			b := image.Rect(x0+i*(chipW+chipGap), cy-21, x0+i*(chipW+chipGap)+chipW, cy+21)
+			half := r.s(21)
+			b := image.Rect(x0+i*(chipW+chipGap), cy-half, x0+i*(chipW+chipGap)+chipW, cy+half)
 			ink := cream
 			if row.days&(1<<i) != 0 {
-				r.roundFill(b, 21, shift(amber, 12), shift(amber, -12))
-				r.roundHighlight(b, 21)
+				r.roundFill(b, float64(half), shift(amber, 12), shift(amber, -12))
+				r.roundHighlight(b, float64(half))
 				ink = onAccent()
 			} else {
-				r.roundFill(b, 21, surface(5), surface(4))
-				r.roundStroke(b, 21, 1, ember)
+				r.roundFill(b, float64(half), surface(5), surface(4))
+				r.roundStroke(b, float64(half), r.sf(1), ember)
 			}
-			r.text(fc.button, name, b.Min.X+(chipW-r.width(fc.button, name))/2, cy+8, ink)
+			r.text(fc.button, name, b.Min.X+(chipW-r.width(fc.button, name))/2, cy+r.s(8), ink)
 			if row.id != "" {
 				r.addZone(zone{r: image.Rect(b.Min.X-chipGap/2, top, b.Max.X+chipGap/2, bottom), kind: zoneRow, id: row.id, part: partDay, opt: i})
 			}
@@ -706,13 +723,13 @@ func (r *paint) settingRow(card image.Rectangle, top int, row settingRow) {
 	case ctlChoice:
 		extra := 0
 		if row.button != "" {
-			extra = r.width(fc.button, row.button) + 44 + 12
+			extra = r.width(fc.button, row.button) + r.s(44+12)
 		}
-		x := r.choice(right, cy, fit(row.value, right-58-extra))
+		x := r.choice(right, cy, fit(row.value, right-r.s(58)-extra))
 		if row.button != "" {
-			bx := r.pillButton(x-12, cy, row.button, btnSecondary)
+			bx := r.pillButton(x-r.s(12), cy, row.button, btnSecondary)
 			add(whole, partMain)
-			add(image.Rect(bx-6, top, x-6, bottom), partExtra)
+			add(image.Rect(bx-r.s(6), top, x-r.s(6), bottom), partExtra)
 			break
 		}
 		add(whole, partMain)
@@ -722,28 +739,45 @@ func (r *paint) settingRow(card image.Rectangle, top int, row settingRow) {
 			style = btnDanger
 		}
 		x := r.pillButton(right, cy, row.button, style)
-		if v := fit(row.value, x-16); v != "" {
-			r.text(fc.value, v, x-16-r.width(fc.value, v), cy+9, dim)
+		if v := fit(row.value, x-r.s(16)); v != "" {
+			r.text(fc.value, v, x-r.s(16)-r.width(fc.value, v), cy+r.s(9), dim)
 		}
 		if row.rowTap {
 			add(whole, partMain) // the whole row does what its button does
 		}
-		add(image.Rect(x-8, top+4, card.Max.X-12, bottom-4), partMain)
+		add(image.Rect(x-r.s(8), top+r.s(4), card.Max.X-r.s(12), bottom-r.s(4)), partMain)
 	}
 }
 
 // rowGap is the space a row keeps between its words and its value or control.
 const rowGap = 24
 
-// rowWords is a row's label and the line under it as drawn, each in up to rowLines lines, and where
+// rowWords is a row's label and the line under it as drawn, each in up to rowLines lines (and
+// moreLines), and where
 // the longest of them ends. They keep clear of the control: a long one wraps, and only what runs past
 // its last line gives up its end to an ellipsis, rather than run under the control. The room left to
 // them is the room the value is fitted beside, so a row whose words are cut still shows its value whole.
 func (r *paint) rowWords(card image.Rectangle, row settingRow, face font.Face) (label, sub []string, end int) {
+	label, sub, end, _ = r.rowLayout(card, row, face)
+	return label, sub, end
+}
+
+// rowLayout is rowWords, and whether the row is stacked: at a menu size, a row whose words would be
+// cut beside its control has them across the card's whole width instead, and its control on a line of
+// its own under them (stackLine). At the drawn size no row stacks.
+func (r *paint) rowLayout(card image.Rectangle, row settingRow, face font.Face) (label, sub []string, end int, stacked bool) {
 	fc := r.faces()
-	right := card.Max.X - r.s(26)
-	room := right - r.controlWidth(row) - r.s(rowGap) - (card.Min.X + r.rowIn())
-	label, sub = r.lines(face, row.label, room, rowLines), r.lines(fc.sub, row.sub, room, rowLines)
+	start, right := card.Min.X+r.rowIn(), card.Max.X-r.s(26)
+	most := rowLines + r.moreLines
+	words := func(room int) {
+		label, sub = r.lines(face, row.label, room, most), r.lines(fc.sub, row.sub, room, most)
+	}
+	words(right - r.controlWidth(row) - r.s(rowGap) - start)
+	if r.moreLines > 0 && r.controlWidth(row) > 0 && cutShort(label, sub) {
+		words(right - start)
+		// The value on the control's line has the whole line, as if the words ended at its start.
+		return label, sub, start - r.s(rowGap), true
+	}
 	w := 0
 	for _, l := range label {
 		w = max(w, r.width(face, l))
@@ -751,8 +785,21 @@ func (r *paint) rowWords(card image.Rectangle, row settingRow, face font.Face) (
 	for _, l := range sub {
 		w = max(w, r.width(fc.sub, l))
 	}
-	return label, sub, card.Min.X + r.rowIn() + w
+	return label, sub, start + w, false
 }
+
+// cutShort is whether any of a row's lines lost its end to an ellipsis.
+func cutShort(label, sub []string) bool {
+	for _, l := range append(label, sub...) {
+		if strings.HasSuffix(l, "…") {
+			return true
+		}
+	}
+	return false
+}
+
+// stackLine is the height of a stacked row's control line.
+const stackLine = 54
 
 // rowLines is how many lines a row's label, and the line under it, may wrap to. German runs a third
 // longer than English, and a cut setting name is one nobody can read.
@@ -772,7 +819,10 @@ func (r *paint) rowHeight(card image.Rectangle, row settingRow) int {
 	if row.bold {
 		face = fc.labelBold
 	}
-	label, sub, _ := r.rowWords(card, row, face)
+	label, sub, _, stacked := r.rowLayout(card, row, face)
+	if stacked {
+		return r.rowFor(label, sub) + r.s(stackLine)
+	}
 	return r.rowFor(label, sub)
 }
 
@@ -808,9 +858,9 @@ func (r *paint) lines(face font.Face, text string, room, most int) []string {
 // whose rows are narrower.
 func (r *paint) dayChip() (w, gap int) {
 	if r.round {
-		return 38, 6
+		return r.s(38), r.s(6)
 	}
-	return 50, 8
+	return r.s(50), r.s(8)
 }
 
 // controlWidth is how much of a row its control takes, from the right, before any value beside it.
@@ -818,17 +868,17 @@ func (r *paint) controlWidth(row settingRow) int {
 	fc := r.faces()
 	switch row.kind {
 	case ctlToggle:
-		return 66
+		return r.s(66)
 	case ctlStepper:
-		return 44 + max(r.width(fc.value, row.value), 80) + 24 + 44
+		return r.s(44) + max(r.width(fc.value, row.value), r.s(80)) + r.s(24) + r.s(44)
 	case ctlChoice:
-		w := r.width(fc.value, row.value) + 58
+		w := r.width(fc.value, row.value) + r.s(58)
 		if row.button != "" {
-			w += r.width(fc.button, row.button) + 44 + 12
+			w += r.width(fc.button, row.button) + r.s(44+12)
 		}
 		return w
 	case ctlButton, ctlDanger:
-		return r.width(fc.button, row.button) + 44
+		return r.width(fc.button, row.button) + r.s(44)
 	case ctlDays:
 		w, gap := r.dayChip()
 		return 7*w + 6*gap
@@ -838,53 +888,57 @@ func (r *paint) controlWidth(row settingRow) int {
 
 // toggle draws a switch ending at right, centered on cy, and returns its left edge.
 func (r *paint) toggle(right, cy int, on bool) int {
-	track := image.Rect(right-66, cy-17, right, cy+17)
+	half, kr := r.s(17), r.s(13)
+	track := image.Rect(right-r.s(66), cy-half, right, cy+half)
 	if on {
-		r.roundFill(track, 17, shift(amber, 10), shift(amber, -14))
+		r.roundFill(track, float64(half), shift(amber, 10), shift(amber, -14))
 	} else {
-		r.roundFill(track, 17, surface(6), surface(5))
-		r.roundStroke(track, 17, 1, ember)
+		r.roundFill(track, float64(half), surface(6), surface(5))
+		r.roundStroke(track, float64(half), r.sf(1), ember)
 	}
-	kx := float64(track.Min.X + 17)
+	kx := track.Min.X + half
 	if on {
-		kx = float64(track.Max.X - 17)
+		kx = track.Max.X - half
 	}
-	knob := image.Rect(int(kx)-13, cy-13, int(kx)+13, cy+13)
-	r.roundShadow(knob, 13, 5, 2, 0.45)
-	r.roundFill(knob, 13, shift(cream, 12), shift(cream, -6))
+	knob := image.Rect(kx-kr, cy-kr, kx+kr, cy+kr)
+	r.roundShadow(knob, float64(kr), r.sf(5), r.s(2), 0.45)
+	r.roundFill(knob, float64(kr), shift(cream, 12), shift(cream, -6))
 	return track.Min.X
 }
 
 // stepper draws − value + ending at right, and returns where its two buttons are.
 func (r *paint) stepper(right, cy int, value string) (minusAt, plusAt image.Rectangle) {
 	fc := r.faces()
-	plus := image.Rect(right-44, cy-20, right, cy+20)
-	vw := max(r.width(fc.value, value), 80)
-	minus := image.Rect(plus.Min.X-vw-24-44, cy-20, plus.Min.X-vw-24, cy+20)
+	bw, half, gap := r.s(44), r.s(20), r.s(24)
+	plus := image.Rect(right-bw, cy-half, right, cy+half)
+	vw := max(r.width(fc.value, value), r.s(80))
+	minus := image.Rect(plus.Min.X-vw-gap-bw, cy-half, plus.Min.X-vw-gap, cy+half)
+	rad := r.sf(12)
 	for _, b := range []image.Rectangle{minus, plus} {
-		r.roundShadow(b, 12, 6, 2, shadowAlpha()*0.7)
-		r.roundFill(b, 12, surface(7), surface(5))
-		r.roundHighlight(b, 12)
+		r.roundShadow(b, rad, r.sf(6), r.s(2), shadowAlpha()*0.7)
+		r.roundFill(b, rad, surface(7), surface(5))
+		r.roundHighlight(b, rad)
 	}
-	mx, px := float64(minus.Min.X+22), float64(plus.Min.X+22)
-	r.aaLine(mx-8, float64(cy), mx+8, float64(cy), 2.6, cream)
-	r.aaLine(px-8, float64(cy), px+8, float64(cy), 2.6, cream)
-	r.aaLine(px, float64(cy)-8, px, float64(cy)+8, 2.6, cream)
-	r.text(fc.value, value, minus.Max.X+12+(vw-r.width(fc.value, value))/2, cy+9, cream)
+	mx, px := float64(minus.Min.X+bw/2), float64(plus.Min.X+bw/2)
+	arm, pen := r.sf(8), r.sf(26)/10
+	r.aaLine(mx-arm, float64(cy), mx+arm, float64(cy), pen, cream)
+	r.aaLine(px-arm, float64(cy), px+arm, float64(cy), pen, cream)
+	r.aaLine(px, float64(cy)-arm, px, float64(cy)+arm, pen, cream)
+	r.text(fc.value, value, minus.Max.X+gap/2+(vw-r.width(fc.value, value))/2, cy+r.s(9), cream)
 	return minus, plus
 }
 
 // choice draws a value in a pill with a chevron, the way to a list of options; returns its left edge.
 func (r *paint) choice(right, cy int, value string) int {
 	fc := r.faces()
-	w := r.width(fc.value, value) + 58
-	pill := image.Rect(right-w, cy-20, right, cy+20)
-	r.roundFill(pill, 20, surface(5), surface(4))
-	r.roundStroke(pill, 20, 1, ember)
-	r.text(fc.value, value, pill.Min.X+20, cy+9, cream)
-	x, y := float64(pill.Max.X-22), float64(cy)
-	r.aaLine(x-4, y-7, x+3, y, 2.4, dim)
-	r.aaLine(x+3, y, x-4, y+7, 2.4, dim)
+	w, half := r.width(fc.value, value)+r.s(58), r.s(20)
+	pill := image.Rect(right-w, cy-half, right, cy+half)
+	r.roundFill(pill, float64(half), surface(5), surface(4))
+	r.roundStroke(pill, float64(half), r.sf(1), ember)
+	r.text(fc.value, value, pill.Min.X+half, cy+r.s(9), cream)
+	x, y, k := float64(pill.Max.X-r.s(22)), float64(cy), r.sf(100)/100
+	r.aaLine(x-4*k, y-7*k, x+3*k, y, 2.4*k, dim)
+	r.aaLine(x+3*k, y, x-4*k, y+7*k, 2.4*k, dim)
 	return pill.Min.X
 }
 
@@ -943,41 +997,58 @@ func (r *paint) pillButton(right, cy int, label string, style buttonStyle) int {
 	return b.Min.X
 }
 
-// icon is a category's line drawing, about 26 pixels across, centered on (cx, cy).
+// icon is a category's line drawing, about 26 pixels across at the drawn size, centered on (cx, cy).
 func (r *paint) icon(c category, cx, cy int, col color.RGBA) {
-	x, y := float64(cx), float64(cy)
-	const w = 2.6
+	x, y, k := float64(cx), float64(cy), r.sf(100)/100
+	w := 2.6 * k
+	// at is a point the drawing was laid out at, dx and dy from the center.
+	at := func(dx, dy float64) (float64, float64) { return x + dx*k, y + dy*k }
+	line := func(dx0, dy0, dx1, dy1, w float64) {
+		x0, y0 := at(dx0, dy0)
+		x1, y1 := at(dx1, dy1)
+		r.aaLine(x0, y0, x1, y1, w, col)
+	}
+	ring := func(dx, dy, rad, a0, a1 float64) {
+		px, py := at(dx, dy)
+		r.aaRing(px, py, rad*k, w, a0, a1, col)
+	}
 	switch c {
 	case catDisplay: // the sun of brightness
-		r.aaRing(x, y, 5.5, w, 0, 2*math.Pi, col)
+		ring(0, 0, 5.5, 0, 2*math.Pi)
 		for i := range 8 {
 			a := float64(i) * math.Pi / 4
-			r.aaLine(x+9*math.Cos(a), y+9*math.Sin(a), x+12.5*math.Cos(a), y+12.5*math.Sin(a), w, col)
+			line(9*math.Cos(a), 9*math.Sin(a), 12.5*math.Cos(a), 12.5*math.Sin(a), w)
 		}
 	case catSound: // a microphone
-		r.roundStrokeF(x-5, y-12, x+5, y+4, 5, w, col)
-		r.aaRing(x, y-2, 9, w, 0.12*math.Pi, 0.88*math.Pi, col)
-		r.aaLine(x, y+7, x, y+12, w, col)
-		r.aaLine(x-5, y+12.5, x+5, y+12.5, w, col)
+		x0, y0 := at(-5, -12)
+		x1, y1 := at(5, 4)
+		r.roundStrokeF(x0, y0, x1, y1, 5*k, w, col)
+		ring(0, -2, 9, 0.12*math.Pi, 0.88*math.Pi)
+		line(0, 7, 0, 12, w)
+		line(-5, 12.5, 5, 12.5, w)
 	case catAlarms: // a clock
-		r.aaRing(x, y, 11.5, w, 0, 2*math.Pi, col)
-		r.aaLine(x, y, x, y-6.5, w, col)
-		r.aaLine(x, y, x+5, y+2, w, col)
+		ring(0, 0, 11.5, 0, 2*math.Pi)
+		line(0, 0, 0, -6.5, w)
+		line(0, 0, 5, 2, w)
 	case catConnections: // Wi-Fi
 		for _, rad := range []float64{5, 10.5, 16} {
-			r.aaRing(x, y+9, rad, w, -0.75*math.Pi, -0.25*math.Pi, col)
+			ring(0, 9, rad, -0.75*math.Pi, -0.25*math.Pi)
 		}
-		r.aaDisc(x, y+9, 2.4, col)
+		px, py := at(0, 9)
+		r.aaDisc(px, py, 2.4*k, col)
 	case catSecurity: // a padlock
-		r.roundStrokeF(x-10, y-2, x+10, y+12, 3.5, w, col)
-		r.aaRing(x, y-6, 6, w, math.Pi, 2*math.Pi, col)
-		r.aaLine(x-6, y-6, x-6, y-2, w, col)
-		r.aaLine(x+6, y-6, x+6, y-2, w, col)
+		x0, y0 := at(-10, -2)
+		x1, y1 := at(10, 12)
+		r.roundStrokeF(x0, y0, x1, y1, 3.5*k, w, col)
+		ring(0, -6, 6, math.Pi, 2*math.Pi)
+		line(-6, -6, -6, -2, w)
+		line(6, -6, 6, -2, w)
 	case catGeneral: // sliders
 		for i, knob := range []float64{4, -5, 2} {
-			ly := y - 8 + float64(i)*8
-			r.aaLine(x-12, ly, x+12, ly, w-0.4, col)
-			r.aaDisc(x+knob, ly, 3.4, col)
+			ly := -8 + float64(i)*8
+			line(-12, ly, 12, ly, w-0.4*k)
+			px, py := at(knob, ly)
+			r.aaDisc(px, py, 3.4*k, col)
 		}
 	}
 }

@@ -479,6 +479,8 @@ func pickerFor(id string, sv sheetView) (pickerView, bool) {
 		return pickerView{title: "Clock format", opts: clockOptions, cur: clockIndex()}, true
 	case "clockpos", "datecolor":
 		return clockLayoutPicker(id)
+	case "menusize":
+		return menuSizePicker()
 	case "camtime":
 		return pickerView{title: "Camera time", opts: cameraTimeOptions(), cur: cameraTimeIndex()}, true
 	case "answertime":
@@ -589,6 +591,8 @@ func (d *Display) choose(id string, i int) {
 		d.setMusicStrip(i)
 	case "clockpos", "datecolor":
 		d.chooseClockLayout(id, i)
+	case "menusize":
+		d.chooseMenuSize(i)
 	case "clock":
 		on := i == 1
 		if err := config.Set().Screen().Clock24(on); err != nil {
@@ -888,7 +892,7 @@ func (d *Display) rowTap(id string, p part, opt int) {
 		_, _, subfolders := home.Get().SlideshowSettings()
 		home.Get().SetSlideshowSubfolders(!subfolders)
 	case "night", "atnight", "nightstyle", "clock", "clockpos", "datecolor", "camtime", "answertime", "turnstyle", "radarsrc", "calendars", "calpopwhen", "calpopallday", "calpopcals", "musicstrip", "slideshow", "photoevery", "screenlang", "newtimer", "sleep", "sunrise",
-		"timezone", "wakeword", "waketone":
+		"timezone", "wakeword", "waketone", "menusize":
 		d.openPicker(id)
 	}
 }

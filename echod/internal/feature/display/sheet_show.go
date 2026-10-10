@@ -57,6 +57,7 @@ func themeRows() []settingRow {
 	return []settingRow{
 		{id: "theme", label: "Theme", kind: ctlChoice, value: current().name},
 		{id: "colors", label: "Custom colors", sub: "Make the theme your own", kind: ctlButton, button: "Edit"},
+		menuSizeRow(),
 	}
 }
 

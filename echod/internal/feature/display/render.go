@@ -285,6 +285,9 @@ type renderer struct {
 	// shell keeps what every category of the settings screen shares, for as long as the theme holds.
 	shell    *image.RGBA
 	shellKey baseKey
+
+	// zoomFaces are the settings screen's text sizes at each menu size chosen so far (menu_size.go).
+	zoomFaces map[int]*sheetFaces
 }
 
 // The two large answers at the foot of a page that demands one: Stop and Snooze, Decline and

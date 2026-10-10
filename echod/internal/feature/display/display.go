@@ -103,6 +103,7 @@ type Display struct {
 	clockPos   *esphome.Select // Clock position, and dateCol Date color (clock_layout.go)
 	dateCol    *esphome.Select
 	answerTime *esphome.Select
+	menuSize   *esphome.Select // how large the settings screen and the drawer are drawn (menu_size.go)
 	turnStyle  *esphome.Select
 	// callBtn is the home screen's Call button, on or off (callbutton.go).
 	callBtn *esphome.Switch
@@ -324,6 +325,7 @@ func build() *Display {
 	d.clock = clockSelect(d.wake)
 	d.camTime = cameraTimeSelect()
 	d.answerTime = answerTimeSelect()
+	d.menuSize = menuSizeSelect(d.wake)
 	d.clockPos, d.dateCol = clockLayoutSelects(d.wake)
 	d.turnStyle = turnStyleSelect(d.wake)
 	d.callBtn = callButtonSwitch(d.wake)
@@ -399,7 +401,7 @@ func turnShown(s scene) bool {
 func (d *Display) turnStyleSel() *esphome.Select { return d.turnStyle }
 
 func (d *Display) Entities() []esphome.Entity {
-	return []esphome.Entity{d.light, d.auto, d.clock, d.clockPos, d.dateCol, d.camTime, d.answerTime, d.turnStyle, d.callBtn, d.weatherFx, d.lang, d.strip, d.themeSel, d.nightHours, d.nightStart, d.nightEnd, d.nightMode, d.atNight, d.nightStyle, d.glowLevel,
+	return []esphome.Entity{d.light, d.auto, d.clock, d.clockPos, d.dateCol, d.camTime, d.answerTime, d.menuSize, d.turnStyle, d.callBtn, d.weatherFx, d.lang, d.strip, d.themeSel, d.nightHours, d.nightStart, d.nightEnd, d.nightMode, d.atNight, d.nightStyle, d.glowLevel,
 		d.pop.on, d.pop.lead, d.pop.chime, d.pop.allDay}
 }
 
@@ -409,6 +411,8 @@ func (d *Display) Restore(c config.Config) {
 	setClock24(d.clock, c.Screen.Clock24)
 	d.camTime.Set(cameraTimes[cameraTimeIndex()].label)
 	d.answerTime.Set(answerTimes[answerTimeIndex()].label)
+	useMenuSize(menuSizeIndex())
+	d.menuSize.Set(menuSizes[menuSizeIndex()].label)
 	d.clockPos.Set(clockPositions[clockPositionIndex()].label)
 	d.dateCol.Set(dateColors[dateColorIndex()].label)
 	d.turnStyle.Set(turnStyles[turnStyleIndex()].label)

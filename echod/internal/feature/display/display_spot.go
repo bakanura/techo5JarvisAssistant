@@ -1337,6 +1337,10 @@ func clockLayoutRows() []settingRow                        { return nil }
 func clockLayoutPicker(string) (pickerView, bool)          { return pickerView{}, false }
 func (d *Display) chooseClockLayout(id string, i int) bool { return false }
 
+// The menu size is the Show's (menu_size.go): the Spot's round card is sized to its circle.
+func menuSizePicker() (pickerView, bool) { return pickerView{}, false }
+func (d *Display) chooseMenuSize(int)    {}
+
 // nightLeftToHA does nothing on the Spot, which has no Night mode switch (hasNightSwitch).
 func (d *Display) nightLeftToHA()    {}
 func (d *Display) setNightStyle(int) {}
