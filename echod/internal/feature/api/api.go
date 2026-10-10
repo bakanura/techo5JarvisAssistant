@@ -130,13 +130,15 @@ func (a *API) Start(ctx context.Context) error {
 			FriendlyName: device.Name,
 			MACAddress:   mac,
 			Manufacturer: layout.Manufacturer,
-			// The model says what the hardware is and what runs on it, release and all, since the
-			// version field is Home Assistant's ESPHome version: given this daemon's release number
+			Model:        hardwareName(),
+			// The version field is Home Assistant's ESPHome version: given this daemon's release number
 			// there, it reads an ancient ESPHome and raises a repair to update firmware the device does
-			// not run (compat.go). Home Assistant shows it as "Echo Show 5 1st gen (custom) · Genbu
-			// Show v1.2.0 by OpenJade".
-			Model:             layout.Hardware + " (custom) · " + layout.System + " " + layout.Version,
+			// not run (compat.go). The release goes in the project instead, which Home Assistant shows
+			// as "Echo Show 5 1st gen (custom) by OpenJade, firmware Genbu Show v1.2.0 (ESPHome
+			// 2026.5.1)".
 			Version:           ESPHomeCompat,
+			ProjectName:       projectName(),
+			ProjectVersion:    layout.System + " " + layout.Version,
 			VoiceFeatures:     voice.Features,
 			BluetoothFeatures: bluetooth.Get().Features(),
 
@@ -352,4 +354,13 @@ func writePSK(path string, k esphome.PSK) error {
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+// hardwareName is the Echo this runs on, marked as no longer running Amazon's software.
+func hardwareName() string { return layout.Hardware + " (custom)" }
+
+// projectName is what Home Assistant splits at its dots into maker and model, keeping the first
+// two parts, so neither may carry a dot of its own.
+func projectName() string {
+	return strings.ReplaceAll(layout.Manufacturer, ".", "") + "." + strings.ReplaceAll(hardwareName(), ".", "")
 }

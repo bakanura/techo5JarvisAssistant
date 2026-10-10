@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -188,5 +189,14 @@ func TestAMissingKeyFileIsNotWaitedFor(t *testing.T) {
 	}
 	if took := time.Since(began); took > 5*time.Second {
 		t.Errorf("an unpaired device waited %v for a key that was never coming", took)
+	}
+}
+
+// Home Assistant splits the project name at every dot and takes the first two parts as maker and
+// model, so a dot inside either would cut the model short.
+func TestProjectNameIsMakerDotModel(t *testing.T) {
+	parts := strings.Split(projectName(), ".")
+	if len(parts) != 2 || parts[0] == "" || !strings.HasSuffix(parts[1], " (custom)") {
+		t.Fatalf("project name %q, want Maker.Model (custom)", projectName())
 	}
 }
