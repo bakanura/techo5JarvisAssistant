@@ -50,12 +50,18 @@ class Settings:
     music_assistant_token: str | None = None
     # Root's password, which the Show's USB console asks for. Only its hash reaches the Show.
     root_password: str | None = None
+    # --own-ha-user: no ha_token; the Show is made a Home Assistant user of its own when it is added,
+    # and gets that user's token then.
+    own_ha_user: bool = False
 
     def summary(self) -> list[str]:
         """What will be set, without a single secret in it."""
         out = [f"Wi-Fi: {self.wifi}" if self.wifi else "Wi-Fi: picked on the Show's screen"]
         out.append("root password: set" if self.root_password else "root password: none (the USB console needs none)")
-        out.append(f"Home Assistant: {self.ha_url}" if self.ha_url and self.ha_token else "Home Assistant access: not now")
+        if self.ha_url and self.own_ha_user:
+            out.append(f"Home Assistant: {self.ha_url}, as a user of its own")
+        else:
+            out.append(f"Home Assistant: {self.ha_url}" if self.ha_url and self.ha_token else "Home Assistant access: not now")
         out.append(f"DashCast: {self.dashcast}" if self.dashcast else "DashCast: not now")
         out.append(f"Music Assistant: {self.music_assistant}" if self.music_assistant else "Music Assistant: not now")
         if self.music_assistant and self.music_assistant_token:
@@ -333,14 +339,20 @@ def gather(args, asker: Asker, *, defaults: dict[str, str] | None = None,
     ha_url = _checked(getattr(args, "ha_url", None), normalize_ha_url) or \
         asker.text("address, as the Show reaches it", d.get("ha_url"), normalize_ha_url)
     token = admin = None
-    if ha_url:
+    own = bool(getattr(args, "own_ha_user", False))
+    if ha_url and not own:
         token = from_file("ha_token_file", "Home Assistant token", ha_token) or \
             _checked(lookup("ha-token"), ha_token) or \
             asker.secret("the Show's own long-lived token (photos, weather, cameras)", ha_token)
+    if ha_url:
         admin = from_file("ha_admin_token_file", "Home Assistant admin token", ha_token) or \
             _checked(lookup("ha-admin-token"), ha_token) or \
             asker.secret("an admin token, used once to add the Show to Home Assistant", ha_token)
-    s = replace(s, ha_url=ha_url, ha_token=token, ha_admin_token=admin)
+    if ha_url and own:
+        if not admin:
+            raise SettingsError("--own-ha-user needs the admin token, which makes the Show's user")
+        say("   the Show becomes a Home Assistant user of its own when it is added, and gets its token then")
+    s = replace(s, ha_url=ha_url, ha_token=token, ha_admin_token=admin, own_ha_user=own and bool(ha_url))
 
     say("DashCast (the streamed dashboard):")
     dashcast = _checked(getattr(args, "dashcast", None), normalize_dashcast) or \

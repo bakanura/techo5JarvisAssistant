@@ -445,6 +445,7 @@ uses the Home Assistant, DashCast, Music Assistant and choice switches.
 | `--ha-url URL` | Home Assistant's address, as the Show reaches it. |
 | `--ha-token-file FILE` | A file holding the Show's own long-lived token. |
 | `--ha-admin-token-file FILE` | A file holding an admin token, used once to add the Show and kept nowhere. |
+| `--own-ha-user` | The Show gets a Home Assistant user of its own (`show_<name>`, not an admin, local network only) and that user's token, in place of `--ha-token-file`. Its streamed dashboard then shows what that user may see. Needs the admin token. Running it again gives the user a new password and token and ends the old token; if the admin token isn't the owner's, the user is made again with a new id. |
 | `--dashcast HOST[:PORT]` | The DashCast server. |
 | `--dashcast-key-file FILE` | A file holding the DashCast key. |
 | `--music-assistant HOST` | The Music Assistant server. |

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
 	"sync"
 	"time"
 )
@@ -276,15 +275,7 @@ func (l *Live) RenderTemplate(ctx context.Context, text string, vars map[string]
 		if json.Unmarshal(raw, &ev) != nil || ev.Result == nil {
 			return
 		}
-		switch v := ev.Result.(type) {
-		case string:
-			got(v)
-		case float64:
-			got(strconv.FormatFloat(v, 'f', -1, 64))
-		default:
-			b, _ := json.Marshal(v)
-			got(string(b))
-		}
+		got(templateText(ev.Result))
 	}
 	cmd := map[string]any{"type": "render_template", "template": text}
 	if len(vars) > 0 {

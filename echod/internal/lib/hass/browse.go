@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -127,6 +128,51 @@ func (s *wsSession) call(cmd map[string]any) (json.RawMessage, error) {
 			return nil, fmt.Errorf("hass: %v: %s %s", cmd["type"], res.Error.Code, res.Error.Message)
 		}
 		return res.Result, nil
+	}
+}
+
+// render has Home Assistant render a template once: render_template answers with a subscription,
+// and its first event carries the text.
+func (s *wsSession) render(template string) (string, error) {
+	if _, err := s.call(map[string]any{"type": "render_template", "template": template}); err != nil {
+		return "", err
+	}
+	id := s.next
+	for {
+		var ev struct {
+			ID    int    `json:"id"`
+			Type  string `json:"type"`
+			Event struct {
+				Result any    `json:"result"`
+				Error  string `json:"error"`
+			} `json:"event"`
+		}
+		if err := s.conn.ReadJSON(&ev); err != nil {
+			return "", err
+		}
+		if ev.ID != id || ev.Type != "event" {
+			continue
+		}
+		if ev.Event.Error != "" {
+			return "", fmt.Errorf("hass: render_template: %s", ev.Event.Error)
+		}
+		return templateText(ev.Event.Result), nil
+	}
+}
+
+// templateText is a rendered template's result as text: the websocket hands back what the text
+// reads as (a number, a list), where REST hands back the text itself.
+func templateText(v any) string {
+	switch v := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return v
+	case float64:
+		return strconv.FormatFloat(v, 'f', -1, 64)
+	default:
+		b, _ := json.Marshal(v)
+		return string(b)
 	}
 }
 

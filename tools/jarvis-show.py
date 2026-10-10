@@ -53,6 +53,10 @@ def parse_args() -> argparse.Namespace:
     setup.add_argument("--ha-url", help="Home Assistant's address as the Show reaches it")
     setup.add_argument("--ha-token-file", type=Path, help="a file holding the Show's own long-lived Home Assistant token")
     setup.add_argument("--ha-admin-token-file", type=Path, help="a file holding an admin token, used once to add the Show to Home Assistant")
+    setup.add_argument("--own-ha-user", action="store_true",
+                       help="make the Show a Home Assistant user of its own (not an admin) and give it that "
+                            "user's token instead of --ha-token-file; its streamed dashboard is then shown as "
+                            "that user. Needs the admin token")
     setup.add_argument("--dashcast", help="the DashCast server, host[:port]")
     setup.add_argument("--dashcast-key-file", type=Path, help="a file holding the DashCast key; default the keyring, then ask")
     setup.add_argument("--music-assistant", help="the Music Assistant server's IP address or name")
@@ -224,7 +228,7 @@ def deploy_to_home_assistant(settings: Settings, args, *, name: str, key_file: P
         room=args.room or None,
         settings=ha_api.DeviceSettings(dashcast=settings.dashcast, dashcast_key=settings.dashcast_key,
                                        ha_url=settings.ha_url, ha_token=settings.ha_token,
-                                       music_assistant=settings.music_assistant),
+                                       music_assistant=settings.music_assistant, own_user=settings.own_ha_user),
         wait_seconds=wait_seconds)
     print(f"INFO: adding {name!r} to Home Assistant at {settings.ha_url}")
     try:

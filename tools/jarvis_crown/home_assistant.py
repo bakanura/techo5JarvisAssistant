@@ -18,6 +18,7 @@ import ipaddress
 import json
 import os
 import re
+import secrets
 import socket
 import ssl
 import time
@@ -191,12 +192,20 @@ class HomeAssistant:
         self.timeout = timeout
         self._open = opener or urllib.request.urlopen
 
-    def request(self, method: str, path: str, body: Any = None) -> Any:
-        data = None if body is None else json.dumps(body).encode("utf-8")
+    def request(self, method: str, path: str, body: Any = None, *, auth: bool = True,
+                form: bool = False) -> Any:
+        """auth=False leaves the token out (the login flow); form=True sends body as a form."""
+        if body is None:
+            data = None
+        elif form:
+            data = urllib.parse.urlencode(body).encode("utf-8")
+        else:
+            data = json.dumps(body).encode("utf-8")
         req = urllib.request.Request(self.url + path, data=data, method=method)
-        req.add_header("Authorization", "Bearer " + self._token)
+        if auth:
+            req.add_header("Authorization", "Bearer " + self._token)
         if data is not None:
-            req.add_header("Content-Type", "application/json")
+            req.add_header("Content-Type", "application/x-www-form-urlencoded" if form else "application/json")
         try:
             with self._open(req, timeout=self.timeout) as resp:
                 raw = resp.read()
@@ -218,6 +227,10 @@ class HomeAssistant:
             return json.loads(raw)
         except json.JSONDecodeError:
             return raw.decode("utf-8", "replace")
+
+    def as_user(self, token: str) -> "HomeAssistant":
+        """The same Home Assistant, signed in with another token."""
+        return HomeAssistant(self.url, token, timeout=self.timeout, opener=self._open)
 
     def ws(self, message: dict) -> Any:
         """One command over the websocket API, for what REST cannot do (the device registry); returns
@@ -606,6 +619,87 @@ def _services(ha: HomeAssistant) -> set[str]:
     return set()
 
 
+def show_username(name: str) -> str:
+    return "show_" + service_prefix(name)
+
+
+def _sign_in(ha: HomeAssistant, username: str, password: str) -> dict:
+    """Home Assistant's own login, as a browser does it; returns its access and refresh tokens."""
+    client = ha.url + "/"
+    flow = ha.request("POST", "/auth/login_flow", {"client_id": client, "handler": ["homeassistant", None],
+                                                   "redirect_uri": client}, auth=False) or {}
+    done = ha.request("POST", f"/auth/login_flow/{flow.get('flow_id')}",
+                      {"client_id": client, "username": username, "password": password}, auth=False) or {}
+    if done.get("type") != "create_entry":
+        why = ", ".join(f"{v}" for v in (done.get("errors") or {}).values()) or done.get("type") or "no answer"
+        raise HomeAssistantError(f"the Show's user {username!r} could not sign in ({why})")
+    tokens = ha.request("POST", "/auth/token", {"grant_type": "authorization_code", "code": done.get("result"),
+                                                "client_id": client}, auth=False, form=True)
+    if not isinstance(tokens, dict) or not tokens.get("access_token"):
+        raise HomeAssistantError(f"the Show's user {username!r} signed in but got no token")
+    return tokens
+
+
+def make_show_user(ha: HomeAssistant, name: str, *, progress: Callable[[str], None] = print) -> str:
+    """Makes the Show a Home Assistant user of its own, not an admin and only reachable from home,
+    and returns a new long-lived token of that user. Its password is random and kept nowhere, so
+    nobody signs in as it; the token is what the Show uses. Its older tokens are removed."""
+    username = show_username(name)
+    password = secrets.token_urlsafe(32)
+    users = ha.ws({"type": "config/auth/list"}) or []
+    user = next((u for u in users if (u.get("username") or "").lower() == username), None)
+    if user is not None:
+        if user.get("is_owner") or user.get("system_generated") or \
+                "system-admin" in (user.get("group_ids") or []):
+            raise HomeAssistantError(f"the Home Assistant user {username!r} is an admin or Home Assistant's "
+                                     "own; the Show does not take it over")
+        if not user.get("is_active", True):
+            raise HomeAssistantError(f"the Home Assistant user {username!r} is switched off")
+        try:
+            ha.ws({"type": "config/auth_provider/homeassistant/admin_change_password", "user_id": user["id"],
+                   "password": password})
+            progress(f"Home Assistant user {username!r} is already there")
+        except HomeAssistantError as exc:
+            # Only the owner may set another user's password. Any admin may remove a user and make it
+            # again, which costs the Show nothing: its old tokens end either way.
+            if "unauthorized" not in str(exc).lower():
+                raise
+            ha.ws({"type": "config/auth/delete", "user_id": user["id"]})
+            progress(f"Home Assistant user {username!r} made again (only the owner may change its password)")
+            user = None
+    if user is None:
+        made = ha.ws({"type": "config/auth/create", "name": name, "group_ids": ["system-users"],
+                      "local_only": True})
+        user_id = made["user"]["id"]
+        try:
+            ha.ws({"type": "config/auth_provider/homeassistant/create", "user_id": user_id,
+                   "username": username, "password": password})
+        except HomeAssistantError:
+            ha.ws({"type": "config/auth/delete", "user_id": user_id})
+            raise
+        progress(f"Home Assistant user {username!r} made (not an admin, home network only)")
+
+    tokens = _sign_in(ha, username, password)
+    try:
+        own = ha.as_user(tokens["access_token"])
+        label = "Jarvis Show " + time.strftime("%Y-%m-%d %H:%M:%S")
+        token = own.ws({"type": "auth/long_lived_access_token", "client_name": label, "lifespan": 3650})
+        if not isinstance(token, str) or not token:
+            raise HomeAssistantError(f"Home Assistant made no token for {username!r}")
+        old = [t["id"] for t in own.ws({"type": "auth/refresh_tokens"}) or []
+               if t.get("type") == "long_lived_access_token" and t.get("client_name") != label and t.get("id")]
+        for token_id in old:
+            own.ws({"type": "auth/delete_refresh_token", "refresh_token_id": token_id})
+        progress(f"new token for {username!r}" + (f", {len(old)} older one(s) removed" if old else ""))
+    finally:
+        if tokens.get("refresh_token"):
+            try:
+                ha.request("POST", "/auth/revoke", {"token": tokens["refresh_token"]}, auth=False, form=True)
+            except HomeAssistantError as exc:
+                progress(f"WARN: the installer's own sign-in as {username!r} is left in Home Assistant: {exc}")
+    return token
+
+
 @dataclass(frozen=True)
 class DeviceSettings:
     """What the Show itself is given through its actions. Any of them may be missing."""
@@ -615,6 +709,9 @@ class DeviceSettings:
     ha_url: str | None = None
     ha_token: str | None = None
     music_assistant: str | None = None
+    # The Show gets a Home Assistant user of its own (make_show_user) and that user's token instead of
+    # ha_token, and its streamed dashboard is shown as that user.
+    own_user: bool = False
 
 
 @dataclass(frozen=True)
@@ -659,7 +756,10 @@ def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], 
     if s.dashcast and s.dashcast_key:
         wanted.append((f"{prefix}_dashboard_server", {"address": s.dashcast, "key": s.dashcast_key},
                        f"DashCast server {s.dashcast}"))
-    if s.ha_url and s.ha_token:
+    if s.ha_url and s.own_user:
+        # The token is made only once the Show can take it, since a new one ends the old ones.
+        wanted.append((f"{prefix}_home_assistant", None, f"Home Assistant access {s.ha_url} as its own user"))
+    elif s.ha_url and s.ha_token:
         wanted.append((f"{prefix}_home_assistant", {"url": s.ha_url, "token": s.ha_token},
                        f"Home Assistant access {s.ha_url}"))
     if s.music_assistant:
@@ -669,7 +769,7 @@ def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], 
     # The options change reloads the entry, so the entities and actions come back a moment later.
     entities: list[str] = []
     want_selects = bool(opts.wake_word or opts.assistant or choose)
-    want_entities = want_selects or bool(s.music_assistant or opts.room)
+    want_entities = want_selects or bool(s.music_assistant or opts.room or s.own_user)
     while True:
         entities = entry_entities(ha, entry_id) if want_entities else []
         services = _services(ha) if wanted else set()
@@ -689,12 +789,18 @@ def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], 
     if opts.room or choose:
         progress(_room(ha, entities, opts.room, choose))
     services = _services(ha) if wanted else set()
+    own_given = False
     for svc, data, what in wanted:
         if svc not in services:
             progress(f"WARN: the Show has no esphome.{svc} action in Home Assistant yet; {what} not set")
             continue
+        if data is None:
+            data = {"url": s.ha_url, "token": make_show_user(ha, opts.name, progress=progress)}
+            own_given = True
         ha.request("POST", f"/api/services/esphome/{svc}", data)
         progress(f"{what} given to the Show")
     if s.music_assistant and f"{prefix}_sendspin_server" in services:
         progress(_switch_on(ha, entities, "_sendspin"))
+    if own_given:
+        progress(_switch_on(ha, entities, "_own_user"))
     return entry_id

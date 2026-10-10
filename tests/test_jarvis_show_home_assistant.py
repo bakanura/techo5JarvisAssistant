@@ -733,3 +733,195 @@ class KeyFileTests(unittest.TestCase):
             record_show(backups / "A1", name="Show", board="checkers")
             record_show(backups / "A2", name="Show", board="crown")
             self.assertIsNone(show_named(backups, "Show"))
+
+
+class OwnUserHA(FakeHA):
+    """FakeHA plus Home Assistant's users, its login flow, and the tokens of the Show's user."""
+
+    def __init__(self, users=(), **kw):
+        super().__init__(**kw)
+        self.users = [dict(u) for u in users]
+        self.passwords = {}
+        self.llats = [{"id": "R-old", "type": "long_lived_access_token", "client_name": "by hand"},
+                      {"id": "R-login", "type": "normal", "client_name": None}]
+        self.revoked = []
+        self.states["switch.jarvis_show_5_dashboard_as_this_device_s_own_user"] = {"state": "off"}
+        self.sent_auth = []
+        self.url = "http://ha:8123"
+        self.owner = True
+
+    def request(self, method, path, body=None, *, auth=True, form=False):
+        if not path.startswith("/auth/"):
+            return super().request(method, path, body)
+        self.sent_auth.append((path, auth, form))
+        if path == "/auth/login_flow":
+            return {"type": "form", "flow_id": "L1"}
+        if path == "/auth/login_flow/L1":
+            ok = self.passwords.get(body["username"]) == body["password"]
+            return {"type": "create_entry", "result": "CODE"} if ok else \
+                {"type": "form", "errors": {"base": "invalid_auth"}}
+        if path == "/auth/token":
+            assert body["code"] == "CODE" and form
+            return {"access_token": "USER-ACCESS", "refresh_token": "USER-REFRESH"}
+        if path == "/auth/revoke":
+            self.revoked.append(body["token"])
+            return None
+        raise AssertionError(f"unexpected {path}")
+
+    def ws(self, message):
+        kind = message["type"]
+        if kind == "config/auth/list":
+            return [dict(u) for u in self.users]
+        self.ws_calls.append(message)
+        if kind == "config/auth/delete":
+            self.users = [u for u in self.users if u["id"] != message["user_id"]]
+            return None
+        if kind == "config/auth/create":
+            self.users.append({"id": "U-new", "name": message["name"], "username": None,
+                               "group_ids": message["group_ids"], "local_only": message["local_only"]})
+            return {"user": {"id": "U-new"}}
+        if kind == "config/auth_provider/homeassistant/create":
+            user = next(u for u in self.users if u["id"] == message["user_id"])
+            user["username"] = message["username"]
+            self.passwords[message["username"]] = message["password"]
+            return None
+        if kind == "config/auth_provider/homeassistant/admin_change_password":
+            if not self.owner:
+                raise ha.HomeAssistantError("config/auth_provider/homeassistant/admin_change_password: "
+                                            "unauthorized: Unauthorized")
+            user = next(u for u in self.users if u["id"] == message["user_id"])
+            self.passwords[user["username"]] = message["password"]
+            return None
+        return super().ws(message)
+
+    def as_user(self, token):
+        assert token == "USER-ACCESS"
+        fake = self
+
+        class Own:
+            def ws(self, message):
+                fake.ws_calls.append(("as user", message))
+                if message["type"] == "auth/long_lived_access_token":
+                    fake.llats.append({"id": "R-new", "type": "long_lived_access_token",
+                                       "client_name": message["client_name"]})
+                    return "SHOW-USER-TOKEN"
+                if message["type"] == "auth/refresh_tokens":
+                    return list(fake.llats)
+                if message["type"] == "auth/delete_refresh_token":
+                    fake.llats = [t for t in fake.llats if t["id"] != message["refresh_token_id"]]
+                    return {}
+                raise AssertionError(message)
+        return Own()
+
+
+class OwnUserTests(unittest.TestCase):
+    def deploy(self, fake):
+        settings = ha.DeviceSettings(ha_url="http://ha:8123", own_user=True)
+        log = []
+        now = [0.0]
+
+        def sleep(seconds):
+            now[0] += seconds
+        ha.deploy(fake, ha.DeployOptions(name="Jarvis Show 5", psk=PSK, host="10.0.0.9", settings=settings,
+                                         wake_word="", assistant="", room="", wait_seconds=60),
+                  progress=log.append, sleep=sleep, clock=lambda: now[0])
+        return log
+
+    def test_new_show_user_and_its_token(self):
+        fake = OwnUserHA()
+        log = self.deploy(fake)
+        made = [m for m in fake.ws_calls if isinstance(m, dict) and m["type"] == "config/auth/create"]
+        self.assertEqual(made, [{"type": "config/auth/create", "name": "Jarvis Show 5",
+                                 "group_ids": ["system-users"], "local_only": True}])
+        self.assertEqual(fake.users[0]["username"], "show_jarvis_show_5")
+        actions = dict(fake.posted("/api/services/esphome/"))
+        self.assertEqual(actions["/api/services/esphome/jarvis_show_5_home_assistant"],
+                         {"url": "http://ha:8123", "token": "SHOW-USER-TOKEN"})
+        self.assertEqual(fake.states["switch.jarvis_show_5_dashboard_as_this_device_s_own_user"]["state"], "on")
+        self.assertEqual([t["id"] for t in fake.llats], ["R-login", "R-new"])
+        self.assertEqual(fake.revoked, ["USER-REFRESH"])
+        self.assertTrue(all(not auth for _, auth, _ in fake.sent_auth))
+        password = fake.passwords["show_jarvis_show_5"]
+        for line in log:
+            for secret in (password, "SHOW-USER-TOKEN", "USER-ACCESS", "USER-REFRESH"):
+                self.assertNotIn(secret, line)
+
+    def test_the_same_user_again_gets_a_new_password_and_token(self):
+        fake = OwnUserHA(users=[{"id": "U1", "name": "Jarvis Show 5", "username": "show_jarvis_show_5",
+                                 "group_ids": ["system-users"]}])
+        fake.passwords["show_jarvis_show_5"] = "old"
+        self.deploy(fake)
+        self.assertFalse(any(isinstance(m, dict) and m["type"] == "config/auth/create" for m in fake.ws_calls))
+        self.assertNotEqual(fake.passwords["show_jarvis_show_5"], "old")
+        self.assertEqual(dict(fake.posted("/api/services/esphome/"))
+                         ["/api/services/esphome/jarvis_show_5_home_assistant"]["token"], "SHOW-USER-TOKEN")
+
+    def test_an_admin_who_is_not_the_owner_makes_the_user_again(self):
+        fake = OwnUserHA(users=[{"id": "U1", "name": "Jarvis Show 5", "username": "show_jarvis_show_5",
+                                 "group_ids": ["system-users"]}])
+        fake.owner = False
+        log = self.deploy(fake)
+        self.assertEqual([u["id"] for u in fake.users], ["U-new"])
+        self.assertTrue(any("made again" in line for line in log))
+        self.assertEqual(dict(fake.posted("/api/services/esphome/"))
+                         ["/api/services/esphome/jarvis_show_5_home_assistant"]["token"], "SHOW-USER-TOKEN")
+
+    def test_an_admin_with_that_name_is_not_taken_over(self):
+        fake = OwnUserHA(users=[{"id": "U1", "name": "x", "username": "show_jarvis_show_5",
+                                 "group_ids": ["system-admin"]}])
+        with self.assertRaisesRegex(ha.HomeAssistantError, "admin"):
+            self.deploy(fake)
+        self.assertEqual(fake.posted("/api/services/esphome/"), [])
+
+    def test_no_action_on_the_show_means_no_new_user(self):
+        fake = OwnUserHA()
+        plain = FakeHA.request
+
+        def request(method, path, body=None, **kw):
+            if path == "/api/services":
+                return [{"domain": "esphome", "services": {}}]
+            return OwnUserHA.request(fake, method, path, body, **kw) if kw else plain(fake, method, path, body)
+        fake.request = request
+        log = self.deploy(fake)
+        self.assertEqual(fake.users, [])
+        self.assertTrue(any("as its own user not set" in line for line in log))
+
+    def test_failed_sign_in_says_why_and_keeps_the_password_out(self):
+        fake = OwnUserHA()
+        fake.passwords = mock.MagicMock()
+        fake.passwords.get.return_value = "never"
+        with self.assertRaisesRegex(ha.HomeAssistantError, "invalid_auth") as cm:
+            ha.make_show_user(fake, "Jarvis Show 5", progress=lambda _l: None)
+        self.assertNotIn(fake.passwords.__setitem__.call_args[0][1], str(cm.exception))
+
+    def test_client_signs_in_without_a_bearer_and_as_a_form(self):
+        seen = []
+
+        class Resp(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def opener(req, timeout):
+            seen.append(req)
+            return Resp(b'{"ok": true}')
+        client = ha.HomeAssistant("http://ha:8123", TOKEN, opener=opener)
+        self.assertEqual(client.request("POST", "/auth/token", {"a": "b c"}, auth=False, form=True), {"ok": True})
+        self.assertIsNone(seen[0].get_header("Authorization"))
+        self.assertEqual(seen[0].data, b"a=b+c")
+        self.assertEqual(seen[0].get_header("Content-type"), "application/x-www-form-urlencoded")
+        other = client.as_user("OTHER")
+        other.request("GET", "/api/")
+        self.assertEqual(seen[1].get_header("Authorization"), "Bearer OTHER")
+
+    def test_gather_skips_the_show_token_and_needs_the_admin_one(self):
+        keyring = {"ha-token": TOKEN, "ha-admin-token": "admin-token"}
+        s = gather(args(ha_url="http://ha:8123", own_ha_user=True), Asker(False), defaults={},
+                   lookup=lambda secret, **attrs: keyring.get(secret))
+        self.assertEqual((s.ha_token, s.ha_admin_token, s.own_ha_user), (None, "admin-token", True))
+        self.assertIn("Home Assistant: http://ha:8123, as a user of its own", s.summary())
+        with self.assertRaisesRegex(SettingsError, "admin token"):
+            gather(args(ha_url="http://ha:8123", own_ha_user=True), Asker(False), defaults={},
+                   lookup=lambda secret, **attrs: None)
