@@ -89,6 +89,34 @@ func TestLeavingTheLibrary(t *testing.T) {
 	}
 }
 
+// Back from the library is the Show's own dashboard when it has one, and the page underneath only
+// when it has none.
+func TestBackFromTheLibraryIsTheDashboard(t *testing.T) {
+	config.Use(filepath.Join(t.TempDir(), "state.json"))
+	if err := config.Set().Dashboard().Mode(config.DashboardOff); err != nil {
+		t.Fatal(err)
+	}
+	d := &Display{}
+	d.dash, d.dashPage = true, dashboard.PageMusic
+	d.back()
+	if d.dash {
+		t.Fatal("back with no dashboard of the Show's own left a page up")
+	}
+
+	if err := config.Set().Dashboard().Mode(config.DashboardStreamed); err != nil {
+		t.Fatal(err)
+	}
+	d.dash, d.dashPage = true, dashboard.PageMusic
+	d.back()
+	if !d.dash || d.dashPage != "" {
+		t.Fatalf("back from the library: dash %v page %q, want the dashboard", d.dash, d.dashPage)
+	}
+	d.back()
+	if d.dash {
+		t.Fatal("back from the dashboard left it up")
+	}
+}
+
 // With no dashcast server there is nothing to stream Music Assistant from, so the button does nothing.
 func TestNoLibraryWithoutDashcast(t *testing.T) {
 	config.Use(filepath.Join(t.TempDir(), "state.json"))

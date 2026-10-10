@@ -53,7 +53,8 @@ func (d *Display) openDashboard() bool {
 // openLibrary puts Music Assistant's own pages up in the dashboard's place, from the now-playing
 // page's library button: its library, queue and groups, streamed by dashcast like a dashboard and
 // worked by touch the same way. Dashcast shows that page and nothing else in it, settings included.
-// Back - the swipe in from the left, or the tab at the left edge - is the now-playing page again.
+// Back - the swipe in from the left, or the tab at the left edge - is the Show's own dashboard, or the
+// now-playing page again when it has none.
 func (d *Display) openLibrary() bool {
 	if config.Get().Dashboard.Server == "" {
 		return false
@@ -77,6 +78,23 @@ func (d *Display) closeDashboard() {
 	}
 	d.mu.Unlock()
 	d.wake()
+}
+
+// back is the tab at the left edge and the swipe in from it. Over Music Assistant's pages it is the
+// Show's own Home Assistant dashboard, when it has one, rather than the page the library was opened
+// from; over the dashboard it takes the dashboard away.
+func (d *Display) back() {
+	d.mu.Lock()
+	library := d.dashPage != ""
+	if library && dashboard.Get().Mode() != config.DashboardOff {
+		d.dashPage, d.dashTouched, d.dashEdge = "", time.Now(), edgeNone
+		d.mu.Unlock()
+		slog.Info("music library: back to the dashboard")
+		d.wake()
+		return
+	}
+	d.mu.Unlock()
+	d.closeDashboard()
 }
 
 // dashboardAsked is Home Assistant's dashboard_show and dashboard_hide. Shown, it stays until it is
@@ -189,7 +207,7 @@ func (d *Display) dashGesture(g touch.Gesture) {
 	switch g.Kind {
 	case touch.Tap:
 		if library && image.Pt(g.X, g.Y).In(d.r.libraryBack().Inset(-d.r.s(8))) {
-			d.closeDashboard()
+			d.back()
 			return
 		}
 		if streamed {
@@ -252,7 +270,7 @@ func (d *Display) dashGesture(g touch.Gesture) {
 			}
 		case edgeLeft:
 			if g.X-start.X > far {
-				d.closeDashboard()
+				d.back()
 			}
 		case edgeRight:
 			if start.X-g.X > far {
