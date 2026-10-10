@@ -815,6 +815,9 @@ class DeviceSettings:
     ha_url: str | None = None
     ha_token: str | None = None
     music_assistant: str | None = None
+    # Makes the Show's own Music Assistant user, for lyrics, and returns its token, or None when that
+    # failed (and said why). Given the Show's name; called only once the Show can take the token.
+    music_assistant_login: Callable[[str], str | None] | None = None
     # The Show gets a Home Assistant user of its own (make_show_user) and that user's token instead of
     # ha_token, and its streamed dashboard is shown as that user.
     own_user: bool = False
@@ -872,6 +875,8 @@ def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], 
     if s.music_assistant:
         wanted.append((f"{prefix}_sendspin_server", {"ip": s.music_assistant},
                        f"Music Assistant server {s.music_assistant}"))
+    if s.music_assistant and s.music_assistant_login:
+        wanted.append((f"{prefix}_music_assistant", None, "Music Assistant access for lyrics"))
 
     # The options change reloads the entry, so the entities and actions come back a moment later.
     entities: list[str] = []
@@ -903,7 +908,13 @@ def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], 
         if svc not in services:
             progress(f"WARN: the Show has no esphome.{svc} action in Home Assistant yet; {what} not set")
             continue
-        if data is None:
+        if data is None and svc == f"{prefix}_music_assistant":
+            token = s.music_assistant_login(opts.name)
+            if not token:
+                progress(f"WARN: {what} not set; the Show shows no lyrics")
+                continue
+            data = {"token": token}
+        elif data is None:
             data = {"url": s.ha_url, "token": make_show_user(ha, opts.name, progress=progress)}
             own_given = True
         ha.request("POST", f"/api/services/esphome/{svc}", data)

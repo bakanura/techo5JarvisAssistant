@@ -277,6 +277,7 @@ DashCast (the streamed dashboard):
    the DashCast key (hidden; Enter to skip):
 Music Assistant (the Sendspin player):
    server IP or name [10.0.0.2]:
+   a Music Assistant admin's token (its settings, your profile, long-lived tokens), used once to give the Show a user of its own for lyrics (hidden; Enter to skip):
 ```
 
 The Wi-Fi network is picked by number from the ones this computer sees (NetworkManager's list, when
@@ -291,7 +292,7 @@ remembered by this tool and never put on a command line. Each secret is taken fr
 these that has it:
 
 1. its switch (`--ha-token-file`, `--ha-admin-token-file`, `--dashcast-key-file`,
-   `--wifi-passphrase-file`);
+   `--wifi-passphrase-file`, `--music-assistant-token-file`);
 2. the desktop keyring, through `secret-tool` (or `$JARVIS_SHOW_SECRET_TOOL`);
 3. a hidden question.
 
@@ -305,7 +306,13 @@ secret-tool store --label="Jarvis Show: Wi-Fi" application jarvis-show secret wi
 secret-tool store --label="Jarvis Show: Music Assistant token" application jarvis-show secret music-assistant-token
 ```
 
-The Music Assistant token is only asked for with `--music-assistant-local-metadata` (below).
+The admin tokens are better not kept at all: make one for the install, give it at the question, and
+delete it afterwards. What the Show needs it gets a token of its own for.
+
+The Music Assistant token is asked for whenever there is a Music Assistant server. It is an admin's,
+used once to make the Show a plain Music Assistant user of its own for the lyrics on the now-playing
+page ([Lyrics](lyrics.md)), and with `--music-assistant-local-metadata` (below) to switch the online
+lookups off. Enter skips it; the Show then plays as before, without lyrics.
 
 The addresses have switches too (`--ha-url`, `--dashcast`, `--music-assistant`), and
 `--no-questions` (or `TECHO5_NO_PROMPT=1`, or no terminal) asks nothing at all.
@@ -343,9 +350,12 @@ What happens with the answers:
      none. Enter is no. `--room-dashboard` makes it without asking, `--no-room-dashboard` never
      asks. A dashboard that is already there is never changed;
   6. hands it the DashCast server, Home Assistant access and Music Assistant address again through
-     its own actions, and turns its Sendspin switch on.
+     its own actions, and turns its Sendspin switch on;
+  7. with a Music Assistant token, makes the Show's own Music Assistant user (`jarvis-show-5` for
+     "Jarvis Show 5", not an admin, with a random password nobody keeps) and gives the Show a token
+     for it, replacing the one made last time. See [Lyrics](lyrics.md).
 
-  The admin token is used for this and kept nowhere. Each step looks first at what is already
+  The admin tokens are used for this and kept nowhere. Each step looks first at what is already
   there, so running it again changes only what is missing.
 - **In Music Assistant, only when asked.** Music Assistant looks songs, albums and artists up on the
   internet (MusicBrainz, fanart.tv, TheAudioDB, Wikipedia and more) for pictures and biographies.
@@ -458,7 +468,7 @@ uses the Home Assistant, DashCast, Music Assistant and choice switches.
 | `--dashcast-key-file FILE` | A file holding the DashCast key. |
 | `--music-assistant HOST` | The Music Assistant server. |
 | `--music-assistant-local-metadata` | Music Assistant stops looking metadata up online and keeps to the library's own tags. Off unless given. |
-| `--music-assistant-token-file FILE` | A file holding a Music Assistant long-lived token, for the switch above. |
+| `--music-assistant-token-file FILE` | A file holding a Music Assistant admin's long-lived token, used once for the Show's own user there (lyrics) and the switch above. |
 | `--assistant NAME` | The Assist pipeline it talks to, or `preferred`. `''` leaves it alone. |
 | `--wake-word NAME` | One of the wake words the Show offers. `''` leaves it alone. |
 | `--room NAME` | The Home Assistant area it stands in, by name or id. `''` leaves it alone. |

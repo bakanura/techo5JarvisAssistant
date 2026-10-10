@@ -485,12 +485,10 @@ func musicQueue(entity string) (next string, cur queueSong, err error) {
 	type item struct {
 		Name      string `json:"name"`
 		MediaItem *struct {
-			Name string `json:"name"`
+			Name      string `json:"name"`
+			MediaType string `json:"media_type"`
+			URI       string `json:"uri"`
 		} `json:"media_item"`
-		StreamDetails *struct {
-			Provider string `json:"provider"`
-			ItemID   string `json:"item_id"`
-		} `json:"stream_details"`
 	}
 	var response map[string]struct {
 		CurrentItem *item `json:"current_item"`
@@ -512,9 +510,9 @@ func musicQueue(entity string) (next string, cur queueSong, err error) {
 			// The bare song name, as the player reports it in media_title; the queue's own name has
 			// the artist in front.
 			cur.Name = strings.TrimSpace(c.MediaItem.Name)
-		}
-		if d := c.StreamDetails; d != nil {
-			cur.Provider, cur.ID = d.Provider, d.ItemID
+			if c.MediaItem.MediaType == "track" {
+				cur.URI = c.MediaItem.URI
+			}
 		}
 	}
 	return next, cur, nil

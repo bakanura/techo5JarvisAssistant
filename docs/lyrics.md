@@ -1,64 +1,65 @@
 # Lyrics on the now-playing page
 
-When Music Assistant plays a song from the house's own music server, the now-playing page gets a
-button with lines of text on it, left of the clock. Tapping it swaps the song's details for its words;
-tapping again brings them back. Words with times in them follow the song: the line being sung is lit,
-the one before stays above it while it is short, and the page moves on the moment the next line starts.
-Words without times move down through the song as it plays.
+When Music Assistant plays a song it has words for, the now-playing page gets a button with lines of
+text on it, left of the clock. Tapping it swaps the song's details for its words; tapping again brings
+them back. Words with times in them follow the song: the line being sung is lit, the one before stays
+above it while it is short, and the page moves on the moment the next line starts. Words without times
+move down through the song as it plays.
 
-Nothing here goes outside the house. The words come from the music files themselves, as tagged in the
-library (a `LYRICS`/`USLT` tag, with or without LRC times in it), and the music server hands them out
-over the OpenSubsonic `getLyricsBySongId` call, which current Navidrome versions answer.
+## Where the words come from
 
-## Why through Home Assistant
+The Show asks Music Assistant, the same server Sendspin plays from. Music Assistant answers with what it
+knows about the song:
 
-The Show sits on the IoT network and reaches Home Assistant, not the music server. Home Assistant
-reaches both, so a `rest_command` there asks the server, and the Show calls that command with the
-song's id and reads the answer (`return_response`). The music server's login stays in Home Assistant's
-`secrets.yaml`; the Show never has it.
+- words already in its library, read from the files' tags (`LYRICS`/`USLT`, with or without LRC times);
+- for songs from an OpenSubsonic server such as Navidrome, the server's own answer to
+  `getLyricsBySongId`, which also comes from the files' tags;
+- if online metadata is on in Music Assistant, whatever its lyrics providers (LRCLIB) find.
 
-Without the command the Show simply has no lyrics button. It tries again every ten minutes, so adding
-the command later needs nothing on the Show.
+With `--music-assistant-local-metadata` the last one is off and nothing about the song leaves the house.
 
-Only songs Music Assistant took from an OpenSubsonic provider get words: that is where the song's id on
-the server comes from. Radio, Spotify and the like show the page as before.
+Radio and streams without a song in Music Assistant's library show the page as before, with no button.
 
-## Setting it up
+## Why not through Home Assistant
 
-1. On the music server, make a user for this, e.g. `jarvis-lyrics`, with no admin rights and access to
-   the library. Store its password where you keep such things:
+Home Assistant's Music Assistant integration tells the Show what is playing but not the words. Asking
+Music Assistant directly needs no YAML in Home Assistant and no restart, so the installer can set it up
+in one go.
 
-       secret-tool store --label="Navidrome jarvis-lyrics" service navidrome user jarvis-lyrics
+## The Show's own user
 
-2. Make the login line and add it to Home Assistant's `secrets.yaml` (back the file up first):
+The Show does not get your Music Assistant login. The installer asks for an admin's token (Music
+Assistant → Settings → your profile → long-lived tokens). Make one for the occasion, paste it when
+asked, and delete it in Music Assistant afterwards; the Show's own token does not depend on it. For
+runs without a terminal, `--music-assistant-token-file` or the keyring entry `application jarvis-show
+secret music-assistant-token` work too. Pressing Enter at the question skips lyrics.
 
-       secret-tool lookup service navidrome user jarvis-lyrics | python3 tools/lyrics-auth.py jarvis-lyrics
+With it, the installer:
 
-   It prints `jarvis_lyrics_auth: "u=jarvis-lyrics&t=…&s=…&v=1.16.1&c=jarvis-show&f=json"`. The token
-   logs in as that user, so it goes in `secrets.yaml` and nowhere else.
+1. makes a plain (not admin) Music Assistant user named after the Show, e.g. `jarvis-show-5`, with a
+   random password that is thrown away at once, so nobody can sign in with it;
+2. makes a long-lived token for that user, named "Jarvis Show", and revokes the one it made last time;
+3. hands that token to the Show through the `esphome.<show>_music_assistant` action.
 
-3. Add the command to `configuration.yaml`, with the server's own address:
+The admin token is used for that and then dropped; the installer writes it nowhere. Running
+`python3 tools/jarvis-show.py home-assistant --name NAME` again renews the Show's token. To take lyrics
+away, delete the user in Music Assistant, or call the action with an empty token.
 
-   ```yaml
-   rest_command:
-     jarvis_lyrics:
-       url: "https://music.example.org/rest/getLyricsBySongId?id={{ id }}"
-       method: POST
-       payload: !secret jarvis_lyrics_auth
-       content_type: application/x-www-form-urlencoded
-       timeout: 10
-   ```
+On the Show the token sits in `music-assistant.json` next to the API key, readable by root only.
 
-   If `rest_command:` is already there, add `jarvis_lyrics` under it.
+## Separate networks
 
-4. Restart Home Assistant. `rest_command` is read from YAML when Home Assistant starts.
+The Show talks to Music Assistant on TCP port 8095. On a flat home network that just works. If the Show
+sits on its own network (an IoT VLAN, say) and only reaches Home Assistant on 443, allow the Show to
+reach Music Assistant's address on TCP 8095 as well. Sendspin itself runs the other way (Music
+Assistant connects to the Show) and does not need this.
 
-5. Check it in Developer tools → Actions: `rest_command.jarvis_lyrics` with `id:` set to a song's id
-   and "Return response" on. A good answer has `status: 200` and `subsonic-response.status: ok`. An
-   answer of `status: failed` with code 40 is a wrong user or password.
+Without that rule everything else still plays; the Show logs why it got no words and tries again ten
+minutes later.
 
 ## Checking on the Show
 
-Play a song from the library with words in its tags. Within a few seconds of the song starting, the
-button appears; echod logs `lyrics song=… lines=… synced=true`. A failed fetch logs the reason once and
-rests ten minutes.
+Play a song with words in its tags. Within a few seconds of the song starting, the button appears;
+echod logs `lyrics song=… lines=… synced=true`. A failed fetch logs the reason once and rests ten
+minutes. HTTP 401 means the token is gone (renew it with the installer); a timeout usually means the
+network rule above is missing.

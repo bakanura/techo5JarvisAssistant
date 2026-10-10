@@ -45,9 +45,11 @@ class Settings:
     dashcast_key: str | None = None
     music_assistant: str | None = None
     ha_admin_token: str | None = None
-    # Only with --music-assistant-local-metadata: a Music Assistant token, used once to switch its
-    # online lookups off (music_assistant.py), and kept nowhere.
+    # A Music Assistant admin's token, used once to make the Show a Music Assistant user of its own (for
+    # lyrics) and, with --music-assistant-local-metadata, to switch its online lookups off
+    # (music_assistant.py). It is kept nowhere.
     music_assistant_token: str | None = None
+    music_assistant_local_metadata: bool = False
     # Root's password, which the Show's USB console asks for. Only its hash reaches the Show.
     root_password: str | None = None
     # --own-ha-user: no ha_token; the Show is made a Home Assistant user of its own when it is added,
@@ -65,7 +67,9 @@ class Settings:
         out.append(f"DashCast: {self.dashcast}" if self.dashcast else "DashCast: not now")
         out.append(f"Music Assistant: {self.music_assistant}" if self.music_assistant else "Music Assistant: not now")
         if self.music_assistant and self.music_assistant_token:
-            out.append("Music Assistant: online metadata lookups switched off")
+            out.append("Music Assistant: the Show gets a user of its own there, for lyrics")
+            if self.music_assistant_local_metadata:
+                out.append("Music Assistant: online metadata lookups switched off")
         out.append("added to Home Assistant automatically" if self.ha_admin_token and self.ha_url
                    else "added to Home Assistant: by hand (no admin token)")
         return out
@@ -371,14 +375,18 @@ def gather(args, asker: Asker, *, defaults: dict[str, str] | None = None,
     music = _checked(getattr(args, "music_assistant", None), ma) or \
         asker.text("server IP or name", d.get("music_assistant"), ma)
     ma_token = None
-    if music and getattr(args, "music_assistant_local_metadata", False):
+    if music:
+        local = getattr(args, "music_assistant_local_metadata", False)
         ma_token = from_file("music_assistant_token_file", "Music Assistant token", ma_check_token) or \
             _checked(lookup("music-assistant-token"), ma_check_token) or \
-            asker.secret("a Music Assistant token (its settings, your profile, long-lived tokens), "
-                         "used once to switch its online lookups off", ma_check_token)
+            asker.secret("a Music Assistant admin's token (its settings, your profile, long-lived tokens), "
+                         "used once to give the Show a user of its own for lyrics"
+                         + (" and to switch its online lookups off" if local else ""), ma_check_token)
         if ma_token is None:
-            say("   no token: Music Assistant keeps looking metadata up online")
-    s = replace(s, music_assistant=music, music_assistant_token=ma_token)
+            say("   no token: the Show shows no lyrics" +
+                ("; Music Assistant keeps looking metadata up online" if local else ""))
+    s = replace(s, music_assistant=music, music_assistant_token=ma_token,
+                music_assistant_local_metadata=bool(music and getattr(args, "music_assistant_local_metadata", False)))
     return s
 
 

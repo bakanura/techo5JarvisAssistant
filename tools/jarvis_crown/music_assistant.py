@@ -11,9 +11,16 @@ Over Music Assistant's own websocket API (port 8095, a long-lived token made in 
   2. the providers that only ever look things up online and that Music Assistant lets be disabled
      are disabled, so none of them is asked for anything else either.
 Both are Music Assistant settings, turned back on in its own settings pages.
+
+The same token also gives the Show a Music Assistant user of its own (show_token), for the lyrics of
+the song playing, which Home Assistant's integration does not pass on. The user is a plain one, not
+an admin; its password is random and thrown away, so only its token, on the Show, ever signs in. The
+installer's token is used for that and kept nowhere.
 """
 from __future__ import annotations
 
+import re
+import secrets
 import socket
 from typing import Any, Callable
 
@@ -49,8 +56,7 @@ class _Session:
             return answer.get("result")
 
 
-def exchange(sock: Any, host: str, token: str, *, key: str | None = None) -> list[str]:
-    """Logs in on a connected socket and switches the online lookups off; returns what changed."""
+def _login(sock: Any, host: str, token: str, *, key: str | None = None) -> _Session:
     frames = ws_open(sock, host, "/ws", key=key, peer="Music Assistant")
     info = frames.recv()
     if "server_version" not in info:
@@ -60,6 +66,12 @@ def exchange(sock: Any, host: str, token: str, *, key: str | None = None) -> lis
         session.call("auth", token=token)
     except MusicAssistantError:
         raise MusicAssistantError("Music Assistant did not accept the token") from None
+    return session
+
+
+def exchange(sock: Any, host: str, token: str, *, key: str | None = None) -> list[str]:
+    """Logs in on a connected socket and switches the online lookups off; returns what changed."""
+    session = _login(sock, host, token, key=key)
     done = []
     session.call("config/core/save", domain="metadata", values={"enable_online_metadata": False})
     done.append("online metadata lookups off")
@@ -71,16 +83,60 @@ def exchange(sock: Any, host: str, token: str, *, key: str | None = None) -> lis
     return done
 
 
-def local_metadata_only(host: str, token: str, *, timeout: float = 20.0,
-                        connect: Callable[..., Any] = socket.create_connection) -> list[str]:
-    """Music Assistant at host stops looking anything up online; returns what changed."""
+# What the Show's token is called in Music Assistant's list of the user's tokens. A new one replaces
+# the ones before it, so running the installer again leaves one.
+TOKEN_NAME = "Jarvis Show"
+
+
+def show_username(name: str) -> str:
+    """The Show's user in Music Assistant, from its name: "Jarvis Show 5" is jarvis-show-5."""
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    if len(slug) < 2:
+        raise MusicAssistantError(f"cannot make a Music Assistant user name from {name!r}")
+    return slug
+
+
+def show_exchange(sock: Any, host: str, token: str, name: str, *, key: str | None = None) -> tuple[str, bool]:
+    """Logs in on a connected socket and makes the Show's user and a token for it; returns the token
+    and whether the user was new."""
+    session = _login(sock, host, token, key=key)
+    username = show_username(name)
+    user = next((u for u in session.call("auth/users") or [] if u.get("username") == username), None)
+    made = user is None
+    if made:
+        user = session.call("auth/user/create", username=username, password=secrets.token_urlsafe(32),
+                            role="user", display_name=name)
+    elif user.get("role") != "user" or not user.get("enabled", True):
+        raise MusicAssistantError(f"Music Assistant already has a user {username!r} that is not a plain, "
+                                  "enabled user; the Show's lyrics are left out")
+    user_id = user["user_id"]
+    for old in session.call("auth/tokens", user_id=user_id) or []:
+        if old.get("name") == TOKEN_NAME:
+            session.call("auth/token/revoke", token_id=old["token_id"])
+    return session.call("auth/token/create", name=TOKEN_NAME, user_id=user_id), made
+
+
+def _connected(host: str, timeout: float, connect: Callable[..., Any], run: Callable[[Any, str], Any]) -> Any:
     try:
         sock = connect((host, PORT), timeout=timeout)
     except OSError as exc:
         raise MusicAssistantError(f"cannot reach Music Assistant at {host}:{PORT}: {exc}") from None
     try:
-        return exchange(sock, f"[{host}]:{PORT}" if ":" in host else f"{host}:{PORT}", token)
-    except (OSError, ValueError) as exc:
+        return run(sock, f"[{host}]:{PORT}" if ":" in host else f"{host}:{PORT}")
+    except (OSError, ValueError, KeyError, TypeError) as exc:
         raise MusicAssistantError(str(exc)) from None
     finally:
         sock.close()
+
+
+def local_metadata_only(host: str, token: str, *, timeout: float = 20.0,
+                        connect: Callable[..., Any] = socket.create_connection) -> list[str]:
+    """Music Assistant at host stops looking anything up online; returns what changed."""
+    return _connected(host, timeout, connect, lambda sock, peer: exchange(sock, peer, token))
+
+
+def show_token(host: str, token: str, name: str, *, timeout: float = 20.0,
+               connect: Callable[..., Any] = socket.create_connection) -> tuple[str, bool]:
+    """A token for the Show's own Music Assistant user, made when it is not there yet; returns it
+    and whether the user was new."""
+    return _connected(host, timeout, connect, lambda sock, peer: show_exchange(sock, peer, token, name))

@@ -8,6 +8,7 @@ package home
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"log/slog"
@@ -24,8 +25,10 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/config"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/hastate"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/media"
+	"github.com/HuskerMinion/techo5/echod/internal/feature/security"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/hass"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/hook"
+	"github.com/HuskerMinion/techo5/echod/internal/lib/mass"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/openmeteo"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/safe"
 )
@@ -426,7 +429,7 @@ func (f *Feature) locationAction() *esphome.Action {
 // Actions are how Home Assistant configures this: which weather entity to show, and how the
 // radio page is wired. Both persist and take effect at the next connection.
 func (f *Feature) Actions() []*esphome.Action {
-	actions := append(f.cameraActions(), f.accessAction())
+	actions := append(f.cameraActions(), f.accessAction(), musicAssistantAction())
 	if hasScreen {
 		actions = append(actions, f.slideshowAction(), f.calendarAction(), f.locationAction())
 	}
@@ -570,6 +573,35 @@ func (f *Feature) accessAction() *esphome.Action {
 			}
 			slog.Info("home: home assistant access stored")
 			f.wake()
+			return nil, nil
+		},
+	}
+}
+
+// musicAssistantAction takes the token of the Music Assistant user the installer made for this Show,
+// for the lyrics. Like the Sendspin server it is accepted only over the encrypted API. An empty token
+// removes it.
+func musicAssistantAction() *esphome.Action {
+	return &esphome.Action{
+		Name: "music_assistant",
+		Args: []esphome.Arg{{Name: "token", Type: esphome.ArgString}},
+		Run: func(c esphome.Call) (any, error) {
+			if !security.APIEncrypted() {
+				return nil, errors.New("music_assistant: set an API encryption key first")
+			}
+			token := c.String("token")
+			if err := mass.Get().SetToken(token); err != nil {
+				return nil, err
+			}
+			// Asked again at the next song, not ten minutes after the last refusal.
+			lyrics.mu.Lock()
+			lyrics.song, lyrics.resting = "", time.Time{}
+			lyrics.mu.Unlock()
+			if strings.TrimSpace(token) == "" {
+				slog.Info("home: music assistant token removed")
+			} else {
+				slog.Info("home: music assistant token stored")
+			}
 			return nil, nil
 		},
 	}

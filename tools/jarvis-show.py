@@ -66,8 +66,8 @@ def parse_args() -> argparse.Namespace:
                        help="switch Music Assistant's online metadata lookups off, for a library that is already "
                             "tagged; off unless given")
     setup.add_argument("--music-assistant-token-file", type=Path,
-                       help="with --music-assistant-local-metadata: a file holding a Music Assistant token; "
-                            "default the keyring, then ask")
+                       help="a file holding a Music Assistant admin's token, used once to give the Show a "
+                            "user of its own there (for lyrics) and kept nowhere; default the keyring, then ask")
     setup.add_argument("--wake-word", help="the wake word, one the Show offers (default: ask; '' leaves it alone)")
     setup.add_argument("--assistant", help="the Assist pipeline it talks to, by name (default: ask; '' leaves it alone)")
     setup.add_argument("--room", help="the Home Assistant area it stands in, by name (default: ask; '' leaves it alone)")
@@ -234,7 +234,8 @@ def deploy_to_home_assistant(settings: Settings, args, *, name: str, key_file: P
         room=args.room or None, room_dashboard=args.room_dashboard,
         settings=ha_api.DeviceSettings(dashcast=settings.dashcast, dashcast_key=settings.dashcast_key,
                                        ha_url=settings.ha_url, ha_token=settings.ha_token,
-                                       music_assistant=settings.music_assistant, own_user=settings.own_ha_user),
+                                       music_assistant=settings.music_assistant, own_user=settings.own_ha_user,
+                                       music_assistant_login=_music_assistant_login(settings)),
         wait_seconds=wait_seconds)
     print(f"INFO: adding {name!r} to Home Assistant at {settings.ha_url}")
     try:
@@ -248,10 +249,29 @@ def deploy_to_home_assistant(settings: Settings, args, *, name: str, key_file: P
     return 0
 
 
+def _music_assistant_login(settings: Settings):
+    """Makes the Show's own Music Assistant user with the installer's token, which is not passed on.
+    A failure only costs the lyrics."""
+    if not (settings.music_assistant and settings.music_assistant_token):
+        return None
+
+    def login(name: str) -> str | None:
+        try:
+            token, made = ma_api.show_token(settings.music_assistant, settings.music_assistant_token, name)
+        except ma_api.MusicAssistantError as exc:
+            print(f"WARN: Music Assistant: {exc}", file=sys.stderr)
+            return None
+        print(f"INFO: Music Assistant user {ma_api.show_username(name)!r} "
+              + ("made" if made else "was there; its token renewed"))
+        return token
+    return login
+
+
 def music_assistant_metadata(settings: Settings) -> None:
     """--music-assistant-local-metadata: Music Assistant stops looking things up online. A failure
     leaves it as it was and does not stop anything else."""
-    if not (settings.music_assistant and settings.music_assistant_token):
+    if not (settings.music_assistant and settings.music_assistant_token
+            and settings.music_assistant_local_metadata):
         return
     try:
         done = ma_api.local_metadata_only(settings.music_assistant, settings.music_assistant_token)

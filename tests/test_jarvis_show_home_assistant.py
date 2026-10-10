@@ -141,7 +141,8 @@ class FakeHA:
         if path == "/api/template":
             return "\n".join(list(self.states) + ["select.jarvis_show_5_assistant_2"])
         if path == "/api/services" and method == "GET":
-            names = ["jarvis_show_5_dashboard_server", "jarvis_show_5_home_assistant", "jarvis_show_5_sendspin_server"]
+            names = ["jarvis_show_5_dashboard_server", "jarvis_show_5_home_assistant", "jarvis_show_5_sendspin_server",
+                     "jarvis_show_5_music_assistant"]
             return [{"domain": "light", "services": {}}, {"domain": "esphome", "services": {n: {} for n in names}}]
         if path == "/api/states" and method == "GET":
             return [{"entity_id": e["entity_id"], "state": "on",
@@ -186,9 +187,9 @@ class FakeHA:
         return [(p, b) for m, p, b in self.calls if m == "POST" and p.startswith(prefix)]
 
 
-def run_deploy(fake, choose=None, **kw):
+def run_deploy(fake, choose=None, login=None, **kw):
     settings = ha.DeviceSettings(dashcast="10.0.0.5:9555", dashcast_key=DASH_KEY, ha_url="http://ha:8123",
-                                 ha_token=TOKEN, music_assistant="10.0.0.6")
+                                 ha_token=TOKEN, music_assistant="10.0.0.6", music_assistant_login=login)
     opts = ha.DeployOptions(name="Jarvis Show 5", psk=PSK, settings=settings, **kw)
     log = []
     now = [0.0]
@@ -224,6 +225,22 @@ class DeployTests(unittest.TestCase):
             self.assertNotIn(PSK, line)
             self.assertNotIn(TOKEN, line)
             self.assertNotIn(DASH_KEY, line)
+
+    def test_music_assistant_token_made_for_the_show_by_name(self):
+        fake, names = FakeHA(), []
+        run_deploy(fake, host="10.0.0.9", login=lambda name: names.append(name) or "MA-SHOW-TOKEN")
+        self.assertEqual(names, ["Jarvis Show 5"])
+        self.assertEqual(dict(fake.posted("/api/services/esphome/"))
+                         ["/api/services/esphome/jarvis_show_5_music_assistant"], {"token": "MA-SHOW-TOKEN"})
+        fake = FakeHA()
+        _, log = run_deploy(fake, host="10.0.0.9", login=lambda name: None)
+        self.assertNotIn("/api/services/esphome/jarvis_show_5_music_assistant",
+                         dict(fake.posted("/api/services/esphome/")))
+        self.assertTrue(any("no lyrics" in line for line in log))
+        fake = FakeHA()
+        run_deploy(fake, host="10.0.0.9")
+        self.assertNotIn("/api/services/esphome/jarvis_show_5_music_assistant",
+                         dict(fake.posted("/api/services/esphome/")))
 
     def test_show_without_an_address_is_found_by_its_local_name(self):
         fake = FakeHA()
@@ -547,28 +564,30 @@ class GatherTests(unittest.TestCase):
 
     def test_everything_asked(self):
         asker, _ = self.asker(["Home", "http://ha:8123/", "10.0.0.5", "10.0.0.6"],
-                              ["wifi-pass", "wifi-pass", TOKEN, "admin-token", DASH_KEY])
+                              ["wifi-pass", "wifi-pass", TOKEN, "admin-token", DASH_KEY, "ma-admin"])
         s = gather(args(), asker, defaults={}, lookup=lambda *a, **k: None, nearby=lambda: [])
         self.assertEqual(s, Settings(wifi="Home", wifi_passphrase="wifi-pass", ha_url="http://ha:8123",
                                      ha_token=TOKEN, dashcast="10.0.0.5:9555", dashcast_key=DASH_KEY,
-                                     music_assistant="10.0.0.6", ha_admin_token="admin-token"))
+                                     music_assistant="10.0.0.6", ha_admin_token="admin-token",
+                                     music_assistant_token="ma-admin"))
         for line in s.summary():
-            for secret in ("wifi-pass", TOKEN, "admin-token", DASH_KEY):
+            for secret in ("wifi-pass", TOKEN, "admin-token", DASH_KEY, "ma-admin"):
                 self.assertNotIn(secret, line)
 
     def test_enter_takes_the_remembered_addresses_and_the_keyring(self):
         keyring = {"ha-token": TOKEN, "ha-admin-token": "admin-token", "dashcast-key": DASH_KEY,
-                   "wifi": "wifi-pass"}
+                   "wifi": "wifi-pass", "music-assistant-token": "ma-admin"}
         asker, _ = self.asker(["", "", "", ""], [])
         defaults = {"wifi": "Home", "ha_url": "http://ha:8123", "dashcast": "10.0.0.5:9555", "music_assistant": "10.0.0.6"}
         s = gather(args(), asker, defaults=defaults, lookup=lambda secret, **attrs: keyring.get(secret),
                    nearby=lambda: [])
         self.assertEqual((s.wifi, s.ha_url, s.dashcast, s.music_assistant),
                          ("Home", "http://ha:8123", "10.0.0.5:9555", "10.0.0.6"))
-        self.assertEqual((s.wifi_passphrase, s.ha_token, s.dashcast_key), ("wifi-pass", TOKEN, DASH_KEY))
+        self.assertEqual((s.wifi_passphrase, s.ha_token, s.dashcast_key, s.music_assistant_token),
+                         ("wifi-pass", TOKEN, DASH_KEY, "ma-admin"))
 
     def test_wifi_picked_from_what_is_nearby(self):
-        asker, said = self.asker(["4", "2", "-", "-"], ["short", "  spaced pass ", "typo here", "  spaced pass ", "  spaced pass "])
+        asker, said = self.asker(["4", "2", "-", "-"], ["short", "  spaced pass ", "typo here", "  spaced pass ", "  spaced pass ", ""])
         s = gather(args(music_assistant="10.0.0.6"), asker, defaults={}, lookup=lambda *a, **k: None,
                    nearby=lambda: ["Upstairs", "Garden IoT", "Neighbour"], want_wifi=True)
         self.assertEqual(s.wifi, "Garden IoT")
@@ -593,7 +612,7 @@ class GatherTests(unittest.TestCase):
         self.assertEqual(s.summary()[0], "Wi-Fi: picked on the Show's screen")
 
     def test_bad_answer_is_asked_again(self):
-        asker, said = self.asker(["-", "ftp://ha.example", "http://ha.example", "-", "nope.example", "10.0.0.6"], ["", ""])
+        asker, said = self.asker(["-", "ftp://ha.example", "http://ha.example", "-", "nope.example", "10.0.0.6"], ["", "", ""])
         s = gather(args(), asker, defaults={}, lookup=lambda *a, **k: None, nearby=lambda: [],
                    resolve=lambda h: (_ for _ in ()).throw(OSError("no such host")))
         self.assertEqual((s.wifi, s.ha_url, s.ha_token, s.dashcast, s.music_assistant),
@@ -602,7 +621,7 @@ class GatherTests(unittest.TestCase):
         self.assertTrue(any("cannot look up" in line for line in said))
 
     def test_dashcast_without_key_is_dropped(self):
-        asker, said = self.asker(["-", "-", "10.0.0.5"], [""])
+        asker, said = self.asker(["-", "-", "10.0.0.5"], ["", ""])
         s = gather(args(music_assistant="10.0.0.6"), asker, defaults={}, lookup=lambda *a, **k: None)
         self.assertIsNone(s.dashcast)
         self.assertEqual(s.music_assistant, "10.0.0.6")
@@ -618,11 +637,13 @@ class GatherTests(unittest.TestCase):
         with self.assertRaises(SettingsError):
             gather(args(dashcast="bad host"), Asker(False), defaults={}, lookup=lambda *a, **k: None)
 
-    def test_music_assistant_token_only_when_its_lookups_go_off(self):
+    def test_music_assistant_token_whenever_there_is_a_server(self):
         keyring = {"music-assistant-token": "ma-token"}
         s = gather(args(music_assistant="10.0.0.6"), Asker(False), defaults={},
                    lookup=lambda secret, **attrs: keyring.get(secret))
-        self.assertIsNone(s.music_assistant_token)
+        self.assertEqual(s.music_assistant_token, "ma-token")
+        self.assertIn("Music Assistant: the Show gets a user of its own there, for lyrics", s.summary())
+        self.assertNotIn("Music Assistant: online metadata lookups switched off", s.summary())
         s = gather(args(music_assistant="10.0.0.6", music_assistant_local_metadata=True), Asker(False),
                    defaults={}, lookup=lambda secret, **attrs: keyring.get(secret))
         self.assertEqual(s.music_assistant_token, "ma-token")
@@ -750,6 +771,50 @@ class MusicAssistantTests(unittest.TestCase):
         with self.assertRaises(ma.MusicAssistantError) as cm:
             ma.local_metadata_only("10.0.0.6", "ma-token", connect=refuse)
         self.assertIn("10.0.0.6:8095", str(cm.exception))
+
+    def test_show_user_made_once_and_its_old_token_replaced(self):
+        sock = self.server({"message_id": "1", "result": {"authenticated": True}},
+                           {"message_id": "2", "result": [{"user_id": "a1", "username": "admin", "role": "admin"}]},
+                           {"message_id": "3", "result": {"user_id": "u5", "username": "jarvis-show-5",
+                                                          "role": "user", "enabled": True}},
+                           {"message_id": "4", "result": [{"token_id": "t-old", "name": ma.TOKEN_NAME},
+                                                          {"token_id": "t-other", "name": "phone"}]},
+                           {"message_id": "5", "result": {}},
+                           {"message_id": "6", "result": "show-token"})
+        token, made = ma.show_exchange(sock, "10.0.0.6:8095", "ma-token", "Jarvis Show 5",
+                                       key="dGhlIHNhbXBsZSBub25jZQ==")
+        self.assertEqual((token, made), ("show-token", True))
+        sent = sock.messages()
+        self.assertEqual([m["command"] for m in sent], ["auth", "auth/users", "auth/user/create", "auth/tokens",
+                                                        "auth/token/revoke", "auth/token/create"])
+        create = sent[2]["args"]
+        self.assertEqual((create["username"], create["role"], create["display_name"]),
+                         ("jarvis-show-5", "user", "Jarvis Show 5"))
+        self.assertGreaterEqual(len(create["password"]), 32)
+        self.assertEqual(sent[4]["args"], {"token_id": "t-old"})
+        self.assertEqual(sent[5]["args"], {"name": ma.TOKEN_NAME, "user_id": "u5"})
+
+    def test_show_user_reused_and_an_admin_of_that_name_refused(self):
+        sock = self.server({"message_id": "1", "result": {"authenticated": True}},
+                           {"message_id": "2", "result": [{"user_id": "u5", "username": "jarvis-show-5",
+                                                           "role": "user", "enabled": True}]},
+                           {"message_id": "3", "result": []},
+                           {"message_id": "4", "result": "show-token"})
+        self.assertEqual(ma.show_exchange(sock, "10.0.0.6:8095", "ma-token", "Jarvis Show 5",
+                                          key="dGhlIHNhbXBsZSBub25jZQ=="), ("show-token", False))
+        self.assertNotIn("auth/user/create", [m["command"] for m in sock.messages()])
+        sock = self.server({"message_id": "1", "result": {"authenticated": True}},
+                           {"message_id": "2", "result": [{"user_id": "u5", "username": "jarvis-show-5",
+                                                           "role": "admin", "enabled": True}]})
+        with self.assertRaises(ma.MusicAssistantError):
+            ma.show_exchange(sock, "10.0.0.6:8095", "ma-token", "Jarvis Show 5", key="dGhlIHNhbXBsZSBub25jZQ==")
+        self.assertEqual([m["command"] for m in sock.messages()], ["auth", "auth/users"])
+
+    def test_show_username(self):
+        self.assertEqual(ma.show_username("Jarvis Show 5"), "jarvis-show-5")
+        self.assertEqual(ma.show_username("  Küche/Show "), "k-che-show")
+        with self.assertRaises(ma.MusicAssistantError):
+            ma.show_username("!")
 
 
 class InstallShowSettingsTests(unittest.TestCase):

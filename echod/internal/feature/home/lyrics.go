@@ -1,32 +1,34 @@
 package home
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/HuskerMinion/techo5/echod/internal/lib/hass"
+	"github.com/HuskerMinion/techo5/echod/internal/config"
+	"github.com/HuskerMinion/techo5/echod/internal/lib/mass"
 )
 
-// Lyrics for the song Music Assistant is playing, when the song comes from the house's own music
-// server. Most of a library ripped and tagged at home carries its words in the files, often with the
-// time of every line, and an OpenSubsonic server (Navidrome) hands them out. The Show's network does
-// not reach that server, Home Assistant's does: a rest_command named jarvis_lyrics in Home Assistant
-// asks the server for a song's lyrics by its id (docs/lyrics.md). Nothing here leaves the house, and
-// without that command there are simply no lyrics.
+// Lyrics for the song Music Assistant is playing. Music Assistant knows them for most songs: a
+// library ripped and tagged at home carries its words in the files, often with the time of every
+// line, and its lyrics providers (LRCLIB and the rest, when online lookups are on) find them for songs
+// from a streaming service. Home Assistant's integration does not pass them on, so the Show asks
+// Music Assistant itself, the server Sendspin is paired with, as a user of its own that the installer
+// made (docs/lyrics.md). Without that user's token there are simply no lyrics.
 
-const (
-	lyricsDomain  = "rest_command"
-	lyricsService = "jarvis_lyrics"
-	// lyricsRetry is how long a Home Assistant without the command, or a server that did not answer,
-	// is left alone before it is asked again.
-	lyricsRetry = 10 * time.Minute
-)
+// lyricsRetry is how long a Show without a token, or a server that did not answer, is left alone
+// before it is asked again.
+const lyricsRetry = 10 * time.Minute
+
+// lyricsWait is how long one song's lookup may take. A provider asked online can be slow.
+const lyricsWait = 20 * time.Second
 
 // LyricLine is one line of a song's words; At is when it is sung, from the start of the song.
 type LyricLine struct {
@@ -63,21 +65,16 @@ func (l *Lyrics) NextAt(elapsed time.Duration) time.Duration {
 	return 0
 }
 
-// queueSong is what the queue says about the song playing: its name and, for a song from an
-// OpenSubsonic server, its id there.
+// queueSong is what the queue says about the song playing: its name and Music Assistant's address
+// for it ("library://track/12"), which is empty for radio and anything else that is not a song.
 type queueSong struct {
-	Name     string
-	Provider string
-	ID       string
-}
-
-func (q queueSong) subsonic() bool {
-	return q.ID != "" && strings.HasPrefix(q.Provider, "opensubsonic")
+	Name string
+	URI  string
 }
 
 var lyrics struct {
 	mu      sync.Mutex
-	song    string // the server's id of the song asked for last
+	song    string // the address of the song asked for last
 	current *Lyrics
 	resting time.Time // not asked again before this
 }
@@ -92,7 +89,7 @@ func (f *Feature) MusicLyrics() *Lyrics {
 // refreshLyrics fetches the words for song when it is not the song they were fetched for already.
 func refreshLyrics(song queueSong) {
 	lyrics.mu.Lock()
-	if !song.subsonic() {
+	if song.URI == "" {
 		changed := lyrics.current != nil
 		lyrics.song, lyrics.current = "", nil
 		lyrics.mu.Unlock()
@@ -101,22 +98,22 @@ func refreshLyrics(song queueSong) {
 		}
 		return
 	}
-	if song.ID == lyrics.song || time.Now().Before(lyrics.resting) {
+	if song.URI == lyrics.song || time.Now().Before(lyrics.resting) {
 		lyrics.mu.Unlock()
 		return
 	}
-	lyrics.song, lyrics.current = song.ID, nil
+	lyrics.song, lyrics.current = song.URI, nil
 	lyrics.mu.Unlock()
 
 	got, err := fetchLyrics(song)
 	lyrics.mu.Lock()
-	if lyrics.song != song.ID {
+	if lyrics.song != song.URI {
 		lyrics.mu.Unlock()
 		return
 	}
 	if err != nil {
-		// Most often Home Assistant has no jarvis_lyrics at all, which is the normal state of a house
-		// that has not set it up; once in a while is often enough to notice that it has.
+		// Most often there is no token, which is the normal state of a Show the installer did not give
+		// one; once in a while is often enough to notice that it has one now.
 		lyrics.song, lyrics.resting = "", time.Now().Add(lyricsRetry)
 		lyrics.mu.Unlock()
 		slog.Info("lyrics", "song", song.Name, "err", err)
@@ -131,85 +128,119 @@ func refreshLyrics(song queueSong) {
 }
 
 func fetchLyrics(song queueSong) (*Lyrics, error) {
-	raw, err := hass.Get().CallResponse(lyricsDomain, lyricsService, map[string]any{"id": song.ID})
+	host := config.Get().Sendspin.ServerIP
+	if host == "" || !mass.Get().Ready() {
+		return nil, errors.New("no Music Assistant token, or no server paired")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), lyricsWait)
+	defer cancel()
+	// The lyrics command wants the whole song, as Music Assistant has it, not its address.
+	track, err := mass.Get().Call(ctx, host, "music/item_by_uri", map[string]any{"uri": song.URI})
+	if err != nil {
+		return nil, err
+	}
+	raw, err := mass.Get().Call(ctx, host, "metadata/get_track_lyrics", map[string]any{"track": track})
 	if err != nil {
 		return nil, err
 	}
 	return decodeLyrics(raw, song.Name)
 }
 
-// decodeLyrics reads rest_command's answer: the server's HTTP status, and its body, which Home
-// Assistant has already decoded when the server said it was JSON and left as text when not.
+// decodeLyrics reads Music Assistant's answer: the plain words and the timed (LRC) words, either of
+// them null. The timed ones are worth more on a screen that follows the song.
 func decodeLyrics(raw json.RawMessage, title string) (*Lyrics, error) {
-	var reply struct {
-		Status  int             `json:"status"`
-		Content json.RawMessage `json:"content"`
-	}
-	if err := json.Unmarshal(raw, &reply); err != nil {
+	var pair []*string
+	if err := json.Unmarshal(raw, &pair); err != nil {
 		return nil, err
 	}
-	if reply.Status/100 != 2 {
-		return nil, fmt.Errorf("the music server answered HTTP %d", reply.Status)
-	}
-	body := reply.Content
-	var text string
-	if json.Unmarshal(body, &text) == nil {
-		body = json.RawMessage(text)
-	}
-	var doc struct {
-		Response struct {
-			Status string `json:"status"`
-			Error  *struct {
-				Message string `json:"message"`
-			} `json:"error"`
-			LyricsList struct {
-				Structured []struct {
-					Synced bool `json:"synced"`
-					Offset int  `json:"offset"`
-					Line   []struct {
-						Start *int   `json:"start"`
-						Value string `json:"value"`
-					} `json:"line"`
-				} `json:"structuredLyrics"`
-			} `json:"lyricsList"`
-		} `json:"subsonic-response"`
-	}
-	if err := json.Unmarshal(body, &doc); err != nil {
-		return nil, err
-	}
-	if doc.Response.Status != "ok" {
-		msg := "failed"
-		if doc.Response.Error != nil {
-			msg = doc.Response.Error.Message
+	if len(pair) > 1 && pair[1] != nil {
+		if l := parseLRC(*pair[1], title); l != nil {
+			return l, nil
 		}
-		return nil, errors.New("the music server said: " + msg)
 	}
-	// A file can carry its words more than once, timed and plain, or in more than one language. The
-	// timed ones are worth more on a screen that follows the song.
-	sets := doc.Response.LyricsList.Structured
-	sort.SliceStable(sets, func(i, j int) bool { return sets[i].Synced && !sets[j].Synced })
-	for _, set := range sets {
-		l := &Lyrics{Title: title, Synced: set.Synced}
-		for _, line := range set.Line {
-			at := time.Duration(0)
-			if set.Synced {
-				if line.Start == nil {
-					continue
-				}
-				at = time.Duration(*line.Start-set.Offset) * time.Millisecond
-			}
-			l.Lines = append(l.Lines, LyricLine{At: at, Text: strings.TrimSpace(line.Value)})
+	if len(pair) > 0 && pair[0] != nil {
+		l := &Lyrics{Title: title}
+		for _, line := range strings.Split(strings.ReplaceAll(*pair[0], "\r\n", "\n"), "\n") {
+			l.Lines = append(l.Lines, LyricLine{Text: strings.TrimSpace(line)})
 		}
-		for len(l.Lines) > 0 && l.Lines[len(l.Lines)-1].Text == "" {
-			l.Lines = l.Lines[:len(l.Lines)-1]
+		if l = trimLyrics(l); l != nil {
+			return l, nil
 		}
-		if len(l.Lines) == 0 {
-			continue
-		}
-		if l.Synced {
-			sort.SliceStable(l.Lines, func(i, j int) bool { return l.Lines[i].At < l.Lines[j].At })
-		}
-		return l, nil
 	}
 	return nil, nil
+}
+
+// parseLRC reads LRC: every line has one or more times in front ("[01:02.50]"), a line sung twice
+// has two. Tags without a time ("[ar:…]") are left out, an "[offset:…]" moves every line, and the
+// times of single words some files have ("<01:02.80>") are taken out of the text.
+func parseLRC(text, title string) *Lyrics {
+	l := &Lyrics{Title: title, Synced: true}
+	offset := time.Duration(0)
+	for _, line := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
+		line = strings.TrimSpace(line)
+		var times []time.Duration
+		for strings.HasPrefix(line, "[") {
+			end := strings.IndexByte(line, ']')
+			if end < 0 {
+				break
+			}
+			tag := line[1:end]
+			line = strings.TrimSpace(line[end+1:])
+			if at, ok := lrcTime(tag); ok {
+				times = append(times, at)
+			} else if v, ok := strings.CutPrefix(strings.ToLower(tag), "offset:"); ok {
+				if ms, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+					offset = time.Duration(ms) * time.Millisecond
+				}
+			}
+		}
+		line = strings.TrimSpace(wordTimes.ReplaceAllString(line, ""))
+		for _, at := range times {
+			l.Lines = append(l.Lines, LyricLine{At: at, Text: line})
+		}
+	}
+	// A positive offset has the words come sooner.
+	for i := range l.Lines {
+		if l.Lines[i].At -= offset; l.Lines[i].At < 0 {
+			l.Lines[i].At = 0
+		}
+	}
+	sort.SliceStable(l.Lines, func(i, j int) bool { return l.Lines[i].At < l.Lines[j].At })
+	return trimLyrics(l)
+}
+
+var wordTimes = regexp.MustCompile(`<\d+:\d+(?:[.:]\d+)?>`)
+
+// lrcTime reads "mm:ss", "mm:ss.xx" or "mm:ss:xx".
+func lrcTime(tag string) (time.Duration, bool) {
+	m, rest, ok := strings.Cut(tag, ":")
+	if !ok {
+		return 0, false
+	}
+	min, err := strconv.Atoi(m)
+	if err != nil || min < 0 {
+		return 0, false
+	}
+	rest = strings.Replace(rest, ":", ".", 1)
+	sec, err := strconv.ParseFloat(rest, 64)
+	if err != nil || sec < 0 || sec >= 60 || strings.ContainsAny(rest, "eE+-") {
+		return 0, false
+	}
+	return time.Duration(min)*time.Minute + time.Duration(sec*float64(time.Second)).Round(time.Millisecond), true
+}
+
+// trimLyrics drops the empty lines at either end, and is nil when nothing is left.
+func trimLyrics(l *Lyrics) *Lyrics {
+	for len(l.Lines) > 0 && l.Lines[len(l.Lines)-1].Text == "" {
+		l.Lines = l.Lines[:len(l.Lines)-1]
+	}
+	if !l.Synced {
+		for len(l.Lines) > 0 && l.Lines[0].Text == "" {
+			l.Lines = l.Lines[1:]
+		}
+	}
+	if len(l.Lines) == 0 {
+		return nil
+	}
+	return l
 }

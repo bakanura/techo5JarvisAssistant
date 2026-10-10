@@ -7,23 +7,19 @@ import (
 )
 
 func TestLyricsPreferTheTimedWords(t *testing.T) {
-	// What rest_command hands back for an OpenSubsonic getLyricsBySongId: the server's status and its
-	// already decoded JSON body, here with a plain set ahead of a timed one.
-	raw := json.RawMessage(`{"status": 200, "headers": {}, "content": {"subsonic-response": {"status": "ok",
-		"lyricsList": {"structuredLyrics": [
-			{"lang": "xxx", "synced": false, "line": [{"value": "First line"}, {"value": "Second line"}]},
-			{"lang": "xxx", "synced": true, "offset": 0, "line": [
-				{"start": 4940, "value": "First line"}, {"start": 1000, "value": ""},
-				{"start": 9000, "value": " Second line "}, {"start": 12000, "value": ""}]}
-		]}}}}`)
+	// What metadata/get_track_lyrics answers: the plain words and the timed ones. A line sung twice
+	// has two times, tags without one are left out, and the empty line at 1s is a pause.
+	lrc := "[ar:Someone]\n[ti:Song]\n[00:04.94]First line\n[00:01.00]\n[00:09.00][00:12.50] Second line \n[00:14.00]\n"
+	raw, _ := json.Marshal([]any{"First line\nSecond line", lrc})
 	l, err := decodeLyrics(raw, "Song")
 	if err != nil || l == nil {
 		t.Fatalf("decode: %v, %v", l, err)
 	}
 	if !l.Synced || l.Title != "Song" {
-		t.Fatalf("want the timed set for Song, got %+v", l)
+		t.Fatalf("want the timed words for Song, got %+v", l)
 	}
-	want := []LyricLine{{time.Second, ""}, {4940 * time.Millisecond, "First line"}, {9 * time.Second, "Second line"}}
+	want := []LyricLine{{time.Second, ""}, {4940 * time.Millisecond, "First line"}, {9 * time.Second, "Second line"},
+		{12500 * time.Millisecond, "Second line"}}
 	if len(l.Lines) != len(want) {
 		t.Fatalf("lines %+v, want %+v", l.Lines, want)
 	}
@@ -40,7 +36,7 @@ func TestLyricsPreferTheTimedWords(t *testing.T) {
 		{0, -1, time.Second},
 		{time.Second, 0, 4940 * time.Millisecond},
 		{5 * time.Second, 1, 9 * time.Second},
-		{time.Minute, 2, 0},
+		{time.Minute, 3, 0},
 	} {
 		if got := l.Current(c.at); got != c.cur {
 			t.Errorf("Current(%v) = %d, want %d", c.at, got, c.cur)
@@ -51,42 +47,57 @@ func TestLyricsPreferTheTimedWords(t *testing.T) {
 	}
 }
 
-func TestLyricsReadATextBodyAndPlainWords(t *testing.T) {
-	// Home Assistant leaves a body it did not recognise as JSON as text.
-	body := `{"subsonic-response": {"status": "ok", "lyricsList": {"structuredLyrics": [
-		{"synced": false, "line": [{"value": "Only line"}]}]}}}`
-	b, _ := json.Marshal(map[string]any{"status": 200, "content": body})
-	l, err := decodeLyrics(b, "Song")
-	if err != nil || l == nil || l.Synced || len(l.Lines) != 1 || l.Lines[0].Text != "Only line" {
+func TestLyricsOffsetAndWordTimes(t *testing.T) {
+	lrc := "[offset:+500]\r\n[01:02:50]<01:02.50>Every <01:03.10>word\r\n[00:00.20]Early"
+	l := parseLRC(lrc, "Song")
+	if l == nil || len(l.Lines) != 2 {
+		t.Fatalf("got %+v", l)
+	}
+	if l.Lines[0] != (LyricLine{0, "Early"}) {
+		t.Errorf("an offset past the start stops at 0: %+v", l.Lines[0])
+	}
+	if l.Lines[1] != (LyricLine{62 * time.Second, "Every word"}) {
+		t.Errorf("got %+v", l.Lines[1])
+	}
+}
+
+func TestLyricsPlainWords(t *testing.T) {
+	raw, _ := json.Marshal([]any{"\nOnly line\r\nAnd this\n\n", nil})
+	l, err := decodeLyrics(raw, "Song")
+	if err != nil || l == nil || l.Synced || len(l.Lines) != 2 || l.Lines[0].Text != "Only line" || l.Lines[1].Text != "And this" {
 		t.Fatalf("got %+v, %v", l, err)
 	}
 	if l.Current(time.Minute) != -1 {
 		t.Fatal("plain words have no current line")
 	}
+	// Timed words with nothing timed in them fall back to the plain ones.
+	raw, _ = json.Marshal([]any{"Plain", "[ar:Someone]"})
+	if l, _ := decodeLyrics(raw, "Song"); l == nil || l.Synced || l.Lines[0].Text != "Plain" {
+		t.Fatalf("got %+v", l)
+	}
 }
 
-func TestLyricsNoneOrRefused(t *testing.T) {
-	none := json.RawMessage(`{"status": 200, "content": {"subsonic-response": {"status": "ok", "lyricsList": {}}}}`)
-	if l, err := decodeLyrics(none, "Song"); l != nil || err != nil {
-		t.Fatalf("a song without words: %+v, %v", l, err)
-	}
-	for _, raw := range []string{
-		`{"status": 401, "content": "Unauthorized"}`,
-		`{"status": 200, "content": {"subsonic-response": {"status": "failed", "error": {"code": 40, "message": "Wrong username or password"}}}}`,
-	} {
-		if _, err := decodeLyrics(json.RawMessage(raw), "Song"); err == nil {
-			t.Errorf("%s: want an error", raw)
+func TestLyricsNone(t *testing.T) {
+	for _, raw := range []string{`[null, null]`, `[]`, `["", "\n"]`} {
+		if l, err := decodeLyrics(json.RawMessage(raw), "Song"); l != nil || err != nil {
+			t.Errorf("%s: %+v, %v", raw, l, err)
 		}
 	}
+	if _, err := decodeLyrics(json.RawMessage(`{"error": "x"}`), "Song"); err == nil {
+		t.Error("an answer that is not a pair is an error")
+	}
 }
 
-func TestLyricsOnlyForSongsFromTheMusicServer(t *testing.T) {
-	if (queueSong{Provider: "opensubsonic--5nVM", ID: "abc"}).subsonic() != true {
-		t.Fatal("an OpenSubsonic song has lyrics to ask for")
+func TestLRCTime(t *testing.T) {
+	for tag, want := range map[string]time.Duration{"00:00": 0, "01:02.5": 62500 * time.Millisecond,
+		"10:00:25": 600250 * time.Millisecond} {
+		if got, ok := lrcTime(tag); !ok || got != want {
+			t.Errorf("%q = %v %v, want %v", tag, got, ok, want)
+		}
 	}
-	for _, q := range []queueSong{{Provider: "radiobrowser", ID: "abc"}, {Provider: "opensubsonic--x"}} {
-		if q.subsonic() {
-			t.Fatalf("%+v has nothing to ask the music server for", q)
+	for _, tag := range []string{"ar:Someone", "offset:500", "00:61", "-1:00", "00:1e1"} {
+		if _, ok := lrcTime(tag); ok {
+			t.Errorf("%q is not a time", tag)
 		}
 	}
 }
