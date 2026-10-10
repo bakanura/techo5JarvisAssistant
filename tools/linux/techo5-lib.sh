@@ -23,25 +23,36 @@ t5_board() {
 # t5_usb_acm: one CDC ACM serial function on the USB gadget (a COM port on the
 # host). Idempotent. The 4.9.77 (TWRP) kernel has the legacy android_usb
 # gadget, the 4.9.337 (LineageOS) kernel has configfs; both are handled.
-# T5_PRODUCT names the USB serial gadget. A device may set it, and a root filesystem
-# carrying /etc/techo5/device.conf does (boot.sh sources that file first); otherwise it
-# follows the board, so a Show 8 does not put the Show 5's name on the gadget.
+# T5_PRODUCT names the USB serial gadget, which is what a computer lists the device as.
+# A device may set it, and a root filesystem carrying /etc/techo5/device.conf does
+# (boot.sh sources that file first); otherwise it follows the board, so a Show 8 does
+# not put the Show 5's name on the gadget. The names are the product's, Genbu Show by
+# OpenJade; the Echo it was is no longer what is plugged in. The host's tools find the
+# device by vendor and product number, which stay as they were.
 case $(t5_board) in
-crown) T5_PRODUCT=${T5_PRODUCT:-Echo Show 8 Linux} ;;
-*) T5_PRODUCT=${T5_PRODUCT:-Echo Show 5 Linux} ;;
+crown) T5_PRODUCT=${T5_PRODUCT:-Genbu Show 8} ;;
+checkers|cronos) T5_PRODUCT=${T5_PRODUCT:-Genbu Show 5} ;;
+*) T5_PRODUCT=${T5_PRODUCT:-Genbu Show} ;;
 esac
+T5_MAKER=OpenJade
 
 t5_usb_acm() {
 	A=/sys/class/android_usb/android0
 	G=/sys/kernel/config/usb_gadget/g1
-	if [ -d $A ]; then
-		[ "$(cat $A/functions 2>/dev/null)" = acm ] && [ "$(cat $A/enable 2>/dev/null)" = 1 ] && return 0
+	# The LineageOS kernel's configfs gadget also makes android0 once bound, but with only its state
+	# in it; the legacy gadget is the one with functions to write.
+	if [ -e $A/functions ]; then
+		# Up already is fine only under today's names: the initramfs may have brought it up under
+		# older ones, and re-enabling is what makes a computer read the new names.
+		[ "$(cat $A/functions 2>/dev/null)" = acm ] && [ "$(cat $A/enable 2>/dev/null)" = 1 ] &&
+			[ "$(cat $A/iProduct 2>/dev/null)" = "$T5_PRODUCT" ] &&
+			[ "$(cat $A/iManufacturer 2>/dev/null)" = "$T5_MAKER" ] && return 0
 		echo 0 > $A/enable
 		echo 1d6b > $A/idVendor
 		echo 0104 > $A/idProduct
-		echo TECHO5 > $A/iManufacturer
+		echo "$T5_MAKER" > $A/iManufacturer
 		echo "$T5_PRODUCT" > $A/iProduct
-		echo techo5 > $A/iSerial
+		echo genbu > $A/iSerial
 		echo acm > $A/functions
 		[ -e $A/f_acm/instances ] && echo 1 > $A/f_acm/instances
 		echo 1 > $A/enable && log "usb: legacy gadget enabled (acm)" || log "usb: legacy gadget enable failed"
@@ -49,16 +60,18 @@ t5_usb_acm() {
 	fi
 	mountpoint -q /sys/kernel/config || mount -t configfs none /sys/kernel/config 2>/dev/null || { log "usb: configfs mount failed"; return 1; }
 	if [ -d $G ] && [ -n "$(cat $G/UDC 2>/dev/null)" ]; then
-		return 0
+		[ "$(cat $G/strings/0x409/product 2>/dev/null)" = "$T5_PRODUCT" ] &&
+			[ "$(cat $G/strings/0x409/manufacturer 2>/dev/null)" = "$T5_MAKER" ] && return 0
+		echo "" > $G/UDC # unbound so the new names are read on the next bind
 	fi
 	mkdir -p $G || return 1
 	echo 0x1d6b > $G/idVendor
 	echo 0x0104 > $G/idProduct
 	echo 0x0200 > $G/bcdUSB
 	mkdir -p $G/strings/0x409
-	echo "TECHO5" > $G/strings/0x409/manufacturer
+	echo "$T5_MAKER" > $G/strings/0x409/manufacturer
 	echo "$T5_PRODUCT" > $G/strings/0x409/product
-	echo "techo5" > $G/strings/0x409/serialnumber
+	echo genbu > $G/strings/0x409/serialnumber
 	mkdir -p $G/configs/c.1/strings/0x409
 	echo "acm" > $G/configs/c.1/strings/0x409/configuration
 	mkdir -p $G/functions/acm.usb0
