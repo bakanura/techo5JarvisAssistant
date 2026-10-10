@@ -5,6 +5,7 @@ pipeline: speech to text, a conversation agent, text to speech. [Where the answe
 from](jarvis-crown-installer.md#where-the-answers-come-from) explains that split. This page is the
 pipeline we run with our own Shows, in German, all of it local, and what we learned setting it up.
 None of it is required: any pipeline works. But these are the settings that made the difference.
+[voice-test-phrases.md](voice-test-phrases.md) lists what to say to check all of it on a Show.
 
 ## The pipeline
 

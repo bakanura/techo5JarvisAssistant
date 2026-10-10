@@ -58,7 +58,7 @@ For each board separately:
 - [ ] first boot reaches the expected Jarvis product profile;
 - [ ] correct screen geometry: Crown 1280×800, Checkers 960×480;
 - [ ] Wi-Fi, Bluetooth, microphones, speaker, touch and display pass;
-- [ ] wake word, Assist, Direct fallback and local Stop pass;
+- [ ] wake word, Assist, Direct fallback and local Stop pass ([voice-test-phrases.md](voice-test-phrases.md));
 - [ ] **J38 installed-firmware display E2E:** after a cold dashboard reload, the real device has no header/sidebar/black-bar regression, keeps its native viewport and edge-touch behavior, does not resurrect stale warm-tab geometry, and leaves the established HA WIND/weather/room/clock card geometry unchanged;
 - [ ] Jarvis dashboard loads normally after the J38 cold-session checks;
 - [ ] **J39 installed-firmware HA/Klar E2E:** while HA owns the turn, `Was ist ein Taco?` remains informational and an explicit Taco recipe/web-search request follows the intended web/search path rather than becoming a device action;
