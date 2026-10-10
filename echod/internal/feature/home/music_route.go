@@ -251,7 +251,38 @@ func musicRoomNameFor(entity string) string {
 	if active, _ := musicAssistantPlayer(); entity == active && cfg.MusicRoom != "" {
 		return cfg.MusicRoom
 	}
-	return ""
+	return musicAreaName(entity)
+}
+
+// musicAreas remembers the Home Assistant area of each speaker the page has named. A speaker's own
+// name is often something only its setup app ever showed ("livingRoom"); its area is the room as
+// the house calls it. Asked once per speaker, and an answer of none is kept too.
+var musicAreas struct {
+	sync.Mutex
+	name map[string]string
+}
+
+func musicAreaName(entity string) string {
+	musicAreas.Lock()
+	name, ok := musicAreas.name[entity]
+	musicAreas.Unlock()
+	if ok {
+		return name
+	}
+	out, err := hass.Get().Render("{{ area_name(" + strconv.Quote(entity) + ") or '' }}")
+	if err != nil {
+		return "" // not kept: Home Assistant may answer next time
+	}
+	if out == "None" {
+		out = ""
+	}
+	musicAreas.Lock()
+	if musicAreas.name == nil {
+		musicAreas.name = map[string]string{}
+	}
+	musicAreas.name[entity] = out
+	musicAreas.Unlock()
+	return out
 }
 
 func humanMusicName(v string) string {
@@ -319,7 +350,15 @@ func (f *Feature) musicPlaybackTick() {
 		view.Title, _ = st.Attributes["media_title"].(string)
 		view.Artist, _ = st.Attributes["media_artist"].(string)
 		view.Album, _ = st.Attributes["media_album_name"].(string)
+		// entity_picture is often Music Assistant's own image proxy, which a Show on another network
+		// can't reach. entity_picture_local is Home Assistant serving the same picture, so the Show
+		// asks for that. Its token changes every few minutes, which is why the plain picture decides
+		// whether the cover changed.
 		picture, _ := st.Attributes["entity_picture"].(string)
+		fetch, _ := st.Attributes["entity_picture_local"].(string)
+		if fetch == "" {
+			fetch = picture
+		}
 		if !media.Get().Carried() {
 			musicPlayback.Lock()
 			changed := picture != musicPlayback.picture
@@ -330,10 +369,12 @@ func (f *Feature) musicPlaybackTick() {
 			if changed {
 				if picture == "" {
 					RemoteArt(nil, nil)
-				} else if b, err := hass.Get().FetchURL(picture); err == nil {
+				} else if b, err := hass.Get().FetchURL(fetch); err == nil {
 					RemoteArt(b, nil)
 				} else {
-					slog.Debug("music route: cover art unavailable", "err", err)
+					// The last song's cover beside this song's title would be wrong; the drawn notes are not.
+					RemoteArt(nil, nil)
+					slog.Info("music route: cover art unavailable", "err", err)
 				}
 			}
 		}

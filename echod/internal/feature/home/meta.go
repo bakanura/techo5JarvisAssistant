@@ -26,14 +26,10 @@ import (
 const (
 	metaEvery = 15 * time.Second
 
-	// thumbSide is the square a picture is also made into, for a screen that shows it as a picture
-	// rather than behind the words (the Spot's round one).
-	//
-	// artW and artH — the size the background picture is made to fit — live in the panel_*.go files,
-	// because they are the panel and the panel is not the same on every device. The now-playing page
-	// draws the picture at one to one, so a picture built at the Show 5's 960x480 covered only the
-	// top left of a Show 8 and left the rest bare.
-	thumbSide = 240
+	// artW and artH — the size the background picture is made to fit — and thumbSide, the square a
+	// picture is also made into for a screen that shows it as a picture, live in the panel_*.go files,
+	// because they follow the panel and the panel is not the same on every device. Both are drawn at
+	// one to one, so a picture built at the Show 5's size covered only part of a Show 8.
 )
 
 // meta is the state the poller keeps.
@@ -237,6 +233,8 @@ func layoutArt(b []byte, logo bool, what string) (*image.RGBA, *image.RGBA, erro
 	} else {
 		w = sw * thumbSide / sh
 	}
-	xdraw.ApproxBiLinear.Scale(thumb, image.Rect((thumbSide-w)/2, (thumbSide-h)/2, (thumbSide-w)/2+w, (thumbSide-h)/2+h), src, sb, draw.Src, nil)
+	// Once per picture and on show for minutes, so the better filter: a cover made smaller with the
+	// quick one shimmers along every fine line in it.
+	xdraw.CatmullRom.Scale(thumb, image.Rect((thumbSide-w)/2, (thumbSide-h)/2, (thumbSide-w)/2+w, (thumbSide-h)/2+h), src, sb, draw.Src, nil)
 	return dst, thumb, nil
 }

@@ -25,7 +25,18 @@ var (
 	// artW and artH are the size a now-playing background picture is fitted to. The page draws it at
 	// one to one, so this has to be the panel.
 	artW, artH = panelSize()
+
+	// thumbSide is the cover's square on the now-playing page, which draws it at one to one: as tall
+	// as the panel allows with a margin round it, but never so wide that the column of words and
+	// buttons beside it gets narrower than the Show 5's 440. The display works it out the same way.
+	thumbSide = coverSide()
 )
+
+func coverSide() int {
+	w, h := panelSize()
+	m := 40 * w / 960
+	return min(h-2*m, w-3*m-440*w/960)
+}
 
 func panelSize() (w, h int) {
 	if layout.Crown() {

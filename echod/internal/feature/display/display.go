@@ -941,12 +941,12 @@ func (d *Display) gesture(g touch.Gesture) {
 			// The now-playing screen: each button does what it says, and a tap anywhere else is
 			// play/pause, because that is what a hand put on a screen like this means.
 			if d.r != nil {
-				back, _, next := d.r.transportButtons()
+				fav, back, _, next, stop := d.r.nowPlayingButtons()
 				at := image.Pt(g.X, g.Y)
 				switch {
-				case at.In(d.r.doneButton()):
+				case at.In(stop):
 					go d.endMusic()
-				case at.In(d.r.favButton()):
+				case at.In(fav):
 					go d.favorite()
 				case at.In(back):
 					_ = home.Get().MusicTransport(media.TransportPrevious)

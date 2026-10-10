@@ -10,46 +10,53 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/feature/home"
 )
 
-// The three transport buttons are drawn from the panel's own size, and their rectangles are the tap
-// regions as well, so an overlap is a button that cannot be pressed and an overflow is one that cannot
-// be seen. The Show 8 is why this is a table: the now-playing page is one file for both panels, and a row
-// sized for the Show 5 huddles in the middle of a wider screen.
-func TestTheTransportButtonsFitTheirPanel(t *testing.T) {
+// The now-playing buttons are drawn from the panel's own size, and their rectangles are the tap regions
+// as well, so an overlap is a button that cannot be pressed and an overflow is one that cannot be seen.
+// The Show 8 is why this is a table: the page is one file for both panels, and the cover beside the
+// column is a different size on each.
+func TestTheNowPlayingButtonsFitTheirPanel(t *testing.T) {
 	for _, panel := range []image.Point{{X: 960, Y: 480}, {X: 1280, Y: 800}} {
 		t.Run(fmt.Sprintf("%dx%d", panel.X, panel.Y), func(t *testing.T) {
 			screen := image.Rect(0, 0, panel.X, panel.Y)
 			r := newRenderer(image.NewRGBA(screen))
-			back, play, next := r.transportButtons()
+			cover, col := r.nowPlayingLayout()
+			fav, back, play, next, stop := r.nowPlayingButtons()
+			row := []image.Rectangle{fav, back, play, next, stop}
 
-			for name, b := range map[string]image.Rectangle{"back": back, "play": play, "next": next} {
-				if !b.In(screen) {
-					t.Errorf("the %s button %v is not on the panel", name, b)
+			if !cover.In(screen) || !col.In(screen) || cover.Overlaps(col) {
+				t.Errorf("cover %v and column %v do not sit side by side on the panel", cover, col)
+			}
+			if cover.Dx() != cover.Dy() {
+				t.Errorf("the cover's place %v is not square", cover)
+			}
+			if col.Dx() < r.s(440) {
+				t.Errorf("the column is %d wide, narrower than the %d its row needs", col.Dx(), r.s(440))
+			}
+			for i, b := range row {
+				if !b.In(col) {
+					t.Errorf("button %d %v is outside the column %v", i, b, col)
+				}
+				if b.Min.Y != play.Min.Y || b.Dy() != play.Dy() {
+					t.Errorf("button %d %v is not in one row with play %v", i, b, play)
+				}
+				if i > 0 && row[i-1].Max.X > b.Min.X {
+					t.Errorf("buttons %d %v and %d %v overlap or are out of order", i-1, row[i-1], i, b)
 				}
 			}
-			if back.Overlaps(play) || play.Overlaps(next) || back.Overlaps(next) {
-				t.Errorf("the buttons overlap: back %v, play %v, next %v", back, play, next)
+			if left, right := back.Min.X-col.Min.X, col.Max.X-next.Max.X; left-right > 1 || right-left > 1 {
+				t.Errorf("the transport is %d px from the column's left and %d from its right", left, right)
 			}
-			if back.Max.X > play.Min.X || play.Max.X > next.Min.X {
-				t.Errorf("the buttons are out of order: back %v, play %v, next %v", back, play, next)
+			if play.Max.Y != cover.Max.Y {
+				t.Errorf("the row ends at %d, not level with the cover's foot at %d", play.Max.Y, cover.Max.Y)
 			}
-			if back.Min.Y != play.Min.Y || play.Min.Y != next.Min.Y ||
-				back.Dy() != play.Dy() || play.Dy() != next.Dy() {
-				t.Errorf("the buttons are not one row of one size: back %v, play %v, next %v", back, play, next)
-			}
-			if left, right := back.Min.X, screen.Max.X-next.Max.X; left != right {
-				t.Errorf("%d px on one side of the row and %d on the other", left, right)
-			}
-			if got := play.Dx(); got != r.s(96) {
-				t.Errorf("a button is %d wide, want %d on this panel", got, r.s(96))
-			}
-			if footer := panel.Y - r.s(26); next.Max.Y > footer {
-				t.Errorf("the buttons reach %d, into the footer at %d", next.Max.Y, footer)
+			if footer := panel.Y - r.s(26); play.Max.Y > footer {
+				t.Errorf("the buttons reach %d, into the footer at %d", play.Max.Y, footer)
 			}
 		})
 	}
 }
 
-func TestMusicRouteLabelReportsTheResolvedDestination(t *testing.T) {
+func TestMusicPlaceReportsTheResolvedDestination(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		view home.MusicPlaybackView
@@ -58,22 +65,22 @@ func TestMusicRouteLabelReportsTheResolvedDestination(t *testing.T) {
 		{
 			name: "Jarvis fallback endpoint",
 			view: home.MusicPlaybackView{Entity: "media_player.living_room_jarvis", Output: "Living Room Jarvis"},
-			want: "Playing on  Living Room Jarvis",
+			want: "Living Room Jarvis",
 		},
 		{
 			name: "single resolved room",
 			view: home.MusicPlaybackView{Entity: "media_player.living_room_jarvis", Output: "Living Room Jarvis", Rooms: []string{"living"}},
-			want: "Playing in  Living",
+			want: "Living",
 		},
 		{
 			name: "named group",
 			view: home.MusicPlaybackView{Route: "wohnung", Rooms: []string{"living", "bedroom"}},
-			want: "Playing in  Wohnung",
+			want: "Wohnung",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := musicRouteLabel(tc.view); got != tc.want {
-				t.Fatalf("musicRouteLabel() = %q, want %q", got, tc.want)
+			if got := musicPlace(tc.view); got != tc.want {
+				t.Fatalf("musicPlace() = %q, want %q", got, tc.want)
 			}
 		})
 	}

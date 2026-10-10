@@ -24,4 +24,7 @@ const (
 	// artW and artH are the now-playing background picture's size. Unreachable here, like the rest.
 	artW = 960
 	artH = 480
+
+	// thumbSide is the square a picture is also made into. Unreachable here, like the rest.
+	thumbSide = 240
 )

@@ -25,4 +25,8 @@ const (
 	// artW and artH are the now-playing background picture's size. The round face crops this landscape picture, so it stays what it has always been.
 	artW = 960
 	artH = 480
+
+	// thumbSide is the square a picture is also made into, which the round face shows inside its
+	// circle.
+	thumbSide = 240
 )

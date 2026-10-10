@@ -130,6 +130,19 @@ func TestShowScenesDraw(t *testing.T) {
 			radio: home.Radio{Now: "Music Assistant", Title: "Reason That I Sing", Artist: "Release", Music: true}},
 		"clock-music-strip-paused": {now: at, phase: "idle", weather: sky, strip: true, paused: true,
 			radio: home.Radio{Now: "Music Assistant", Title: "A Very Long Song Title That Has To Be Cut Short", Artist: "Somebody", Music: true}},
+		// With the pictures the page is built round: a cover, a station's logo, and a group with the
+		// queue and the position filled in, the way Music Assistant sends it.
+		"nowplaying-cover": {now: at, phase: "idle", nowPlaying: true, playing: true, weather: sky,
+			radio: home.Radio{Now: "Music Assistant", Title: "Reason That I Sing", Artist: "Release", Album: "Lights Over the Water", Music: true, Thumb: testCover(400, false)},
+			music: home.MusicPlaybackView{Rooms: []string{"Living Room"}, Playing: true, Position: 74, Duration: 213, Next: "Harbour Song – Release"}},
+		"nowplaying-cover-group-paused": {now: at, phase: "idle", nowPlaying: true, paused: true, faved: true, weather: sky,
+			radio: home.Radio{Now: "Music Assistant", Title: "A Very Long Song Title That Has To Be Wrapped Over Two Lines And Then Cut", Artist: "Somebody With A Long Name", Music: true, Thumb: testCover(400, false)},
+			music: home.MusicPlaybackView{Route: "wohnung", Rooms: []string{"Living Room", "Kitchen", "Bath"}, Paused: true, Position: 30, Duration: 240, Next: "Another One"}},
+		// The footer's own messages still show under the page.
+		"nowplaying-cover-missed": {now: at, phase: "idle", nowPlaying: true, playing: true, weather: sky, missed: "Missed: timer \"Pasta\" at 2:03 PM",
+			radio: home.Radio{Now: "Music Assistant", Title: "Reason That I Sing", Artist: "Release", Music: true, Thumb: testCover(400, false)}},
+		"nowplaying-logo": {now: at, phase: "idle", nowPlaying: true, playing: true, weather: sky,
+			radio: home.Radio{Now: "KXYZ 101.1", Title: "Morning Show", Logo: true, Thumb: testCover(400, true)}},
 		"nowplaying-faved": {now: at, phase: "idle", nowPlaying: true, playing: true, faved: true, weather: sky,
 			radio: home.Radio{Now: "Music Assistant", Title: "Some Jazz", Artist: "The Quartet", Music: true}},
 		"clock-missed": {now: at, phase: "idle", missed: "Missed: timer \"Pasta\" at 2:03 PM yesterday · and 1 more"},
@@ -299,4 +312,33 @@ func TestTheCameraSoundControlFitsWhatItSays(t *testing.T) {
 			}
 		}
 	}
+}
+
+// testCover is a made-up picture for the scenes: a cover's worth of color and lines, or a logo on
+// nothing with room round it, as home makes a station's.
+func testCover(side int, logo bool) *image.RGBA {
+	img := image.NewRGBA(image.Rect(0, 0, side, side))
+	for y := 0; y < side; y++ {
+		for x := 0; x < side; x++ {
+			if logo {
+				dx, dy := x-side/2, y-side/2
+				if dx*dx+dy*dy < side*side/9 {
+					img.Pix[img.PixOffset(x, y)+0] = 0xc0
+					img.Pix[img.PixOffset(x, y)+1] = 0x20
+					img.Pix[img.PixOffset(x, y)+2] = 0x30
+					img.Pix[img.PixOffset(x, y)+3] = 0xff
+				}
+				continue
+			}
+			i := img.PixOffset(x, y)
+			img.Pix[i] = uint8(30 + 120*y/side)
+			img.Pix[i+1] = uint8(60 + 80*x/side)
+			img.Pix[i+2] = uint8(140 - 60*y/side)
+			img.Pix[i+3] = 0xff
+			if (x+y)%40 < 3 {
+				img.Pix[i], img.Pix[i+1], img.Pix[i+2] = 240, 200, 120
+			}
+		}
+	}
+	return img
 }

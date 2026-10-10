@@ -244,6 +244,10 @@ type renderer struct {
 	dateAt   image.Rectangle // the date under the clock, the same way: a tap there opens the calendar
 	popupAt  image.Rectangle // an event's pop-up, the same way: a tap on it takes it down
 
+	// cover is the now-playing page's picture at the size it is drawn, and the color it lends the
+	// ground, kept while the song's picture stays the same.
+	cover coverCache
+
 	// calHits are the calendar page's buttons, days and events as last drawn (render_calendar.go).
 	calMu   sync.Mutex
 	calHits []calHit
@@ -842,11 +846,23 @@ func (r *renderer) header(s scene) {
 	r.text(r.tiny, line, x, r.s(25), amber)
 }
 
+// nowPlayingShown is whether draw puts the now-playing page up for this scene, rather than a voice
+// turn, the sunrise or the screensaver over it.
+func nowPlayingShown(s scene) bool {
+	switch s.phase {
+	case "listening", "thinking", "replying", "lingering":
+		return false
+	}
+	return s.nowPlaying && s.sunrise == 0 && s.slideshowScreensaver == nil
+}
+
 // playingWord is what the footer says about the music: empty when nothing is playing.
 func playingWord(s scene) string {
 	switch {
 	case s.strip:
 		return "" // the strip says it, and the footer is under it
+	case nowPlayingShown(s):
+		return "" // the page says it with its play button, and the stop button is over the word's corner
 	case s.playing:
 		return "♪ playing"
 	case s.paused:
@@ -888,6 +904,9 @@ func (r *renderer) playingButton() image.Rectangle {
 // pages and the microphone is true on all of them.
 func (r *renderer) footer(s scene) {
 	y := r.h - 24
+	if nowPlayingShown(s) {
+		y = r.h - r.s(10) // under the foot of the Show 5's cover, not across it
+	}
 	switch {
 	case s.setupAsking:
 		r.text(r.tiny, "setup: a browser is asking to be let in", r.margin, y, amber)
