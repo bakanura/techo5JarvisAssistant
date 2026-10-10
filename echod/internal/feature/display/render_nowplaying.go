@@ -141,7 +141,8 @@ func (r *renderer) nowPlaying(s scene) {
 			line(r.small, strings.Join(s.music.Rooms, "  ·  "), r.s(40), ink.head)
 		}
 		if rd.Now == "Music Assistant" && s.music.Next != "" {
-			line(r.small, i18n.T("Next")+"  ·  "+s.music.Next, r.s(40), ink.faint)
+			face, text := r.upNext(s.music.Next, col.Dx())
+			line(face, text, r.s(40), ink.faint)
 		}
 	}
 
@@ -535,6 +536,29 @@ func (r *renderer) evenBreak(face font.Face, words []string, w int) []string {
 		}
 	}
 	return best
+}
+
+// upNext is the line saying what the queue plays next, made to fit width before anything is cut: a
+// size down first, then without the take ("Remastered 2011"), then the song alone without who plays it,
+// which the queue puts in front ("Artist - Song"). Only a song name too long even for that is cut.
+func (r *renderer) upNext(next string, width int) (font.Face, string) {
+	label := i18n.T("Next") + "  ·  "
+	song, _ := songParts(next)
+	tries := []string{next, song}
+	for _, sep := range []string{" – ", " - ", " — "} {
+		if i := strings.Index(song, sep); i > 0 && i+len(sep) < len(song) {
+			tries = append(tries, song[i+len(sep):])
+			break
+		}
+	}
+	for _, t := range tries {
+		for _, face := range []font.Face{r.small, r.tiny} {
+			if r.width(face, label+t) <= width {
+				return face, label + t
+			}
+		}
+	}
+	return r.tiny, r.clipTo(r.tiny, label+tries[len(tries)-1], width)
 }
 
 // songParts splits a song's title into the song and which take of it this is, so the song can have

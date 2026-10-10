@@ -27,7 +27,8 @@ class MusicNowPlayingContractTests(unittest.TestCase):
             "albumName := rd.Album",
             "line(r.small, albumName",
             'strings.Join(s.music.Rooms, "  ·  ")',
-            'i18n.T("Next")+"  ·  "+s.music.Next',
+            'r.upNext(s.music.Next, col.Dx())',
+            'label := i18n.T("Next") + "  ·  "',
             "r.musicProgress(s.music, s.now",
         ):
             self.assertIn(marker, render)
