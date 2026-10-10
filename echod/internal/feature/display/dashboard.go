@@ -101,8 +101,18 @@ func (d *Display) dashScene(s *scene, sheetOrDrawer bool) {
 	s.showDash, s.dashMode = want, mode
 
 	streamed := want && mode == config.DashboardStreamed
-	if streamed && d.r != nil {
+	// Paused music gives way to the dashboard once the player goes idle, so the stream connects while
+	// the music page is still up and the switch is the page itself rather than a wait on black.
+	warm := !want && !asked && mode == config.DashboardStreamed && s.phase == "idle" && s.nowPlaying &&
+		!s.playing && !s.music.Playing && f.Idle() && !away
+	if (streamed || warm) && d.r != nil {
 		s.dash = f.Stream(d.r.w, d.r.h)
+	}
+	// Standing in for the clock, the dashboard waits behind it for its first picture. One asked for
+	// shows that it is connecting, since somebody is looking for it.
+	if streamed && !asked && !s.dash.Ready && s.dash.Problem == "" {
+		want = false
+		s.showDash = false
 	}
 	if want && mode == config.DashboardDrawn {
 		s.drawn = f.Drawn(d.r.w)
