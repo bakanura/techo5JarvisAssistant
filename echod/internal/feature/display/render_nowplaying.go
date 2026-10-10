@@ -76,10 +76,10 @@ func (r *renderer) nowPlaying(s scene) {
 	// The head of the column: where it plays, and the time on the right. The page is looked at for
 	// minutes, and the big clock is not on it.
 	head := col.Min.Y + r.s(26)
-	clock := clockText(s.now)
-	cw := r.width(r.small, clock)
-	r.text(r.small, clock, col.Max.X-cw, head, ink.faint)
-	labelEnd := col.Max.X - cw - r.s(24)
+	pill := r.clockPill(s.now)
+	r.glassPill(pill, ink)
+	r.text(r.small, clockText(s.now), pill.Min.X+r.s(16), head, ink.soft)
+	labelEnd := pill.Min.X - r.s(16)
 	if s.lyrics != nil {
 		b := r.lyricsButton(s.now)
 		r.lyricsPill(b, s.showLyrics, ink)
@@ -233,10 +233,42 @@ func (r *renderer) transportButtons() (back, play, next image.Rectangle) {
 // there only for a song the music server has words for. The clock's width moves it, so a tap is checked
 // against the same clock the frame drew.
 func (r *renderer) lyricsButton(now time.Time) image.Rectangle {
+	pill := r.clockPill(now)
+	right := pill.Min.X - r.s(10)
+	return image.Rect(right-r.s(56), pill.Min.Y, right, pill.Max.Y)
+}
+
+// clockPill is the time's place in the head: a pill at the column's right end, as tall as the words
+// button beside it.
+func (r *renderer) clockPill(now time.Time) image.Rectangle {
 	_, col := r.nowPlayingLayout()
-	right := col.Max.X - r.width(r.small, clockText(now)) - r.s(18)
+	w := r.width(r.small, clockText(now)) + 2*r.s(16)
 	top := col.Min.Y - r.s(6)
-	return image.Rect(right-r.s(56), top, right, top+r.s(42))
+	return image.Rect(col.Max.X-w, top, col.Max.X, top+r.s(42))
+}
+
+// glassPill is a pane of frosted glass over the page: on a cover's ground the ground let through a
+// little lighter, with a brighter rim and a sheen across its upper half; on the theme's page a plain
+// button, like the words button's.
+func (r *renderer) glassPill(b image.Rectangle, page nowInk) {
+	x0, y0, x1, y1 := float64(b.Min.X), float64(b.Min.Y), float64(b.Max.X), float64(b.Max.Y)
+	rad := (y1 - y0) / 2
+	if !page.bare {
+		ground := shift(walnut, 10)
+		if !dark() {
+			ground = shift(walnut, -6)
+		}
+		r.roundButton(b, rad, ground)
+		return
+	}
+	under := r.pixel(b)
+	rim := float64(r.s(3)) / 2
+	r.roundFillF(x0, y0, x1, y1, rad, lerp(under, white, 0.30))
+	r.roundFillF(x0+rim, y0+rim, x1-rim, y1-rim, rad-rim, lerp(under, white, 0.12))
+	// The sheen: the upper half a touch lighter still, its corners following the pill's.
+	mid := (y0 + y1) / 2
+	r.roundFillF(x0+rim, y0+rim, x1-rim, mid+rad/2, rad-rim, lerp(under, white, 0.17))
+	r.roundFillF(x0+rim, mid, x1-rim, y1-rim, rad-rim, lerp(under, white, 0.12))
 }
 
 // libraryButton is the button for Music Assistant's own pages (the library, the queue, the groups): a
@@ -276,17 +308,18 @@ func (r *renderer) libraryPill(b image.Rectangle, ink nowInk) {
 }
 
 // lyricsPill is the button: lit while the words are up, on the ground's own color while they are not.
-// On a cover's ground it is a lighter patch of that ground, and white with the ground's color for
+// On a cover's ground it is glass like the clock beside it, and white with the ground's color for
 // lines when lit.
 func (r *renderer) lyricsPill(b image.Rectangle, on bool, page nowInk) {
 	if page.bare {
-		under := r.pixel(b)
-		ground, ink := lerp(under, white, 0.16), white
-		if on {
-			ground, ink = white, under
+		if !on {
+			r.glassPill(b, page)
+			r.verseLines(b, white)
+			return
 		}
-		r.roundFillF(float64(b.Min.X), float64(b.Min.Y), float64(b.Max.X), float64(b.Max.Y), float64(b.Dy())/2, ground)
-		r.verseLines(b, ink)
+		under := r.pixel(b)
+		r.roundFillF(float64(b.Min.X), float64(b.Min.Y), float64(b.Max.X), float64(b.Max.Y), float64(b.Dy())/2, white)
+		r.verseLines(b, under)
 		return
 	}
 	ground, ink := shift(walnut, 10), cream
