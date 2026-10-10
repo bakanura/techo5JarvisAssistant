@@ -36,9 +36,16 @@ func (r *renderer) nowPlaying(s scene) {
 	rd := s.radio
 	cover, col := r.nowPlayingLayout()
 	r.cover.prepare(rd.Thumb, cover.Dx())
+	// A song with a cover takes its ground from the cover, and one without from the theme's color, so
+	// the page looks the same either way. A station's logo sits on the theme's page: a logo is drawn
+	// for a white card, and its colors are the station's, not the music's.
 	ink := themeInk()
-	if r.cover.img != nil && !rd.Logo {
+	switch {
+	case r.cover.img != nil && !rd.Logo:
 		draw.Draw(r.dst, r.dst.Rect, r.cover.groundFor(r.dst.Rect.Size()), image.Point{}, draw.Src)
+		ink = coverInk()
+	case r.cover.img == nil:
+		draw.Draw(r.dst, r.dst.Rect, r.plain.groundFor(r.dst.Rect.Size(), amber), image.Point{}, draw.Src)
 		ink = coverInk()
 	}
 	r.coverArt(rd, cover)
@@ -113,11 +120,18 @@ func (r *renderer) nowPlaying(s scene) {
 		// Which take of the song it is ("Radio Edit", "Remastered 2011") is worth less than the song
 		// and who plays it, so it goes with the album, after it.
 		// When the two don't fit on one line, the take gets a line of its own under the album.
-		album := strings.TrimPrefix(rd.Album+"  ·  "+version, "  ·  ")
-		if version == "" || rd.Album == "" || r.width(r.small, album) <= col.Dx() {
+		// A single's album is the song's own name again; saying it twice says nothing.
+		albumName := rd.Album
+		if a, _ := songParts(albumName); strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(song)) {
+			albumName = ""
+		}
+		album := strings.TrimPrefix(albumName+"  ·  "+version, "  ·  ")
+		switch {
+		case album == "":
+		case version == "" || albumName == "" || r.width(r.small, album) <= col.Dx():
 			line(r.small, strings.TrimSuffix(album, "  ·  "), r.s(42), ink.faint)
-		} else {
-			line(r.small, rd.Album, r.s(42), ink.faint)
+		default:
+			line(r.small, albumName, r.s(42), ink.faint)
 			line(r.small, version, r.s(40), ink.faint)
 		}
 
@@ -352,6 +366,7 @@ func (r *renderer) lyricWords(s scene, col image.Rectangle, head, room int, ink 
 // logo on a light card, or drawn notes or rings on a card of the ground's own color.
 func (r *renderer) coverArt(rd home.Radio, b image.Rectangle) {
 	rad := float64(r.s(18))
+	under := r.pixel(b) // before the shadow darkens it
 	r.roundShadow(b, rad, float64(r.s(18)), r.s(8), shadowAlpha())
 	switch {
 	case r.cover.img != nil && rd.Logo:
@@ -362,13 +377,12 @@ func (r *renderer) coverArt(rd home.Radio, b image.Rectangle) {
 	case r.cover.img != nil:
 		r.roundImage(b, rad, r.cover.img)
 	default:
-		card := shift(walnut, 12)
-		if !dark() {
-			card = shift(walnut, -10)
-		}
+		// A card a shade lighter than the ground it sits on, with the marks in white let through.
+		card := shift(under, 14)
 		r.roundFill(b, rad, shift(card, 6), shift(card, -4))
 		cx, cy, u := (b.Min.X+b.Max.X)/2, (b.Min.Y+b.Max.Y)/2, float64(b.Dx())/400
-		r.faded(70, func() {
+		amber := color.RGBA{0xff, 0xff, 0xff, 0xff}
+		r.faded(60, func() {
 			if rd.Music || rd.Now == "Music Assistant" {
 				// Two notes: heads, stems and a beam.
 				r.disc(cx-int(75*u), cy+int(80*u), int(34*u), amber)
@@ -600,6 +614,29 @@ func (c *coverCache) groundFor(size image.Point) *image.RGBA {
 	for i := range corner {
 		corner[i] = groundTone(vividColor(c.img, image.Rect(i%2*h, i/2*h, i%2*h+h, i/2*h+h)))
 	}
+	c.ground = cornerGround(size, corner)
+	return c.ground
+}
+
+// plainGround is the ground for a song with no cover: the theme's color, darkened as a cover's would
+// be, strongest top left and running into a darker mix of it with the theme's ground.
+type plainGround struct {
+	img  *image.RGBA
+	tint color.RGBA
+}
+
+func (p *plainGround) groundFor(size image.Point, tint color.RGBA) *image.RGBA {
+	if p.img != nil && p.img.Rect.Size() == size && p.tint == tint {
+		return p.img
+	}
+	deep := groundTone(lerp(tint, color.RGBA{0x10, 0x10, 0x14, 0xff}, 0.6))
+	p.img, p.tint = cornerGround(size, [4]color.RGBA{groundTone(tint), deep, deep, groundTone(lerp(tint, deep, 0.5))}), tint
+	return p.img
+}
+
+// cornerGround runs four corner colors (top left, top right, bottom left, bottom right) into each
+// other across a page of size, darker toward the foot, under the controls.
+func cornerGround(size image.Point, corner [4]color.RGBA) *image.RGBA {
 	g := image.NewRGBA(image.Rectangle{Max: size})
 	for y := 0; y < size.Y; y++ {
 		fy := float64(y) / float64(max(size.Y-1, 1))
@@ -611,7 +648,6 @@ func (c *coverCache) groundFor(size image.Point) *image.RGBA {
 			g.Pix[i], g.Pix[i+1], g.Pix[i+2], g.Pix[i+3] = uint8(float64(col.R)*foot), uint8(float64(col.G)*foot), uint8(float64(col.B)*foot), 255
 		}
 	}
-	c.ground = g
 	return g
 }
 

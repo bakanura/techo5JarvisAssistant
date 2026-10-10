@@ -255,6 +255,7 @@ type renderer struct {
 	// cover is the now-playing page's picture at the size it is drawn, and the color it lends the
 	// ground, kept while the song's picture stays the same.
 	cover coverCache
+	plain plainGround
 
 	// calHits are the calendar page's buttons, days and events as last drawn (render_calendar.go).
 	calMu   sync.Mutex
