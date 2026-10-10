@@ -12,7 +12,7 @@ None of it is required: any pipeline works. But these are the settings that made
 
 | | We use | Notes |
 | --- | --- | --- |
-| Speech to text | Whisper add-on (faster-whisper), model `small`, language `de` | See [Whisper](#whisper) for the initial prompt. |
+| Speech to text | Whisper add-on (faster-whisper), model `small-int8`, language `de`, beam size 1 | See [Whisper](#whisper). |
 | Conversation agent | Ollama, a conversation entry named Jarvis | **Prefer handling commands locally** on, so "Licht an" never waits on the model. |
 | Text to speech | Piper, a German voice | |
 
@@ -111,11 +111,18 @@ Why some of it is there:
 The add-on's options are in **Settings → Add-ons → Whisper → Configuration**. `small` with the
 language set is a good trade on a small Home Assistant machine. `medium` and up want a graphics card.
 
+**Beam size 1.** On a small machine most of the wait is Whisper itself: it pads every request to
+30 seconds of audio, so "Ja" costs about as much as a whole sentence. On our Home Assistant VM (two
+cores) `small` with beam size 5 took a bit over 5 seconds per request. Beam size 1 brought that to
+about 4.4, `small-int8` to about 4.2, with the same text on our test sentences. Most of what is left
+is the fixed part, which only a faster CPU or a graphics card makes shorter.
+
 **Keep the initial prompt short, or leave it empty.** The initial prompt is meant to nudge spelling
 (names, words Whisper gets wrong). On silence or noise Whisper tends to hand the prompt back as if
 someone had said it. A word list such as "Wetter, Musik, Spiele Musik, Wohnzimmer, Licht" comes
 back as the transcript, and a conversation agent will act on "Spiele Musik". A sentence with a
-few proper names in it is safer than a list of commands.
+few proper names in it is safer than a list of commands. Ours is "Gespräch mit Jarvis über Home
+Assistant und Taco."
 
 On silence Whisper also writes what it learned from TV subtitles: "Untertitel im Auftrag des ZDF",
 "Vielen Dank fürs Zuschauen". The TV rule in the prompt above catches those.
