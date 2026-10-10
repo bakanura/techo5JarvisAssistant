@@ -2,10 +2,13 @@ blueprint:
   name: Volume where the music is
   description: >-
     "Lautstärke auf 30" said to a Show (or any voice assistant) sets the music playing in its
-    room, or in the room named ("Lautstärke im Bad auf 20"), and the Show itself only when nothing
-    plays there. "Lautstärke runter" steps that music down, which turn-room-down carries back once
-    the conversation is over. "Deine Lautstärke auf 30", "reduziere deine Lautstärke [um 20]", "sei
-    leiser", "du bist zu laut" and the like are always the Show's own speaker.
+    room, or in the room named ("Lautstärke im Bad auf 20"). When nothing plays it sets the room's
+    speakers, so the next song starts at that volume; the Shows' own speakers are never among those.
+    "Lautstärke runter" steps it 10 down, "hoch um 20" 20 up, "hoch mal 2" or "zweimal lauter" two
+    steps up. Music turn-room-down has lowered for the conversation comes back at its old volume
+    plus the step, or at the volume set outright. "Deine Lautstärke auf 30", "reduziere deine
+    Lautstärke [um 20]", "sei leiser", "du bist zu laut" and the like are always the Show's own
+    speaker.
 
     It goes by the area the asking device is in. A speaker that both Music Assistant and its own
     integration have an entity for is set through its own one only. Numbers can be digits or German
@@ -40,8 +43,11 @@ triggers:
 variables:
   rooms: !input rooms
   said: "{{ (trigger.sentence ~ ' ' ~ (trigger.slots.wert | default(''))) | lower }}"
-  level: >-
-    {% set w = (trigger.slots.wert | default('')) | lower | replace('%', ' ') | replace('prozent', ' ') %}
+  # The words after "Lautstärke"; HA makes "30" a number, so each use takes it as a string.
+  wert: "{{ (trigger.slots.wert | default('')) | lower | replace('%', ' ') | replace('prozent', ' ') }}"
+  # The first number said, as digits or German words up to hundert; -1 for none.
+  num: >-
+    {% set w = wert | string %}
     {% set d = w | regex_findall('\\d+') %}
     {% if d %}{{ [d[0] | int, 100] | min }}{% else %}
     {% set ones = {'null': 0, 'ein': 1, 'eins': 1, 'zwei': 2, 'drei': 3, 'vier': 4, 'fünf': 5, 'fuenf': 5,
@@ -65,37 +71,72 @@ variables:
     {% elif 'leiser' in said or 'zu laut' in said or 'reduzier' in said or 'verringer' in said
           or 'senk' in said or said | regex_search('\\b(runter|niedriger|weniger)\\b') %}-1
     {% else %}0{% endif %}
+  # "hoch mal 2", "zweimal lauter", "3-mal runter": how many steps; 0 when no count was said. A bare
+  # "mal" is only German for "just", as in "mach mal lauter".
+  mal: >-
+    {% set n = {'ein': 1, 'zwei': 2, 'drei': 3, 'vier': 4, 'fünf': 5, 'fuenf': 5, 'sechs': 6, 'sieben': 7,
+                'acht': 8, 'neun': 9, 'zehn': 10} %}
+    {% set w = '(\\d+|' ~ (n | list | join('|')) ~ ')' %}
+    {% set m = said | regex_findall('\\b' ~ w ~ '\\s*-?\\s*mal\\b') or said | regex_findall('\\bmal\\s+' ~ w ~ '\\b') %}
+    {% if m %}{{ [(n[m[0]] if m[0] in n else m[0] | int), 10] | min }}{% else %}0{% endif %}
+  # A number is the volume itself unless it came with a step: "Lautstärke auf 30" is 30, "hoch um 20"
+  # is 20 more, and "hoch 2" is two steps.
+  level: >-
+    {{ num | int if mal | int == 0 and (step | int == 0 or said | regex_search('\\bauf\\b')) else -1 }}
+  times: >-
+    {% if mal | int > 0 %}{{ mal | int }}
+    {% elif level | int < 0 and 'um ' not in said and 0 < num | int <= 10 %}{{ num | int }}
+    {% else %}1{% endif %}
+  by: "{{ num | int if level | int < 0 and mal | int == 0 and times | int == 1 and num | int > 0 else 10 }}"
   own: >-
     {{ (device_entities(trigger.device_id) if trigger.device_id else [])
        | select('match', 'media_player\.') | reject('in', integration_entities('music_assistant'))
        | first | default('') }}
   named_area: >-
-    {% set w = (trigger.slots.wert | default('')) | lower %}
+    {% set w = wert | string %}
     {% set ns = namespace(a='') %}
     {% for k, v in (rooms or {}).items() if ns.a == '' and w | regex_search('\\b' ~ k ~ '\\b') %}{% set ns.a = v %}{% endfor %}
     {% for a in areas() if ns.a == '' and area_name(a) | lower in w %}{% set ns.a = a %}{% endfor %}
     {{ ns.a | trim }}
   area: "{{ (named_area | trim) or (area_id(trigger.device_id) if trigger.device_id else '') or '' }}"
-  # What plays in the room, the asking Show's own speaker left out. A speaker both Music Assistant
-  # and its own integration have an entity for is only set through its own one.
+  # The room's speakers: its media players, less any that belong to a voice assistant (the Shows
+  # speak through theirs). A speaker both Music Assistant and its own integration have an entity for
+  # is only set through its own one.
+  speakers: >-
+    {% set ns = namespace(out=[]) %}
+    {% for e in (area_entities(area | trim) if area | trim else []) | select('match', 'media_player\.')
+       if not is_state(e, 'unavailable') %}
+      {% set d = device_id(e) %}
+      {% if not d or device_entities(d) | select('match', 'assist_satellite\.') | list | count == 0 %}
+        {% set ns.out = ns.out + [e] %}
+      {% endif %}
+    {% endfor %}
+    {% set native = ns.out | reject('in', integration_entities('music_assistant')) | list %}
+    {{ native if native else ns.out }}
+  # What plays in the room, the asking Show's own speaker left out (another Show playing music counts).
   music: >-
     {% set p = (area_entities(area | trim) if area | trim else []) | select('match', 'media_player\.')
                | reject('in', device_entities(trigger.device_id) if trigger.device_id else [])
                | select('is_state', 'playing') | list %}
     {% set native = p | reject('in', integration_entities('music_assistant')) | list %}
     {{ native if native else p }}
+  # music: what plays; speakers: nothing plays, so the room's speakers, ready for when something does;
+  # own: the Show itself.
+  kind: >-
+    {% if trigger.id == 'room' and music | count > 0 %}music
+    {% elif trigger.id == 'room' and speakers | count > 0 %}speakers
+    {% elif trigger.id == 'room' and named_area | trim %}none
+    {% elif own %}own{% else %}none{% endif %}
   target: >-
-    {% if trigger.id == 'room' and music | count > 0 %}{{ music }}
-    {% elif trigger.id == 'room' and named_area | trim %}{{ [] }}
-    {% else %}{{ [own] if own else [] }}{% endif %}
-  to_music: "{{ trigger.id == 'room' and music | count > 0 }}"
+    {% set k = kind | trim %}
+    {{ music if k == 'music' else speakers if k == 'speakers' else [own] if k == 'own' else [] }}
 actions:
 - choose:
   - conditions: "{{ target | count == 0 }}"
     sequence:
     - set_conversation_response: >-
-        {% if named_area | trim %}Im Raum {{ area_name(named_area | trim) }} läuft gerade keine Musik.{% else %}Hier weiß ich nicht, was ich lauter oder leiser machen soll.{% endif %}
-  - conditions: "{{ level | int >= 0 and not ('um ' in said and step | int != 0) }}"
+        {% if named_area | trim %}Im Raum {{ area_name(named_area | trim) }} gibt es keinen Lautsprecher, den ich kenne.{% else %}Hier weiß ich nicht, was ich lauter oder leiser machen soll.{% endif %}
+  - conditions: "{{ level | int >= 0 }}"
     sequence:
     - action: media_player.volume_set
       target:
@@ -104,28 +145,33 @@ actions:
         volume_level: "{{ (level | int) / 100 }}"
       continue_on_error: true
     - set_conversation_response: >-
-        {% if to_music %}Musik auf {{ level | int }} Prozent.{% else %}Ich bin jetzt auf {{ level | int }} Prozent.{% endif %}
-  - conditions: "{{ step | int != 0 and to_music }}"
-    sequence:
-    # Stepped, not set, so turn-room-down brings it back to its old volume plus the step.
-    - action: "media_player.volume_{{ 'up' if step | int > 0 else 'down' }}"
-      target:
-        entity_id: "{{ target }}"
-      continue_on_error: true
-    - set_conversation_response: Mach ich.
+        {% set k = kind | trim %}
+        {% if k == 'music' %}Musik auf {{ level | int }} Prozent.{% elif k == 'speakers' %}Lautsprecher auf {{ level | int }} Prozent.{% else %}Ich bin jetzt auf {{ level | int }} Prozent.{% endif %}
   - conditions: "{{ step | int != 0 }}"
     sequence:
     - variables:
-        by: "{{ (level | int if level | int > 0 else 10) / 100 }}"
-        new: >-
-          {% set v = state_attr(target[0], 'volume_level') | float(0.5) + (step | int) * by %}
-          {{ ([[v, 0] | max, 1] | min) | round(2) }}
-    - action: media_player.volume_set
-      target:
+        delta: "{{ (step | int) * (times | int) * (by | int) / 100 }}"
+    # Said first, so turn-room-down knows this was a step before it sees the volume move: music it has
+    # turned down for the conversation comes back at its old volume plus the step.
+    - event: techo5_volume_step
+      event_data:
         entity_id: "{{ target }}"
-      data:
-        volume_level: "{{ new }}"
-      continue_on_error: true
-    - set_conversation_response: Ich bin jetzt auf {{ (new * 100) | round | int }} Prozent.
+        by: "{{ delta }}"
+    - repeat:
+        for_each: "{{ target }}"
+        sequence:
+        - action: media_player.volume_set
+          target:
+            entity_id: "{{ repeat.item }}"
+          data:
+            volume_level: >-
+              {% set v = state_attr(repeat.item, 'volume_level') | float(0.5) + delta | float %}
+              {{ ([[v, 0] | max, 1] | min) | round(2) }}
+          continue_on_error: true
+    - set_conversation_response: >-
+        {% set k = kind | trim %}
+        {% set dir = 'lauter' if step | int > 0 else 'leiser' %}
+        {% if k == 'music' %}{% if times | int > 1 %}{{ times }} Stufen {{ dir }}.{% elif by | int != 10 %}{{ by }} Prozent {{ dir }}.{% else %}Eine Stufe {{ dir }}.{% endif %}
+        {% else %}{{ 'Lautsprecher jetzt' if k == 'speakers' else 'Ich bin jetzt' }} auf {{ (state_attr(target[0], 'volume_level') | float(0) * 100) | round | int }} Prozent.{% endif %}
   default:
   - set_conversation_response: Das hab ich nicht als Zahl verstanden.

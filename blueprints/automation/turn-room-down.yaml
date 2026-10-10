@@ -97,14 +97,21 @@ actions:
           continue_on_error: true
   # Until it has been idle for the whole of quiet. Each time round it works out from the state how
   # long that still is, so a turn that was over before this got here counts too, and starts again
-  # whenever the assistant moves. Five minutes without it going idle is a stuck assistant, and the
-  # music comes back up anyway.
+  # whenever the assistant goes idle or stops being idle. Only those two: a wait that ended at every
+  # listening, processing and responding would be between two waits just when "Lautstärke auf 30"
+  # comes in, a few milliseconds after processing starts, and miss it. Five minutes without it going
+  # idle is a stuck assistant, and the music comes back up anyway.
   #
-  # Meanwhile it notes the speakers somebody sets outright. "Lautstärke auf 30" and a slider both
-  # call volume_set, which shows up as a call_service event; "lauter" and "leiser" step the speaker
-  # directly and do not, so a speaker that moved without one was stepped.
+  # Meanwhile it notes what was done to the speakers. "Lautstärke auf 30" and a slider both call
+  # volume_set, which shows up as a call_service event: that speaker stays where it was put.
+  # "Lautstärke hoch" from volume-where-the-music-is says how far it stepped in a techo5_volume_step
+  # event first, then sets the lowered volume plus the step, which is not an outright set (same
+  # context). A speaker that moved with neither was stepped some other way, and the step is read
+  # off the volume.
   - variables:
       set_outright: []
+      stepped: {}
+      step_contexts: []
   - repeat:
       sequence:
         - variables:
@@ -114,16 +121,41 @@ actions:
         - wait_for_trigger:
             - trigger: state
               entity_id: !input satellite
+              to: idle
+            - trigger: state
+              entity_id: !input satellite
+              from: idle
             - trigger: event
               event_type: call_service
               event_data:
                 domain: media_player
                 service: volume_set
+            - trigger: event
+              event_type: techo5_volume_step
           timeout:
             seconds: "{{ [quiet - idle_for, 0.1] | max if idle_for >= 0 else 300 }}"
         - if:
             - condition: template
-              value_template: "{{ wait.trigger is not none and wait.trigger.event is defined }}"
+              value_template: >-
+                {{ wait.trigger is not none and wait.trigger.event is defined
+                   and wait.trigger.event.event_type == 'techo5_volume_step' }}
+          then:
+            - variables:
+                stepped: >-
+                  {% set e = wait.trigger.event.data.entity_id | default([]) %}
+                  {% set e = [e] if e is string else e | list %}
+                  {% set ns = namespace(out=stepped) %}
+                  {% for s in e if s in was %}
+                    {% set ns.out = dict(ns.out, **{s: (ns.out[s] | default(0)) + wait.trigger.event.data.by | float(0)}) %}
+                  {% endfor %}
+                  {{ ns.out }}
+                step_contexts: "{{ step_contexts + [wait.trigger.event.context.id] }}"
+        - if:
+            - condition: template
+              value_template: >-
+                {{ wait.trigger is not none and wait.trigger.event is defined
+                   and wait.trigger.event.event_type == 'call_service'
+                   and wait.trigger.event.context.id not in step_contexts }}
           then:
             - variables:
                 set_outright: >-
@@ -138,9 +170,10 @@ actions:
       sequence:
         - variables:
             moved: >-
-              {{ state_attr(repeat.item, 'volume_level') | float(down[repeat.item]) - down[repeat.item] }}
+              {{ stepped[repeat.item] if repeat.item in stepped
+                 else state_attr(repeat.item, 'volume_level') | float(down[repeat.item]) - down[repeat.item] }}
         # Set outright, it stays. Otherwise back to where it was, plus whatever it was stepped by:
-        # 0.62 turned down to 0.06 and stepped to 0.16 comes back at 0.72.
+        # 0.62 turned down to 0.06 and stepped up by 0.1 comes back at 0.72.
         - if:
             - condition: template
               value_template: "{{ repeat.item not in set_outright }}"
