@@ -205,8 +205,11 @@ class JarvisCrownInstallTests(unittest.TestCase):
             self.assertEqual(argv[argv.index("--dashcast") + 1], "10.0.0.5:9555")
             self.assertEqual(argv[argv.index("--dashcast-key-file") + 1], str(key))
             self.assertEqual(argv[argv.index("--music-assistant") + 1], "10.0.0.6")
+            pw = pathlib.Path(td) / "root_password"
+            argv = list(make_install_plan(**common, root_password_file=pw).argv)
+            self.assertEqual(argv[argv.index("--root-password-file") + 1], str(pw))
             plain = list(make_install_plan(**common).argv)
-            for flag in ("--ha-url", "--dashcast", "--music-assistant"):
+            for flag in ("--ha-url", "--dashcast", "--music-assistant", "--root-password-file"):
                 self.assertNotIn(flag, plain)
             with self.assertRaises(InstallError):
                 make_install_plan(**common, ha_url="http://ha.example:8123")

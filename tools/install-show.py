@@ -54,8 +54,8 @@ import zipfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from techo5lib import (CONSOLE_TECHO5, Adb, Console, Fastboot, Release, ask_name, ask_wifi,  # noqa: E402
                        check_serial_access, confirm, console_hint, default_dir, fail, fetch_json, md5, need,
-                       new_api_key, note, pick_unit, run_main, step, valid_api_key, wait_for, wifi_conf,
-                       write_private)
+                       new_api_key, note, pick_unit, run_main, sha512_crypt, step, valid_api_key, wait_for,
+                       wifi_conf, write_private)
 from jarvis_crown.timing import (FASTBOOT_REENUM_TIMEOUT_SECONDS, FIRST_BOOT_TIMEOUT_SECONDS,
                                   RESCUE_CONSOLE_TIMEOUT_SECONDS, TWRP_DATA_REBOOT_TIMEOUT_SECONDS)  # noqa: E402
 
@@ -75,6 +75,31 @@ BOARDS = {
     'checkers': 'Echo Show 5 1st gen',
     'crown': 'Echo Show 8 1st gen',
 }
+
+
+def root_password_hash(path):
+    """The SHA-512 crypt hash of root's password, from path or asked for; None leaves the Show without one."""
+    if path:
+        with open(path) as f:
+            pw = f.readline().rstrip('\r\n')
+    elif sys.stdin.isatty():
+        import getpass
+        print("Root's password, which the Show's USB console asks for (8 to 128 characters; empty for none):")
+        while True:
+            pw = getpass.getpass('  password: ')
+            if not pw:
+                return None
+            if not 8 <= len(pw) <= 128 or any(ord(c) < 32 for c in pw) or pw != pw.strip():
+                print('  8 to 128 characters, no control characters, no spaces at the ends')
+                continue
+            if getpass.getpass('  again: ') == pw:
+                break
+            print('  the two did not match')
+    else:
+        return None
+    if not 8 <= len(pw) <= 128 or any(ord(c) < 32 for c in pw) or pw != pw.strip():
+        fail('the root password in %s is not 8 to 128 characters without control characters or spaces at its ends' % path)
+    return sha512_crypt(pw)
 
 
 def quote(s):
@@ -489,6 +514,8 @@ def main():
     ap.add_argument('--dashcast', help='the DashCast server, host[:port] (port 9555 when left out)')
     ap.add_argument('--dashcast-key-file', help='a file holding the DashCast server key (with --dashcast)')
     ap.add_argument('--music-assistant', help="the Music Assistant server's IP address, which the Sendspin player pairs with")
+    ap.add_argument('--root-password-file', help="a file holding root's password, which the Show's USB console asks for; "
+                    'asked for when missing (only its hash goes to the unit)')
     ap.add_argument('--amazon-logo', action='store_true',
                     help="from TWRP on a Show 5 2nd gen or a Show 8: keep Amazon's logo at boot rather than put TECHO5's in")
     ap.add_argument('--dry-run', action='store_true', help='download and check the release; write nothing')
@@ -595,6 +622,9 @@ def main():
         else:
             wifi = wifi_keys(ask_wifi(a.wifi))
         note("Wi-Fi: '%s' (only its key goes to the unit)" % a.wifi)
+    root_hash = root_password_hash(a.root_password_file)
+    note('root password: %s' % ('set (the USB console asks for it)' if root_hash else
+                                'none (the USB console opens a shell; techo5-passwd on the Show sets one)'))
     a.name = ask_name(a.name, BOARDS[dev])
     note("name in Home Assistant: '%s'" % a.name)
     if not a.dry_run:
@@ -818,6 +848,14 @@ def main():
     if 'PROV-OK' not in (o or ''):
         fail('provisioning failed:\n%s' % o)
     note("name '%s' and Home Assistant key%s%s written" % (a.name, ', SSH key' if pub else '', ', Wi-Fi' if wifi else ''))
+    if root_hash:
+        # Its own command: the hash is over a hundred characters and the console's line is short.
+        # boot.sh lays it over /etc/shadow; the console asks for it once the install is done.
+        o = console.run("(umask 077; printf '%%s\\n' %s > /data/misc/techo5/root_pw) && sync && echo PW-OK"
+                        % quote(root_hash), 15) or ''
+        if 'PW-OK' not in o:
+            fail('the root password was not written:\n%s' % o)
+        note('root password written (its hash)')
     # The daemon's settings, each its own short command: a line typed into the console's shell has a
     # length limit, and the token alone is a couple of hundred characters.
     first = initial_state(bool(pub), settings)

@@ -400,7 +400,7 @@ class RoomTests(unittest.TestCase):
 
 def args(**kw):
     base = dict(wifi=None, wifi_passphrase_file=None, ha_url=None, ha_token_file=None, ha_admin_token_file=None,
-                dashcast=None, dashcast_key_file=None, music_assistant=None)
+                dashcast=None, dashcast_key_file=None, music_assistant=None, root_password_file=None)
     base.update(kw)
     return argparse.Namespace(**base)
 
@@ -536,6 +536,32 @@ class GatherTests(unittest.TestCase):
                    lookup=lambda secret, **attrs: keyring.get(secret))
         self.assertIsNone(s.music_assistant_token)
 
+    def test_root_password_only_for_an_install(self):
+        keyring = {"root-password": "  not stripped"}
+        s = gather(args(), Asker(False), defaults={}, lookup=lambda secret, **attrs: keyring.get(secret))
+        self.assertIsNone(s.root_password)
+        keyring = {"root-password": "correct horse"}
+        s = gather(args(), Asker(False), defaults={}, lookup=lambda secret, **attrs: keyring.get(secret),
+                   want_root_password=True)
+        self.assertEqual(s.root_password, "correct horse")
+        self.assertIn("root password: set", s.summary())
+        self.assertFalse(any("correct horse" in line for line in s.summary()))
+        with self.assertRaises(SettingsError):
+            gather(args(), Asker(False), defaults={}, lookup=lambda secret, **attrs: {"root-password": "short"}.get(secret),
+                   want_root_password=True)
+
+    def test_root_password_asked_twice_then_left_out(self):
+        asker, said = self.asker(["-", "-", "-"], ["short", "long enough", "long enough"])
+        s = gather(args(), asker, defaults={}, lookup=lambda *a, **k: None, want_wifi=False, want_root_password=True)
+        self.assertEqual(s.root_password, "long enough")
+        self.assertTrue(any("8 to 128" in line for line in said))
+        self.assertTrue(any("secret-tool store" in line and "root-password" in line for line in said))
+        asker, said = self.asker(["-", "-", "-"], ["", ""])
+        s = gather(args(), asker, defaults={}, lookup=lambda *a, **k: None, want_wifi=False, want_root_password=True)
+        self.assertIsNone(s.root_password)
+        self.assertTrue(any("root shell" in line for line in said))
+        self.assertIn("root password: none (the USB console needs none)", s.summary())
+
     def test_defaults_keep_no_secret(self):
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td) / "jarvis-show" / "defaults.json"
@@ -554,6 +580,8 @@ class GatherTests(unittest.TestCase):
             self.assertEqual(files["ha_token"].read_text(), TOKEN + "\n")
             folder = files["ha_token"].parent
         self.assertFalse(folder.exists())
+        with secret_files(Settings(root_password="correct horse")) as files:
+            self.assertEqual(files["root_password"].read_text(), "correct horse\n")
 
 
 class MusicAssistantTests(unittest.TestCase):

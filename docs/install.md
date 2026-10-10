@@ -61,7 +61,9 @@ It does steps 1 to 6 below: downloads the latest release and checks the boot ima
 against their checksums, keeps LineageOS's boot image in `backups/<serial>/` when adb is root, flashes,
 creates the slot store over the USB serial console, provisions the name and
 the Home Assistant key (kept in `backups/<serial>/home-assistant.key`), and waits for the first boot.
-`--ssh-key ~/.ssh/id_ed25519.pub` also turns SSH on with your key. Then go to
+`--ssh-key ~/.ssh/id_ed25519.pub` also turns SSH on with your key. It also asks for a root password,
+which the USB console asks for later (see [USB debugging](#usb-debugging)); only its hash goes to the
+unit. From a script, `--root-password-file <file>` gives it; with neither, the unit has none. Then go to
 [step 7](#7-add-it-to-home-assistant).
 
 On Linux you may need to be in the `dialout` group for the serial console
@@ -110,8 +112,14 @@ Security → USB debugging** on the Show; it stays on across restarts until it i
 `show-wifi.py` and `jarvis-show.py wifi` need it on. Home Assistant shows the same switch, but it
 only turns it on over an encrypted link (a device key set), like SSH.
 
+With a root password set, the console asks for it (log in as `root`) and logs itself out after ten
+idle minutes; turning USB debugging off also ends the session. `show-wifi.py` and `jarvis-show.py
+wifi` ask for the password when the console wants it. Over SSH, `techo5-passwd` on the Show sets or
+changes it, and `techo5-passwd -d` removes it. A Show installed before this has none until it is set
+that way.
+
 The rescue environment is different: it is what is left when a system won't start, so its serial
-console is always there.
+console is always there, without a password.
 
 If an install stops partway, after the boot image was flashed, the unit is left in the rescue
 environment (its screen says RESCUE) and a re-run can't see it over adb; the installer says so. The
@@ -248,6 +256,9 @@ printf '{"security":{"ssh":true}}\n' > /data/misc/techo5/state.json   # only on 
 printf 'install\n' > /data/misc/techo5/usb_debug
 sync
 ```
+
+A root password for the USB console is set after the first boot: run `techo5-passwd` on the
+console (or over SSH) and type it twice.
 
 ## 6. Boot TECHO5
 

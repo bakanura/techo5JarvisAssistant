@@ -10,7 +10,13 @@ on)
 	t5_usb_acm
 	t5_usb_host 1
 	;;
-off) t5_usb_off ;;
+off)
+	t5_usb_off
+	# The shell on the port ends with it, so nobody finds it still logged in when the port opens
+	# again; init starts a fresh one, which asks for the password when one is set.
+	p=$(cat /run/techo5/console.pid 2>/dev/null)
+	[ -n "$p" ] && kill -HUP "$p" 2>/dev/null
+	;;
 *)
 	echo "usage: techo5-usb on|off" >&2
 	exit 2

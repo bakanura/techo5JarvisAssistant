@@ -48,10 +48,13 @@ class Settings:
     # Only with --music-assistant-local-metadata: a Music Assistant token, used once to switch its
     # online lookups off (music_assistant.py), and kept nowhere.
     music_assistant_token: str | None = None
+    # Root's password, which the Show's USB console asks for. Only its hash reaches the Show.
+    root_password: str | None = None
 
     def summary(self) -> list[str]:
         """What will be set, without a single secret in it."""
         out = [f"Wi-Fi: {self.wifi}" if self.wifi else "Wi-Fi: picked on the Show's screen"]
+        out.append("root password: set" if self.root_password else "root password: none (the USB console needs none)")
         out.append(f"Home Assistant: {self.ha_url}" if self.ha_url and self.ha_token else "Home Assistant access: not now")
         out.append(f"DashCast: {self.dashcast}" if self.dashcast else "DashCast: not now")
         out.append(f"Music Assistant: {self.music_assistant}" if self.music_assistant else "Music Assistant: not now")
@@ -221,6 +224,16 @@ def check_wifi_passphrase(value: str) -> str:
     return value
 
 
+def check_root_password(value: str) -> str:
+    if not 8 <= len(value) <= 128:
+        raise ValueError("a root password is 8 to 128 characters")
+    if any(ord(ch) < 32 for ch in value):
+        raise ValueError("a root password has no control characters")
+    if value != value.strip():
+        raise ValueError("a root password has no spaces at its ends")
+    return value
+
+
 def nearby_networks(limit: int = 12) -> list[str]:
     """The Wi-Fi networks this computer can see, strongest first (NetworkManager only; else none)."""
     nmcli = shutil.which("nmcli")
@@ -250,6 +263,7 @@ def _checked(value: str | None, check: Callable[[str], str]) -> str | None:
 def gather(args, asker: Asker, *, defaults: dict[str, str] | None = None,
            lookup: Callable[..., str | None] = keyring_lookup,
            resolve: Callable[[str], str] = _resolve, want_wifi: bool = True,
+           want_root_password: bool = False,
            nearby: Callable[[], list[str]] = nearby_networks) -> Settings:
     """Everything the Show is set up with: switches first, then the keyring, then the terminal."""
     d = defaults if defaults is not None else load_defaults()
@@ -266,6 +280,21 @@ def gather(args, asker: Asker, *, defaults: dict[str, str] | None = None,
         return _checked(read_secret_file(path, what), check) if path else None
 
     s = Settings()
+    if want_root_password:
+        say("Root password (the Show's USB console asks for it):")
+        pw = from_file("root_password_file", "root password", check_root_password) or \
+            _checked(lookup("root-password", strip=False), check_root_password)
+        if pw is None and asker.interactive:
+            pw = asker.secret("root password", check_root_password, strip=False, confirm=True)
+            if pw is None:
+                say("   without one, whoever switches USB debugging on at the Show gets a root shell;")
+                say("   Enter again leaves it without (techo5-passwd on the Show sets one later)")
+                pw = asker.secret("root password", check_root_password, strip=False, confirm=True)
+            if pw:
+                say("   to skip this next time, keep it in the keyring:")
+                say("     secret-tool store --label='Jarvis Show: root password' application jarvis-show "
+                    "secret root-password")
+        s = replace(s, root_password=pw)
     if want_wifi:
         say("Wi-Fi (the Show joins it on first boot):")
         wifi = _checked(getattr(args, "wifi", None), check_network)
@@ -350,7 +379,7 @@ def secret_files(settings: Settings) -> Iterator[dict[str, Path]]:
     """The secrets as owner-only files in a private folder that is removed afterwards."""
     with tempfile.TemporaryDirectory(prefix="jarvis-show-") as tmp:
         out: dict[str, Path] = {}
-        for name in ("wifi_passphrase", "ha_token", "dashcast_key"):
+        for name in ("wifi_passphrase", "ha_token", "dashcast_key", "root_password"):
             value = getattr(settings, name)
             if not value:
                 continue

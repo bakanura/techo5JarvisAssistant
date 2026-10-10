@@ -114,6 +114,28 @@ t5_usb_host() {
 	done
 }
 
+# T5_ROOT_PW is root's password as /etc/shadow keeps it ("$6$salt$hash"), set by the installer or
+# techo5-passwd; factory reset removes it. The root filesystem is read-only, so t5_root_pw lays a copy
+# of /etc/shadow with that line over it. While one is set, the serial console asks for it.
+T5_ROOT_PW=/data/misc/techo5/root_pw
+
+# t5_root_pw: puts the stored password in force, or takes it out; true while one is in force.
+t5_root_pw() {
+	while grep -q " /etc/shadow " /proc/mounts; do umount /etc/shadow || break; done
+	rm -f /run/techo5/root_pw_on /run/techo5/shadow
+	h=$(head -n 1 $T5_ROOT_PW 2>/dev/null)
+	# Only the characters crypt writes, so the line can't break the file or the sed.
+	case $h in
+	'$6$'*) ;;
+	*) return 1 ;;
+	esac
+	case $h in *[!A-Za-z0-9./\$=]*) log "root password: stored line is not a hash, ignored"; return 1 ;; esac
+	(umask 027; sed "s|^root:[^:]*:|root:$h:|" /etc/shadow > /run/techo5/shadow) || return 1
+	chown root:shadow /run/techo5/shadow 2>/dev/null
+	mount --bind /run/techo5/shadow /etc/shadow || return 1
+	: > /run/techo5/root_pw_on
+}
+
 # t5_wifi_store_records <xml>: the networks in an Android WifiConfigStore, three
 # lines each on stdout - S:<name>, K:<key management>, P:<key> - with the name
 # and the key still in the form Android wrote them (a quoted string, or hex for

@@ -1,0 +1,24 @@
+#!/bin/sh
+# techo5-passwd: sets root's password, which the USB serial console asks for (SSH stays key-only).
+# techo5-passwd -d takes it out again. The installer sets one; this is for a unit installed before
+# that, or to change it. Factory reset removes it.
+log() { echo "techo5-passwd: $*" > /dev/kmsg; }
+. /lib/techo5-lib.sh
+if [ "$1" = -d ]; then
+	rm -f $T5_ROOT_PW && sync
+	t5_root_pw
+	echo "root password removed"
+	exit 0
+fi
+[ -t 0 ] || { echo "techo5-passwd: run it on a terminal" >&2; exit 2; }
+trap 'stty echo' EXIT INT TERM
+stty -echo
+printf 'New root password: '; read -r a; echo
+printf 'Again: '; read -r b; echo
+stty echo
+[ ${#a} -ge 8 ] && [ ${#a} -le 128 ] || { echo "8 to 128 characters, nothing changed" >&2; exit 1; }
+[ "$a" = "$b" ] || { echo "the two differ, nothing changed" >&2; exit 1; }
+h=$(printf '%s' "$a" | cryptpw -m sha512) || exit 1
+(umask 077; printf '%s\n' "$h" > $T5_ROOT_PW.tmp) && mv -f $T5_ROOT_PW.tmp $T5_ROOT_PW && sync
+t5_root_pw || { echo "techo5-passwd: could not put it in force" >&2; exit 1; }
+echo "root password set; the USB console asks for it from its next login"

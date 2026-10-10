@@ -328,6 +328,53 @@ class Release:
         return out
 
 
+_CRYPT64 = './0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+
+
+def sha512_crypt(password, salt=None, rounds=5000):
+    """The unit's root password as /etc/shadow keeps it ("$6$salt$hash", glibc's and busybox's SHA-512
+    crypt), made here so the password itself never crosses the serial line. Python dropped its crypt
+    module, and Windows never had one."""
+    pw = password.encode('utf-8')
+    salt = (salt or ''.join(secrets.choice(_CRYPT64) for _ in range(16)))[:16].encode('ascii')
+    b = hashlib.sha512(pw + salt + pw).digest()
+    a = hashlib.sha512(pw + salt)
+    n = len(pw)
+    while n > 64:
+        a.update(b)
+        n -= 64
+    a.update(b[:n])
+    n = len(pw)
+    while n:
+        a.update(b if n & 1 else pw)
+        n >>= 1
+    a = a.digest()
+    p = hashlib.sha512(pw * len(pw)).digest()
+    p = (p * (len(pw) // 64 + 1))[:len(pw)]
+    s = hashlib.sha512(salt * (16 + a[0])).digest()
+    s = (s * (len(salt) // 64 + 1))[:len(salt)]
+    c = a
+    for i in range(rounds):
+        h = hashlib.sha512(p if i & 1 else c)
+        if i % 3:
+            h.update(s)
+        if i % 7:
+            h.update(p)
+        h.update(c if i & 1 else p)
+        c = h.digest()
+    order = [(0, 21, 42), (22, 43, 1), (44, 2, 23), (3, 24, 45), (25, 46, 4), (47, 5, 26), (6, 27, 48),
+             (28, 49, 7), (50, 8, 29), (9, 30, 51), (31, 52, 10), (53, 11, 32), (12, 33, 54), (34, 55, 13),
+             (56, 14, 35), (15, 36, 57), (37, 58, 16), (59, 17, 38), (18, 39, 60), (40, 61, 19), (62, 20, 41)]
+    out = []
+    for x, y, z in order:
+        v = (c[x] << 16) | (c[y] << 8) | c[z]
+        out += [_CRYPT64[(v >> 6 * k) & 63] for k in range(4)]
+    v = c[63]
+    out += [_CRYPT64[(v >> 6 * k) & 63] for k in range(2)]
+    head = '$6$' if rounds == 5000 else '$6$rounds=%d$' % rounds
+    return head + salt.decode('ascii') + '$' + ''.join(out)
+
+
 def alpine(workdir):
     out = os.path.join(workdir, ALPINE_URL.rsplit('/', 1)[-1])
     download_checked(ALPINE_URL, out, ALPINE_SHA256)
@@ -820,15 +867,52 @@ def list_consoles(ids):
 _ESCAPES = re.compile(r'\x1b\[[0-9;?]*[A-Za-z]')
 
 
-def console_exchange(port, command, wait):
+class ConsoleLocked(Exception):
+    """The console asks for root's password (a Show with one set), and none was given or it was wrong."""
+
+
+def _read_until(sp, words, wait):
+    """What the port printed until a line holds one of words, or until wait runs out."""
+    buf, deadline = b'', time.time() + wait
+    while time.time() < deadline:
+        chunk = sp.read()
+        if chunk:
+            buf += chunk
+            text = _ESCAPES.sub('', buf.decode('utf-8', 'replace'))
+            if any(w in text for w in words):
+                return text
+        else:
+            time.sleep(0.1)
+    return _ESCAPES.sub('', buf.decode('utf-8', 'replace'))
+
+
+def _log_in(sp, password):
+    if password is None:
+        raise ConsoleLocked("the console asks for root's password")
+    sp.write(b'root\n')
+    if 'assword:' not in _read_until(sp, ('assword:',), 5):
+        raise ConsoleLocked('the console asked for a login but not for a password')
+    sp.write(password.encode('utf-8') + b'\n')
+    # busybox login takes a moment to check the hash, and waits a few seconds after a wrong one.
+    after = _read_until(sp, ('Login incorrect', '# ', '$ '), 10)
+    if 'Login incorrect' in after or 'login:' in after:
+        raise ConsoleLocked("root's password was not accepted")
+    time.sleep(0.3)
+    sp.read()
+
+
+def console_exchange(port, command, wait, password=None):
     """Runs one command on a console and returns what it printed, or None when no answer came. The
     markers are printed from variables and matched as whole lines, so the shell echoing the typed line
-    (wrapped at 80 columns) never matches one."""
+    (wrapped at 80 columns) never matches one. A console that asks for a login gets root and password;
+    without one it raises ConsoleLocked."""
     sp = SerialPort(port)
     try:
         sp.write(b'\n')
         time.sleep(0.4)
-        sp.read()
+        first = _ESCAPES.sub('', sp.read().decode('utf-8', 'replace')).rstrip()
+        if first.endswith('login:'):
+            _log_in(sp, password)
         tag = secrets.token_hex(4)
         begin, end = '__T5BEGIN%s__' % tag, '__T5END%s__' % tag
         sp.write(('b=%s; m=%s; echo $b; %s; echo $m\n' % (begin, end, command)).encode('utf-8'))
@@ -865,6 +949,8 @@ class Console:
 
     def __init__(self, serial, ids):
         self.serial, self.ids, self.port = serial, ids, None
+        # root's password, asked for the first time the console wants it (a Show with one set).
+        self.password = None
         # blocked is why the last port tried could not be opened, empty when it could. It used to be
         # dropped, so a console that was there all along but not this user's to open (Linux's dialout
         # group, or ModemManager holding it) looked the same as no console at all, for the whole wait.
@@ -875,12 +961,24 @@ class Console:
 
     def _is_unit(self, port):
         try:
-            out = console_exchange(port, 'grep -q androidboot.serialno=%s /proc/cmdline && echo IS-THE-UNIT' % self.serial, 3)
+            out = self._exchange(port, 'grep -q androidboot.serialno=%s /proc/cmdline && echo IS-THE-UNIT' % self.serial, 3)
         except OSError as e:
             self._opened(port, e)
             return False
         self._opened(port)
         return bool(out) and 'IS-THE-UNIT' in out
+
+    def _exchange(self, port, command, wait):
+        for tries in range(4):
+            try:
+                return console_exchange(port, command, wait, self.password)
+            except ConsoleLocked as e:
+                if not sys.stdin.isatty() or tries == 3:
+                    fail('%s%s' % (e, '' if sys.stdin.isatty() else '; run this from a terminal to type it'))
+                if self.password is not None:
+                    print('   %s' % e)
+                import getpass
+                self.password = getpass.getpass("   root's password on the Show (set at install, or with techo5-passwd): ")
 
     def waiting_hint(self):
         """What is likely keeping the console from answering, for somebody watching the wait."""
@@ -923,7 +1021,7 @@ class Console:
                    'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; ( %s ); fi'
                    % (self.serial, command))
         try:
-            out = console_exchange(port, guarded, wait)
+            out = self._exchange(port, guarded, wait)
         except OSError as e:
             self._opened(port, e)
             self.port = None

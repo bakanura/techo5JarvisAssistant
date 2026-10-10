@@ -56,6 +56,8 @@ def parse_args() -> argparse.Namespace:
     setup.add_argument("--dashcast", help="the DashCast server, host[:port]")
     setup.add_argument("--dashcast-key-file", type=Path, help="a file holding the DashCast key; default the keyring, then ask")
     setup.add_argument("--music-assistant", help="the Music Assistant server's IP address or name")
+    setup.add_argument("--root-password-file", type=Path,
+                       help="install: a file holding root's password for the USB console; default the keyring, then ask")
     setup.add_argument("--music-assistant-local-metadata", action="store_true",
                        help="switch Music Assistant's online metadata lookups off, for a library that is already "
                             "tagged; off unless given")
@@ -446,7 +448,7 @@ def main() -> int:
 
         # Everything the Show starts with, asked before anything on it is touched.
         try:
-            settings = gather(args, _asker(args))
+            settings = gather(args, _asker(args), want_root_password=True)
         except SettingsError as exc:
             print(f"FAIL: {exc}", file=sys.stderr)
             return 1
@@ -489,6 +491,7 @@ def main() -> int:
                 dashcast=settings.dashcast,
                 dashcast_key_file=files.get("dashcast_key") if settings.dashcast else None,
                 music_assistant=settings.music_assistant,
+                root_password_file=files.get("root_password"),
                 ssh_key=args.ssh_key.resolve() if args.ssh_key else None,
                 expected_fastboot_serial=identity.serial if identity is not None else None,
             )

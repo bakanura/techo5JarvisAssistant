@@ -51,6 +51,8 @@ if [ ! -e /data/misc/techo5/timezone ] || [ ! -e /data/misc/techo5/localtime ]; 
 	echo "$zone" > /data/misc/techo5/timezone
 fi
 mkdir -p -m 700 /data/misc/techo5/ssh
+# Root's password, when one was set: in force before the serial console starts.
+t5_root_pw && log "root password: set" || log "root password: none"
 # The kernel keeps its last words in RAM across a restart (pstore). Mounting it makes them readable,
 # and a copy on userdata outlives the next boot; a power cut clears the RAM, so this only catches a
 # device that restarted itself.

@@ -212,6 +212,7 @@ def make_install_plan(
     dashcast: str | None = None,
     dashcast_key_file: Path | None = None,
     music_assistant: str | None = None,
+    root_password_file: Path | None = None,
 ) -> InstallPlan:
     profile = profile_for_board(board)
     if confirmation != profile.install_confirmation:
@@ -270,6 +271,8 @@ def make_install_plan(
         argv.extend(["--dashcast", dashcast, "--dashcast-key-file", str(dashcast_key_file)])
     if music_assistant:
         argv.extend(["--music-assistant", music_assistant])
+    if root_password_file:
+        argv.extend(["--root-password-file", str(root_password_file)])
 
     required = {
         "--jarvis-show-prestaged",
