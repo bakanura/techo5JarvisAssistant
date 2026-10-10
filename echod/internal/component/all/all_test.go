@@ -169,6 +169,7 @@ var registered = []string{
 	"voice_resampling",
 	"wake_assistant_1",
 	"wake_effect_1",
+	"wake_near_miss",
 	"wake_threshold_1",
 	"wake_tone_1",
 	"weather_alerts",

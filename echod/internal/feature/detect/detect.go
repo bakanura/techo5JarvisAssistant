@@ -38,6 +38,10 @@ type Detect struct {
 
 	// ducker gets the music out of the way after an utterance that nearly fired; see nearmiss.go.
 	ducker *ducker
+
+	// nearMiss tells Home Assistant about the same moment, for music this device does not play and so
+	// cannot duck: a speaker elsewhere in the room, which only Home Assistant can turn down.
+	nearMiss *esphome.Event
 }
 
 var (
@@ -88,6 +92,9 @@ func newDetect() *Detect {
 	e.Threshold = func(slot int) float64 {
 		return thresholdFor(slot, wakeword.Threshold, config.Get().Wake.Stop.Threshold, mic.Get().Masking())
 	}
+	// The wake words only, and not over the device's own playback, for the same reason they get no
+	// slack there: the residual of its own songs comes close often enough to be heard twice.
+	e.SecondTry = func(slot int) bool { return slot != StopSlot && !mic.Get().Masking() }
 
 	e.OnDetect = func(slot int) {
 		// A call has the microphones and the speaker. The far end talking through the speaker is not
@@ -118,6 +125,21 @@ func newDetect() *Detect {
 	d := &Detect{engine: e, busy: newWakeBusy(led.Get().Busy(), e.Ready)}
 	d.ducker = newDucker()
 	d.ducker.watch(e)
+	d.nearMiss = &esphome.Event{
+		Base: esphome.Base{
+			ObjectID: "wake_near_miss",
+			Name:     "Wake word near miss",
+			Icon:     "mdi:ear-hearing",
+		},
+		Types: []string{NearMissEvent},
+	}
+	duck := e.OnNearMiss
+	e.OnNearMiss = func(slot int, peak float64) {
+		duck(slot, peak)
+		if slot != StopSlot {
+			d.nearMiss.Trigger(NearMissEvent)
+		}
+	}
 	d.stop = newStopEntity(d)
 
 	// A cut microphone hands on silence, and running the models over it is work that cannot find

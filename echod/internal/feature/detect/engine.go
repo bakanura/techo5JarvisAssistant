@@ -37,6 +37,19 @@ const (
 	NearMissSettle = 700 * time.Millisecond
 )
 
+// A second try. Somebody the device nearly heard says it again within a few seconds, and says it the
+// way they said it the first time: logged on a Show, every near miss over 0.65 was followed by the
+// same person waking it 3 to 12 seconds later, once they had said it louder. So a near miss within
+// SecondTryReach of the cutoff lowers that slot's cutoff by SecondTryEase for SecondTryWindow, never
+// below SecondTryFloor, and the repeat is heard as it is said. Room noise has to come close twice
+// within the window to get anything from it.
+const (
+	SecondTryReach  = 0.15
+	SecondTryEase   = 0.10
+	SecondTryWindow = 8 * time.Second
+	SecondTryFloor  = 0.6
+)
+
 // Engine feeds microphone frames to the wake words of one backend.
 //
 // Slots are Home Assistant's: it offers a fixed number of wake word choices, each paired with its
@@ -66,6 +79,10 @@ type Engine struct {
 
 	// OnDetect runs on a detection, off the audio path.
 	OnDetect func(slot int)
+
+	// SecondTry is whether a slot may be given an easier second try after a near miss right now. Nil
+	// gives none. See SecondTryReach.
+	SecondTry func(slot int) bool
 
 	// OnNearMiss runs when an utterance peaked over NearMiss and fell away without firing, with the peak
 	// it reached, off the audio path. A near miss is the only sign the device gets that somebody tried
@@ -104,6 +121,12 @@ type slot struct {
 	holding  bool
 	holdEnds time.Time
 	crossing float64
+
+	// eased is until when a near miss has lowered the cutoff for a second try, second whether the
+	// detection being held came from one, and crossed the cutoff it crossed.
+	eased   time.Time
+	second  bool
+	crossed float64
 }
 
 // New describes an engine. Nothing is built until Start.
@@ -399,6 +422,11 @@ func (e *Engine) judge(n int, s *slot, score float64, now time.Time, source *mic
 	if e.Threshold != nil {
 		cutoff = e.Threshold(n)
 	}
+	base := cutoff
+	second := now.Before(s.eased) && e.SecondTry != nil && e.SecondTry(n)
+	if second {
+		cutoff = max(cutoff-SecondTryEase, SecondTryFloor)
+	}
 
 	if now.Before(s.quiet) {
 		s.suppressed++
@@ -418,8 +446,8 @@ func (e *Engine) judge(n int, s *slot, score float64, now time.Time, source *mic
 		}
 
 		slog.Info("wake detected", "slot", n+1, "id", s.model.ID, "peak", s.peak,
-			"crossing", s.crossing, "cutoff", cutoff, "dropped", source.Dropped())
-		s.holding, s.peak = false, 0
+			"crossing", s.crossing, "cutoff", s.crossed, "second_try", s.second, "dropped", source.Dropped())
+		s.holding, s.peak, s.second = false, 0, false
 		s.quiet = now.Add(Refractory)
 		return
 	}
@@ -432,6 +460,9 @@ func (e *Engine) judge(n int, s *slot, score float64, now time.Time, source *mic
 		if s.peak >= NearMiss && now.Sub(s.peakAt) > NearMissSettle {
 			slog.Info("wake near miss", "slot", n+1, "id", s.model.ID, "peak", s.peak,
 				"cutoff", cutoff, "dropped", source.Dropped())
+			if s.peak >= base-SecondTryReach {
+				s.eased = now.Add(SecondTryWindow)
+			}
 			if e.OnNearMiss != nil {
 				i, peak := n, s.peak
 				safe.Go("wake near miss", func() { e.OnNearMiss(i, peak) })
@@ -444,6 +475,7 @@ func (e *Engine) judge(n int, s *slot, score float64, now time.Time, source *mic
 	// Feedback fires now; the peak is only for the log, and the slot settles when the hold ends.
 	s.holding, s.holdEnds = true, now.Add(Hold)
 	s.crossing, s.peak = score, score
+	s.second, s.eased, s.crossed = second, time.Time{}, cutoff
 
 	if e.OnDetect != nil {
 		safe.Go("wake detected", func() { e.OnDetect(n) })

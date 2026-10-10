@@ -10,6 +10,10 @@ blueprint:
     "leiser") comes back to its old volume plus that step, and one set outright ("Lautstärke auf
     30", a slider) keeps what it was set to. The Show turns down what it plays itself, so don't pick
     its own speaker.
+
+    With a Show's "Wake word near miss" picked, the speakers also go down when it nearly heard its
+    wake word, so the second try isn't up against the music. Nobody trying again within a few
+    seconds brings them back up.
   domain: automation
   source_url: https://github.com/vardstein/techo5JarvisAssistant/blob/jarvis-crown-v1/blueprints/automation/turn-room-down.yaml
   input:
@@ -52,6 +56,16 @@ blueprint:
           min: 1
           max: 30
           unit_of_measurement: s
+    near_miss:
+      name: Wake word near miss (optional)
+      description: >-
+        The Show's "Wake word near miss" event. Leave empty to turn the room down only once it is
+        listening.
+      default: ""
+      selector:
+        entity:
+          filter:
+            - domain: event
 
 # A turn that opens while the speakers are down is part of the same run.
 mode: single
@@ -62,6 +76,14 @@ triggers:
     entity_id: !input satellite
     from: idle
     to: listening
+    id: turn
+  # An event entity's state is when it last fired. Matched on the event rather than a state trigger
+  # so the input can be left empty.
+  - trigger: event
+    event_type: state_changed
+    event_data:
+      entity_id: !input near_miss
+    id: near_miss
 
 variables:
   satellite: !input satellite
@@ -84,6 +106,16 @@ variables:
 conditions:
   - condition: template
     value_template: "{{ was | count > 0 }}"
+  # A near miss counts while nothing else is going on, and only a real one: a Show coming back after a
+  # restart puts the event's last time back, from unavailable.
+  - condition: template
+    value_template: >-
+      {{ trigger.id != 'near_miss' or (
+           is_state(satellite, 'idle')
+           and trigger.event.data.old_state is not none
+           and trigger.event.data.old_state.state != 'unavailable'
+           and trigger.event.data.new_state is not none
+           and trigger.event.data.new_state.state not in ['unavailable', 'unknown']) }}
 
 actions:
   - repeat:
@@ -95,6 +127,20 @@ actions:
           data:
             volume_level: "{{ down[repeat.item] }}"
           continue_on_error: true
+  # After a near miss, the second try has a few seconds to start. If it doesn't, the music comes
+  # back up without waiting for a conversation that isn't coming.
+  - if:
+      - condition: template
+        value_template: "{{ trigger.id == 'near_miss' }}"
+    then:
+      - wait_for_trigger:
+          - trigger: state
+            entity_id: !input satellite
+            from: idle
+        timeout:
+          seconds: 8
+  - variables:
+      talked: "{{ trigger.id != 'near_miss' or wait.trigger is not none }}"
   # Until it has been idle for the whole of quiet. Each time round it works out from the state how
   # long that still is, so a turn that was over before this got here counts too, and starts again
   # whenever the assistant goes idle or stops being idle. Only those two: a wait that ended at every
@@ -112,59 +158,63 @@ actions:
       set_outright: []
       stepped: {}
       step_contexts: []
-  - repeat:
-      sequence:
-        - variables:
-            idle_for: >-
-              {{ (now() - states[satellite].last_changed).total_seconds()
-                 if is_state(satellite, 'idle') else -1 }}
-        - wait_for_trigger:
-            - trigger: state
-              entity_id: !input satellite
-              to: idle
-            - trigger: state
-              entity_id: !input satellite
-              from: idle
-            - trigger: event
-              event_type: call_service
-              event_data:
-                domain: media_player
-                service: volume_set
-            - trigger: event
-              event_type: techo5_volume_step
-          timeout:
-            seconds: "{{ [quiet - idle_for, 0.1] | max if idle_for >= 0 else 300 }}"
-        - if:
-            - condition: template
-              value_template: >-
-                {{ wait.trigger is not none and wait.trigger.event is defined
-                   and wait.trigger.event.event_type == 'techo5_volume_step' }}
-          then:
+  - if:
+      - condition: template
+        value_template: "{{ talked }}"
+    then:
+      - repeat:
+          sequence:
             - variables:
-                stepped: >-
-                  {% set e = wait.trigger.event.data.entity_id | default([]) %}
-                  {% set e = [e] if e is string else e | list %}
-                  {% set ns = namespace(out=stepped) %}
-                  {% for s in e if s in was %}
-                    {% set ns.out = dict(ns.out, **{s: (ns.out[s] | default(0)) + wait.trigger.event.data.by | float(0)}) %}
-                  {% endfor %}
-                  {{ ns.out }}
-                step_contexts: "{{ step_contexts + [wait.trigger.event.context.id] }}"
-        - if:
+                idle_for: >-
+                  {{ (now() - states[satellite].last_changed).total_seconds()
+                     if is_state(satellite, 'idle') else -1 }}
+            - wait_for_trigger:
+                - trigger: state
+                  entity_id: !input satellite
+                  to: idle
+                - trigger: state
+                  entity_id: !input satellite
+                  from: idle
+                - trigger: event
+                  event_type: call_service
+                  event_data:
+                    domain: media_player
+                    service: volume_set
+                - trigger: event
+                  event_type: techo5_volume_step
+              timeout:
+                seconds: "{{ [quiet - idle_for, 0.1] | max if idle_for >= 0 else 300 }}"
+            - if:
+                - condition: template
+                  value_template: >-
+                    {{ wait.trigger is not none and wait.trigger.event is defined
+                       and wait.trigger.event.event_type == 'techo5_volume_step' }}
+              then:
+                - variables:
+                    stepped: >-
+                      {% set e = wait.trigger.event.data.entity_id | default([]) %}
+                      {% set e = [e] if e is string else e | list %}
+                      {% set ns = namespace(out=stepped) %}
+                      {% for s in e if s in was %}
+                        {% set ns.out = dict(ns.out, **{s: (ns.out[s] | default(0)) + wait.trigger.event.data.by | float(0)}) %}
+                      {% endfor %}
+                      {{ ns.out }}
+                    step_contexts: "{{ step_contexts + [wait.trigger.event.context.id] }}"
+            - if:
+                - condition: template
+                  value_template: >-
+                    {{ wait.trigger is not none and wait.trigger.event is defined
+                       and wait.trigger.event.event_type == 'call_service'
+                       and wait.trigger.event.context.id not in step_contexts }}
+              then:
+                - variables:
+                    set_outright: >-
+                      {% set e = wait.trigger.event.data.service_data.entity_id | default([]) %}
+                      {% set e = [e] if e is string else e | list %}
+                      {{ (set_outright + (e | select('in', was) | list)) | unique | list }}
+          until:
             - condition: template
-              value_template: >-
-                {{ wait.trigger is not none and wait.trigger.event is defined
-                   and wait.trigger.event.event_type == 'call_service'
-                   and wait.trigger.event.context.id not in step_contexts }}
-          then:
-            - variables:
-                set_outright: >-
-                  {% set e = wait.trigger.event.data.service_data.entity_id | default([]) %}
-                  {% set e = [e] if e is string else e | list %}
-                  {{ (set_outright + (e | select('in', was) | list)) | unique | list }}
-      until:
-        - condition: template
-          value_template: "{{ wait.trigger is none or repeat.index > 100 }}"
+              value_template: "{{ wait.trigger is none or repeat.index > 100 }}"
   - repeat:
       for_each: "{{ was | list }}"
       sequence:

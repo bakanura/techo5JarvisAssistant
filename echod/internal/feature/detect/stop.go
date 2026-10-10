@@ -95,7 +95,10 @@ func newStopEntity(d *Detect) *esphome.Number {
 	return n
 }
 
-func (d *Detect) Entities() []esphome.Entity { return []esphome.Entity{d.stop} }
+// NearMissEvent is the event type the near miss entity reports. See Detect.nearMiss.
+const NearMissEvent = "near_miss"
+
+func (d *Detect) Entities() []esphome.Entity { return []esphome.Entity{d.stop, d.nearMiss} }
 
 // Restore only publishes the value. Loading the model is Start's, through the engine's Load, so that a
 // restart and a first boot take the same path.
