@@ -316,6 +316,10 @@ down. Saying it over loud music still takes a loud voice.
 Make one of these automations for every Show in a room with a speaker; each takes its own Show's
 assist satellite.
 
+The installer does this for you with `--voice-extras` (or when it asks), together with the volume
+blueprint below and the local answers; see
+[the installer's Home Assistant steps](jarvis-crown-installer.md#ready-at-first-boot-home-assistant-dashcast-music-assistant).
+
 ### Volume: the music or the Show
 
 Home Assistant's own "Lautstärke auf 30" sets the media player of the device that was asked, which

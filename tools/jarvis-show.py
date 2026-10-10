@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from jarvis_crown.amonet_upgrade import AdbUpgradeClient, UpgradeError, upgrade_amonet  # noqa: E402
@@ -74,6 +75,10 @@ def parse_args() -> argparse.Namespace:
     setup.add_argument("--room-dashboard", action=argparse.BooleanOptionalAction, default=None,
                        help="make a small dashboard for its room when the house has none, the page a swipe in "
                             "from the left goes on to (default: ask; Enter is no)")
+    setup.add_argument("--voice-extras", action=argparse.BooleanOptionalAction, default=None,
+                       help="set up the Home Assistant pieces around the Shows: the room going quiet while a "
+                            "Show listens, and with a German assistant local answers (room, temperature, "
+                            "forecast, volume) and music by voice (default: ask; Enter is no)")
     setup.add_argument("--no-questions", action="store_true", help="ask nothing; take switches and the keyring only")
     hass = parser.add_argument_group("home-assistant: add an installed Show to Home Assistant")
     hass.add_argument("--host", help="the Show's address, when Home Assistant has not discovered it")
@@ -171,6 +176,9 @@ QUESTIONS = {
     "room": ("Which room is it in? (it plays and shows that room's music)", {}, ()),
     "room dashboard": ("The room has no dashboard of its own. Make a small one? (heating, temperature, "
                        "lights, blinds; the Show swipes on to it)", {}, ()),
+    "voice extras": ("Set up the voice extras? (the room's music goes quiet while the Show listens; with a "
+                     "German assistant also answers about the room, temperature, weather and volume, and "
+                     "music by voice; anything you made yourself is only replaced if you say so)", {}, ()),
 }
 
 
@@ -181,7 +189,7 @@ def _chooser(args):
     if not asker.interactive:
         return None
     given = {"assistant": args.assistant, "wake word": args.wake_word, "room": args.room,
-             "room dashboard": args.room_dashboard}
+             "room dashboard": args.room_dashboard, "voice extras": args.voice_extras}
 
     def choose(label: str, current: str, options: list[str], shown: dict[str, str] | None = None) -> str | None:
         if given.get(label) is not None:
@@ -212,8 +220,19 @@ def _key_file(args, backups: Path) -> Path | None:
     return show.key_file
 
 
+def _keeper(backups: Path):
+    """Where voice_kit saves an automation or script before it replaces it."""
+    def keep(what: str, config) -> str:
+        folder = backups / "home-assistant"
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / f"{time.strftime('%Y%m%d-%H%M%S')}-{re.sub(r'[^A-Za-z0-9_.-]', '_', what)}.json"
+        path.write_text(json.dumps(config, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        return str(path)
+    return keep
+
+
 def deploy_to_home_assistant(settings: Settings, args, *, name: str, key_file: Path, host: str | None,
-                             wait_seconds: float) -> int:
+                             wait_seconds: float, backups: Path) -> int:
     """Adds the Show to Home Assistant and hands it its settings through its own actions."""
     if not (settings.ha_url and settings.ha_admin_token):
         print("INFO: no Home Assistant admin token, so add the Show by hand:")
@@ -231,7 +250,8 @@ def deploy_to_home_assistant(settings: Settings, args, *, name: str, key_file: P
             host = saved.read_text(encoding="utf-8").strip() or None
     opts = ha_api.DeployOptions(
         name=name, psk=psk, host=host, wake_word=args.wake_word or None, assistant=args.assistant or None,
-        room=args.room or None, room_dashboard=args.room_dashboard,
+        room=args.room or None, room_dashboard=args.room_dashboard, voice_extras=args.voice_extras,
+        keep_replaced=_keeper(backups),
         settings=ha_api.DeviceSettings(dashcast=settings.dashcast, dashcast_key=settings.dashcast_key,
                                        ha_url=settings.ha_url, ha_token=settings.ha_token,
                                        music_assistant=settings.music_assistant, own_user=settings.own_ha_user,
@@ -302,7 +322,7 @@ def home_assistant_command(args, backups: Path) -> int:
               "(--ha-admin-token-file, the keyring, or the question)", file=sys.stderr)
         return 1
     return deploy_to_home_assistant(settings, args, name=args.name, key_file=key_file, host=args.host,
-                                    wait_seconds=120)
+                                    wait_seconds=120, backups=backups)
 
 
 def amonet_upgrade(args, backups: Path) -> int:
@@ -544,7 +564,7 @@ def main() -> int:
             return 0
         key_file = backups / result.recovery.adb_serial / "home-assistant.key"
         return deploy_to_home_assistant(settings, args, name=args.name, key_file=key_file, host=None,
-                                        wait_seconds=300)
+                                        wait_seconds=300, backups=backups)
 
     checks = run_preflight(
         repo_root=root,

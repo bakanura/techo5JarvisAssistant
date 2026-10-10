@@ -265,7 +265,8 @@ class DeployTests(unittest.TestCase):
         _, log = run_deploy(fake, choose=choose, host="10.0.0.9")
         self.assertEqual(offered, {"assistant": ("preferred", ["preferred", "Jarvis"]),
                                    "wake word": ("Okay Nabu", ["Okay Nabu", "Hey Jarvis"]),
-                               "room": ("", ["Küche", "Wohnzimmer"])})
+                                   "room": ("", ["Küche", "Wohnzimmer"]),
+                                   "voice extras": ("", ["yes", "no"])})
         self.assertEqual(fake.states["select.jarvis_show_5_assistant"]["state"], "Jarvis")
         self.assertEqual(fake.states["select.jarvis_show_5_wake_word"]["state"], "Okay Nabu")
         self.assertTrue(any("left at Okay Nabu" in line for line in log))
@@ -295,7 +296,7 @@ class DeployTests(unittest.TestCase):
         self.assertNotIn("Basic", shown["assistant"])
 
     def test_the_installer_shows_what_home_assistant_names(self):
-        args = argparse.Namespace(assistant=None, wake_word=None, room=None, room_dashboard=None,
+        args = argparse.Namespace(assistant=None, wake_word=None, room=None, room_dashboard=None, voice_extras=None,
                                   no_questions=False)
         said = []
         asker = Asker(interactive=True, ask=lambda _: "", say=said.append)
@@ -435,7 +436,7 @@ class RoomTests(unittest.TestCase):
             fake.boards, fake.views = boards, views
             asked = []
             _, log = run_deploy(fake, choose=lambda label, *_: asked.append(label) or (
-                "Wohnzimmer" if label == "room" else "yes"), host="10.0.0.9")
+                "Wohnzimmer" if label == "room" else "yes"), host="10.0.0.9", voice_extras=False)
             self.assertNotIn("room dashboard", asked)
             self.assertIn(f"Wohnzimmer has a dashboard already ({where}); the Show goes on to it", log)
             self.assertEqual(len(fake.ws_calls), 1)

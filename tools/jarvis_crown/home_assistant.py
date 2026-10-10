@@ -39,6 +39,10 @@ class HomeAssistantError(RuntimeError):
     """Home Assistant refused, or never got to, a step of the deployment."""
 
 
+class NotFound(HomeAssistantError):
+    """Home Assistant answered 404: what was asked for is not there."""
+
+
 # ------------------------------------------------------------------------------- addresses and names
 
 
@@ -217,6 +221,8 @@ class HomeAssistant:
                 pass
             if exc.code == 401:
                 raise HomeAssistantError(f"{method} {path}: Home Assistant did not accept the token (401)") from None
+            if exc.code == 404:
+                raise NotFound(f"{method} {path}: HTTP 404 {detail}".rstrip()) from None
             raise HomeAssistantError(f"{method} {path}: HTTP {exc.code} {detail}".rstrip()) from None
         except (urllib.error.URLError, OSError) as exc:
             reason = getattr(exc, "reason", exc)
@@ -832,6 +838,9 @@ class DeployOptions:
     assistant: str | None = None   # the Assist pipeline the Show talks to; None as above
     room: str | None = None        # the area it is in, by name or id; None as above
     room_dashboard: bool | None = None  # make a small one for the room if it has none; None: ask
+    voice_extras: bool | None = None    # the house's answers and music sentences (voice_kit); None: ask
+    # Saves an automation or script config before voice_kit replaces it: (what, config) -> where it went.
+    keep_replaced: Callable[[str, Any], str] | None = None
     settings: DeviceSettings = DeviceSettings()
     wait_seconds: float = 300.0
 
@@ -881,7 +890,8 @@ def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], 
     # The options change reloads the entry, so the entities and actions come back a moment later.
     entities: list[str] = []
     want_selects = bool(opts.wake_word or opts.assistant or choose)
-    want_entities = want_selects or bool(s.music_assistant or opts.room or opts.room_dashboard or s.own_user)
+    want_entities = want_selects or bool(s.music_assistant or opts.room or opts.room_dashboard or s.own_user
+                                         or opts.voice_extras)
     while True:
         entities = entry_entities(ha, entry_id) if want_entities else []
         services = _services(ha) if wanted else set()
@@ -902,6 +912,15 @@ def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], 
         progress(_room(ha, entities, opts.room, choose))
     if opts.room_dashboard or (opts.room_dashboard is None and choose):
         progress(_room_dashboard(ha, entities, opts.room_dashboard, choose))
+    extras = opts.voice_extras
+    if extras is None and choose:
+        extras = choose("voice extras", "", ["yes", "no"], {}) == "yes"
+    if extras:
+        from . import voice_kit
+        try:
+            voice_kit.set_up(ha, opts.name, entities, choose=choose, keep=opts.keep_replaced, progress=progress)
+        except HomeAssistantError as exc:
+            progress(f"WARN: the voice extras stopped part way: {exc}")
     services = _services(ha) if wanted else set()
     own_given = False
     for svc, data, what in wanted:

@@ -349,9 +349,35 @@ What happens with the answers:
      `dashboard-<room>` (for "Küche", `dashboard-kueche`), and a room with nothing on that list gets
      none. Enter is no. `--room-dashboard` makes it without asking, `--no-room-dashboard` never
      asks. A dashboard that is already there is never changed;
-  6. hands it the DashCast server, Home Assistant access and Music Assistant address again through
+  6. asks whether to set up the voice extras, the Home Assistant pieces around the Shows (`--voice-extras`
+     says yes ahead of time, `--no-voice-extras` no; Enter is no):
+     - the [turn-room-down](voice-setup.md#music-in-the-same-room) blueprint, and for this Show an
+       automation from it with its assist satellite, its wake word near-miss event and the media
+       players in its room (not other Shows, and a speaker's own entity rather than Music
+       Assistant's). A Show that has one already, whatever it is called, keeps it; it only gets the
+       near-miss event added when that is missing;
+     - when one of the Assist pipelines speaks German, answers that never reach the language model:
+       the [volume](voice-setup.md#volume-the-music-or-the-show) blueprint with an automation from it,
+       "Wo sind wir?", "Wie warm ist es in der Küche?" (each room's temperature sensor, or "draußen"
+       from the weather), and "Wie wird das Wetter morgen?";
+     - with Music Assistant in Home Assistant as well, music by voice without the model: "Spiel
+       Musik", "Spiel was Ruhiges", "Musik von Queen", "Hör Radio FFH". It plays in the room of the
+       Show that was asked, and the scripts behind it (`play_random_music`, `jarvis_play_mood`,
+       `jarvis_play_radio`) are there for the model too. Moods find playlists by words in their
+       names, so "laute Musik" plays a playlist with "metal" or "rock" in its name if there is one.
+
+     The rooms are matched by their names in English or German (Living Room, Wohnzimmer, Küche,
+     Bad, Büro, Flur and so on); a room the sentences don't know is still answered with its own name.
+     What the house lacks (no weather, no Music Assistant, no German pipeline) is left out and said
+     so. Every automation and script is looked at first. Missing ones are made and identical ones
+     left alone. One that differs, because you changed it or an older installer made it, is only
+     replaced when you say yes, and its old configuration is saved first in
+     `backups/home-assistant/`. Which scripts Assist may use (Settings → Voice assistants → Expose)
+     is not touched; expose `jarvis_play_radio` and `jarvis_play_mood` there if the model should
+     reach them;
+  7. hands it the DashCast server, Home Assistant access and Music Assistant address again through
      its own actions, and turns its Sendspin switch on;
-  7. with a Music Assistant token, makes the Show's own Music Assistant user (`jarvis-show-5` for
+  8. with a Music Assistant token, makes the Show's own Music Assistant user (`jarvis-show-5` for
      "Jarvis Show 5", not an admin, with a random password nobody keeps) and gives the Show a token
      for it, replacing the one made last time. See [Lyrics](lyrics.md).
 
@@ -425,7 +451,7 @@ has the default given here.
 | `install` | The whole install: unlock if needed, recovery backup, LineageOS's drivers, Jarvis, and then Home Assistant (below). Asks everything before it writes. | `--lineage-zip`, `--name`, `--boot-image`, `--rootfs`, `--rootfs-sha256` |
 | `amonet-upgrade` | Moves a unit that still has Amonet 1.x to 2.x, from TWRP ([Amonet 1.x units](#amonet-1x-units)). | `--board`, one Show in TWRP |
 | `wifi` | Puts an installed Show on a Wi-Fi network over its USB cable, for when it is offline. | `--wifi` |
-| `home-assistant` | Adds an installed Show to Home Assistant and sets it up: steps 1 to 5 above. Safe to run again. | `--name` |
+| `home-assistant` | Adds an installed Show to Home Assistant and sets it up: the steps above. Safe to run again. | `--name` |
 | `boot-logo` | Puts the OpenJade logo in place of Amazon's at boot, over SSH ([boot logos](../tools/boot-logo/README.md)). | `--name` |
 
 ### The Show and its files
@@ -473,6 +499,7 @@ uses the Home Assistant, DashCast, Music Assistant and choice switches.
 | `--wake-word NAME` | One of the wake words the Show offers. `''` leaves it alone. |
 | `--room NAME` | The Home Assistant area it stands in, by name or id. `''` leaves it alone. |
 | `--room-dashboard`, `--no-room-dashboard` | Make a small dashboard for its room when the room has none, or never. Asked otherwise. |
+| `--voice-extras`, `--no-voice-extras` | Set up the voice extras in Home Assistant (step 6 above), or don't. Asked otherwise. |
 | `--no-questions` | Asks nothing. Only switches and the keyring count. `TECHO5_NO_PROMPT=1`, or running without a terminal, does the same. |
 
 Secrets only ever come from files, the keyring or a hidden question, never from a switch's value

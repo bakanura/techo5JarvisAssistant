@@ -1,0 +1,270 @@
+import json
+import pathlib
+import sys
+import unittest
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+TOOLS = ROOT / "tools"
+sys.path.insert(0, str(TOOLS))
+
+from jarvis_crown import voice_kit as kit  # noqa: E402
+from jarvis_crown.home_assistant import NotFound  # noqa: E402
+
+MA_ENTRY = "01ABCDEFGHJKMNPQRSTVWXYZ00"
+SOURCE = kit.BLUEPRINT_SOURCE
+
+
+def entity(eid, area=None, device=None, platform="test", **more):
+    return {"entity_id": eid, "area_id": area, "device_id": device, "platform": platform, **more}
+
+
+class FakeHA:
+    """A small house: a living room with a Show, a speaker and a Music Assistant player, a kitchen with a
+    temperature sensor, a room the sentences do not know, and the weather."""
+
+    def __init__(self, language="de"):
+        self.language = language
+        self.areas = [{"area_id": "living_room", "name": "Living Room"}, {"area_id": "kitchen", "name": "Küche"},
+                      {"area_id": "mamas", "name": "Mamas Zuhause"}]
+        self.devices = [{"id": "dev-show", "area_id": "living_room"}, {"id": "dev-speaker", "area_id": "living_room"},
+                        {"id": "dev-kitchen", "area_id": "kitchen"}, {"id": "dev-heat", "area_id": "kitchen"}]
+        self.entities = [
+            entity("assist_satellite.jarvis_show_5_assist_satellite", device="dev-show", platform="esphome"),
+            entity("event.jarvis_show_5_wake_word_near_miss", device="dev-show", platform="esphome"),
+            entity("media_player.jarvis_show_5_speaker", device="dev-show", platform="esphome"),
+            entity("media_player.speaker", device="dev-speaker", platform="linkplay"),
+            entity("media_player.living_ma", area="living_room", platform="music_assistant"),
+            entity("media_player.nowhere_ma", platform="music_assistant"),
+            entity("sensor.kitchen_temp", device="dev-kitchen"),
+            entity("sensor.kitchen_board_temp", device="dev-kitchen", entity_category="diagnostic"),
+            entity("sensor.heater_temp", device="dev-heat"),
+            entity("climate.heater", device="dev-heat"),
+            entity("sensor.hidden_temp", area="living_room", hidden_by="user"),
+        ]
+        temp = {"device_class": "temperature", "unit_of_measurement": "°C"}
+        self.states = {e["entity_id"]: {"entity_id": e["entity_id"], "state": "1", "attributes": {}}
+                       for e in self.entities}
+        for e in ("sensor.kitchen_temp", "sensor.kitchen_board_temp", "sensor.heater_temp", "sensor.hidden_temp"):
+            self.states[e]["attributes"] = dict(temp)
+        self.states["weather.forecast_home"] = {"entity_id": "weather.forecast_home", "state": "sunny",
+                                                "attributes": {}}
+        self.entries = [{"domain": "music_assistant", "state": "loaded", "entry_id": MA_ENTRY}]
+        self.blueprints = {}
+        self.configs = {}           # (kind, id) -> config
+        self.related = {}           # entity -> automation entity ids
+        self.posts = []
+        self.ws_calls = []
+
+    def ws(self, msg):
+        self.ws_calls.append(msg)
+        t = msg["type"]
+        if t == "assist_pipeline/pipeline/list":
+            return {"pipelines": [{"name": "Jarvis", "language": self.language}]}
+        if t == "config/area_registry/list":
+            return self.areas
+        if t == "config/device_registry/list":
+            return self.devices
+        if t == "config/entity_registry/list":
+            return self.entities
+        if t == "config_entries/get":
+            return self.entries
+        if t == "blueprint/list":
+            return self.blueprints
+        if t == "blueprint/save":
+            if msg["path"] in self.blueprints and not msg.get("allow_override"):
+                raise AssertionError("saved over a blueprint without allow_override")
+            self.blueprints[msg["path"]] = {"metadata": {"source_url": msg.get("source_url")}}
+            return {"overrides_existing": msg.get("allow_override", False)}
+        if t == "search/related":
+            return {"automation": self.related.get(msg["item_id"], [])}
+        raise AssertionError(f"unexpected ws {t}")
+
+    def request(self, method, path, body=None):
+        if method == "GET" and path == "/api/states":
+            return list(self.states.values())
+        if method == "GET" and path.startswith("/api/states/"):
+            return self.states.get(path.rsplit("/", 1)[1])
+        for kind in ("automation", "script"):
+            prefix = f"/api/config/{kind}/config/"
+            if path.startswith(prefix):
+                item = path[len(prefix):]
+                if method == "GET":
+                    if (kind, item) not in self.configs:
+                        raise NotFound(f"GET {path}: HTTP 404")
+                    return {"id": item, **self.configs[(kind, item)]} if kind == "automation" \
+                        else dict(self.configs[(kind, item)])
+                self.posts.append((kind, item))
+                self.configs[(kind, item)] = json.loads(json.dumps(body))
+                return {"result": "ok"}
+        raise AssertionError(f"unexpected {method} {path}")
+
+
+SHOW = ["assist_satellite.jarvis_show_5_assist_satellite", "event.jarvis_show_5_wake_word_near_miss",
+        "media_player.jarvis_show_5_speaker", "select.jarvis_show_5_assistant"]
+
+
+def run(fake, **kw):
+    log = []
+    kit.set_up(fake, "Jarvis Show 5", SHOW, progress=log.append, **kw)
+    return log
+
+
+class LookTests(unittest.TestCase):
+    def test_the_house_is_read_as_it_is(self):
+        house = kit.look(FakeHA())
+        self.assertTrue(house.german)
+        self.assertEqual(house.temperatures, {"kitchen": "sensor.kitchen_temp"})
+        self.assertEqual(house.weather, "weather.forecast_home")
+        self.assertEqual(house.music_entry, MA_ENTRY)
+        self.assertEqual(house.players, ["media_player.living_ma"])
+
+    def test_german_is_the_assistants_language(self):
+        self.assertFalse(kit.look(FakeHA(language="en")).german)
+        self.assertTrue(kit.look(FakeHA(language="de-CH")).german)
+
+    def test_an_odd_music_assistant_entry_is_not_used(self):
+        fake = FakeHA()
+        fake.entries = [{"domain": "music_assistant", "state": "loaded", "entry_id": "x'}}{{"}]
+        self.assertIsNone(kit.look(fake).music_entry)
+
+    def test_rooms_get_their_german(self):
+        phrases, words = kit.room_words({"living_room": "Living Room", "kitchen": "Küche", "x": "Mamas Zuhause",
+                                         "office": "Arbeitszimmer"})
+        self.assertEqual(phrases, {"living_room": "im Wohnzimmer", "kitchen": "in der Küche", "office": "im Büro"})
+        self.assertEqual(words["wohnzimmer"], "living_room")
+        self.assertEqual(words["kueche"], "kitchen")
+        self.assertEqual(words["arbeitszimmer"], "office")
+
+    def test_the_speakers_to_turn_down_are_the_rooms_own(self):
+        house = kit.look(FakeHA())
+        area, speakers = kit.show_speakers(house, SHOW[0])
+        self.assertEqual(area, "living_room")
+        # Not the Show's own speaker, and the speaker's own entity rather than Music Assistant's.
+        self.assertEqual(speakers, ["media_player.speaker"])
+
+
+class SetUpTests(unittest.TestCase):
+    def test_a_german_house_gets_everything(self):
+        fake = FakeHA()
+        log = run(fake)
+        self.assertEqual(set(fake.blueprints), {"techo5/turn-room-down.yaml", "techo5/volume-where-the-music-is.yaml"})
+        self.assertEqual(sorted(fake.configs), [
+            ("automation", "jarvis_local_forecast"), ("automation", "jarvis_local_random_music"),
+            ("automation", "jarvis_local_room_temperature"), ("automation", "jarvis_local_volume"),
+            ("automation", "jarvis_local_where_are_we"), ("automation", "techo5_turn_room_down_jarvis_show_5"),
+            ("script", "jarvis_music_start"), ("script", "jarvis_play_mood"), ("script", "jarvis_play_radio"),
+            ("script", "play_random_music")])
+        duck = fake.configs[("automation", "techo5_turn_room_down_jarvis_show_5")]["use_blueprint"]["input"]
+        self.assertEqual(duck, {"satellite": SHOW[0], "speakers": ["media_player.speaker"], "part": 10, "quiet": 3,
+                                "near_miss": "event.jarvis_show_5_wake_word_near_miss"})
+        volume = fake.configs[("automation", "jarvis_local_volume")]["use_blueprint"]["input"]["rooms"]
+        self.assertEqual(volume["wohnzimmer"], "living_room")
+        radio = json.dumps(fake.configs[("script", "jarvis_play_radio")])
+        self.assertIn(MA_ENTRY, radio)
+        self.assertIn("media_player.living_ma", radio)
+        self.assertNotIn("WARN", "\n".join(log))
+
+    def test_a_second_run_changes_nothing(self):
+        fake = FakeHA()
+        run(fake)
+        fake.posts.clear()
+        log = run(fake)
+        self.assertEqual(fake.posts, [])
+        self.assertEqual(sum("is already there" in line for line in log), 10)
+
+    def test_one_that_differs_is_kept_unless_the_person_says_so(self):
+        fake = FakeHA()
+        mine = {"alias": "mine", "triggers": [], "actions": []}
+        fake.configs[("automation", "jarvis_local_where_are_we")] = dict(mine)
+        log = run(fake)
+        self.assertEqual(fake.configs[("automation", "jarvis_local_where_are_we")], mine)
+        self.assertIn("automation jarvis_local_where_are_we differs from the installer's and was kept", log)
+
+        kept = []
+        asked = []
+
+        def choose(label, current, options, names):
+            asked.append(label)
+            return "yes"
+        log = run(fake, choose=choose, keep=lambda what, config: kept.append((what, config)) or "/b/x.json")
+        self.assertEqual(len(asked), 1)
+        self.assertIn("jarvis_local_where_are_we", asked[0])
+        self.assertEqual(kept, [("automation-jarvis_local_where_are_we", {"id": "jarvis_local_where_are_we", **mine})])
+        self.assertEqual(fake.configs[("automation", "jarvis_local_where_are_we")]["alias"], "Jarvis - Where are we")
+        self.assertIn("automation jarvis_local_where_are_we replaced; the old one is in /b/x.json", log)
+
+    def test_nothing_is_replaced_when_it_cannot_be_saved_first(self):
+        fake = FakeHA()
+        fake.configs[("script", "jarvis_play_radio")] = {"alias": "mine", "sequence": []}
+        run(fake, choose=lambda *_: "yes")
+        self.assertEqual(fake.configs[("script", "jarvis_play_radio")]["alias"], "mine")
+
+    def test_a_hand_made_turn_down_is_found_by_its_satellite(self):
+        fake = FakeHA()
+        fake.configs[("automation", "by_hand")] = {"alias": "by hand", "use_blueprint": {
+            "path": "techo5/turn-room-down.yaml", "input": {"satellite": SHOW[0], "speakers": ["media_player.x"]}}}
+        fake.related[SHOW[0]] = ["automation.by_hand"]
+        fake.states["automation.by_hand"] = {"state": "on", "attributes": {"id": "by_hand"}}
+        log = run(fake)
+        self.assertNotIn(("automation", "techo5_turn_room_down_jarvis_show_5"), fake.configs)
+        self.assertEqual(fake.configs[("automation", "by_hand")]["use_blueprint"]["input"],
+                         {"satellite": SHOW[0], "speakers": ["media_player.x"],
+                          "near_miss": "event.jarvis_show_5_wake_word_near_miss"})
+        self.assertIn("automation by_hand: the Show's near misses now turn the room down too", log)
+
+    def test_someone_elses_blueprint_is_left_alone(self):
+        fake = FakeHA()
+        fake.blueprints["techo5/turn-room-down.yaml"] = {"metadata": {"source_url": "https://example.org/x.yaml"}}
+        log = run(fake)
+        self.assertEqual(fake.blueprints["techo5/turn-room-down.yaml"]["metadata"]["source_url"],
+                         "https://example.org/x.yaml")
+        self.assertIn("blueprint techo5/turn-room-down.yaml is there and is not this installer's; left alone", log)
+
+    def test_our_blueprint_is_brought_up_to_date(self):
+        fake = FakeHA()
+        fake.blueprints["techo5/turn-room-down.yaml"] = {"metadata": {"source_url": SOURCE + "turn-room-down.yaml"}}
+        log = run(fake)
+        self.assertIn("blueprint techo5/turn-room-down.yaml brought up to date", log)
+
+    def test_a_house_without_german_gets_only_the_turn_down(self):
+        fake = FakeHA(language="en")
+        log = run(fake)
+        self.assertEqual(list(fake.blueprints), ["techo5/turn-room-down.yaml"])
+        self.assertEqual(sorted(fake.configs), [("automation", "techo5_turn_room_down_jarvis_show_5")])
+        self.assertIn("no Assist pipeline speaks German, so the local answers and music sentences were left out", log)
+
+    def test_without_music_assistant_or_weather_those_are_left_out(self):
+        fake = FakeHA()
+        fake.entries = []
+        del fake.states["weather.forecast_home"]
+        log = run(fake)
+        made = {item for _, item in fake.configs}
+        self.assertNotIn("jarvis_local_forecast", made)
+        self.assertNotIn("play_random_music", made)
+        self.assertNotIn("draußen", json.dumps(fake.configs[("automation", "jarvis_local_room_temperature")],
+                                               ensure_ascii=False))
+        self.assertIn("no weather entity, so no local forecast", log)
+        self.assertIn("no Music Assistant in Home Assistant, so no music sentences", log)
+
+    def test_a_show_in_no_room_gets_no_turn_down(self):
+        fake = FakeHA()
+        fake.devices[0]["area_id"] = None
+        log = run(fake)
+        self.assertNotIn(("automation", "techo5_turn_room_down_jarvis_show_5"), fake.configs)
+        self.assertIn("no speakers to turn down in no room, so no turn-the-room-down automation", log)
+
+
+class TemplateTests(unittest.TestCase):
+    def test_the_values_go_in_as_jinja_literals(self):
+        text = kit._fill("{% set de = __PHRASES__ %}{{ __WEATHER__ }}", phrases={"kitchen": "in der Küche"},
+                         weather="weather.x")
+        self.assertEqual(text, '{% set de = {"kitchen": "in der Küche"} %}{{ "weather.x" }}')
+
+    def test_no_placeholder_is_left(self):
+        fake = FakeHA()
+        run(fake)
+        self.assertNotRegex(json.dumps(list(fake.configs.values())), r"__[A-Z]+__")
+
+
+if __name__ == "__main__":
+    unittest.main()
