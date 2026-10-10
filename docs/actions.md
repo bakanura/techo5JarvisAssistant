@@ -936,6 +936,19 @@ Which dashboard the screen shows, as its path in Home Assistant's address bar. T
 `lovelace/0`, `dashboard-kitchen/lights`, `energy`, … Empty is the Rooms dashboard when drawn, and
 the default dashboard when streamed.
 
+## Choose the room's dashboard
+
+In YAML, refer to this action as `esphome.<node>_dashboard_room`.
+
+The dashboard for the room the device is in: on an Echo Show, the swipe in from the left goes from the
+device's own dashboard on to this one, and from it back to the clock. It is streamed, so it needs a
+dashcast server. See [The room's dashboard](dashboards.md#the-rooms-dashboard).
+
+### path (Optional)
+
+`dashboard-kitchen`, `lovelace/kitchen`, … Empty finds it by the device's area in Home Assistant;
+`none` turns it off.
+
 ## Show or hide the dashboard
 
 In YAML, refer to these actions as `esphome.<node>_dashboard_show` and `esphome.<node>_dashboard_hide`.

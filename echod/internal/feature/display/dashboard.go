@@ -15,7 +15,7 @@ import (
 
 // The dashboard page: a Home Assistant dashboard over the whole screen, drawn here or streamed from a
 // dashcast server. A swipe in from the left edge brings it up from the clock, and the same swipe takes
-// it away again; "go home" does too. The screen's own edges keep working on it: down from the top is
+// it on to the room's dashboard when the house has one, and away again; "go home" does too. The screen's own edges keep working on it: down from the top is
 // the settings, in from the right the drawer, so a dashboard that is the home page does not lock
 // anybody out of the rest.
 const (
@@ -80,16 +80,25 @@ func (d *Display) closeDashboard() {
 	d.wake()
 }
 
-// back is the tab at the left edge and the swipe in from it. Over Music Assistant's pages it is the
-// Show's own Home Assistant dashboard, when it has one, rather than the page the library was opened
-// from; over the dashboard it takes the dashboard away.
+// back is the tab at the left edge and the swipe in from it, which goes round: the clock, the Show's
+// own dashboard, the room's when the house has one (dashboard.RoomPath), and the clock again. Over
+// Music Assistant's pages it is the Show's own dashboard, when it has one, rather than the page the
+// library was opened from.
 func (d *Display) back() {
+	room := dashboard.Get().RoomPath()
 	d.mu.Lock()
-	library := d.dashPage != ""
-	if library && dashboard.Get().Mode() != config.DashboardOff {
+	page := d.dashPage
+	switch {
+	case page == dashboard.PageMusic && dashboard.Get().Mode() != config.DashboardOff:
 		d.dashPage, d.dashTouched, d.dashEdge = "", time.Now(), edgeNone
 		d.mu.Unlock()
 		slog.Info("music library: back to the dashboard")
+		d.wake()
+		return
+	case page == "" && room != "":
+		d.dash, d.dashPage, d.dashTouched, d.dashEdge = true, room, time.Now(), edgeNone
+		d.mu.Unlock()
+		slog.Info("dashboard: the room's", "path", room)
 		d.wake()
 		return
 	}
@@ -133,7 +142,8 @@ func (d *Display) dashScene(s *scene, busy bool) {
 	away := time.Now().Before(d.dashAwayUntil)
 	d.mu.Unlock()
 
-	// Music Assistant's pages are always streamed, whatever the dashboard is: only dashcast has them.
+	// Music Assistant's pages and the room's dashboard are always streamed, whatever the dashboard is:
+	// only dashcast has the one, and the drawn dashboard is the device's own alone.
 	if page != "" {
 		mode = config.DashboardStreamed
 	}
@@ -311,7 +321,7 @@ func (r *renderer) dashboardPage(s scene) {
 	msg := v.Problem
 	if msg == "" && !drawn {
 		msg = "Connecting to the dashboard…"
-		if s.dashPage != "" {
+		if s.dashPage == dashboard.PageMusic {
 			msg = "Connecting to Music Assistant…"
 		}
 	}

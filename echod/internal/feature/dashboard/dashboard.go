@@ -77,6 +77,8 @@ type Feature struct {
 	// is waiting for the device to be idle.
 	look   chan struct{}
 	relist bool
+
+	room string // the room's dashboard as last found, for RoomPath
 }
 
 // unused is how long a session stays open with nothing asking for it: long enough to outlast a turn,
@@ -270,6 +272,9 @@ func (f *Feature) Run(ctx context.Context) error {
 		}
 		waiting = false
 		f.listOnce(ctx)
+		if d := config.Get().Dashboard; d.Room == "" && d.Server != "" {
+			f.findRoom(ctx, d.Known)
+		}
 	}
 }
 
@@ -403,6 +408,28 @@ func (f *Feature) Actions() []*esphome.Action {
 				slog.Info("dashboard: path set", "path", p)
 				f.listBoards(config.Get().Dashboard)
 				f.setMode(f.Mode())
+				return nil, nil
+			},
+		},
+		{
+			// The room's dashboard, the page a swipe in from the left goes on to from the Show's own:
+			// "dashboard-kitchen", "lovelace/kitchen". Empty finds it by the device's area, "none"
+			// has none.
+			Name: "dashboard_room",
+			Args: []esphome.Arg{{Name: "path", Type: esphome.ArgString}},
+			Run: func(c esphome.Call) (any, error) {
+				p := strings.Trim(strings.TrimSpace(c.String("path")), "/")
+				if err := config.Set().Dashboard().Room(p); err != nil {
+					return nil, err
+				}
+				slog.Info("dashboard: room set", "path", p)
+				if p == "" {
+					select { // find it now rather than at the next look
+					case f.look <- struct{}{}:
+					default:
+					}
+				}
+				f.Changed.Emit(struct{}{})
 				return nil, nil
 			},
 		},

@@ -62,7 +62,7 @@ type scene struct {
 	showDash   bool
 	dashBehind bool // the dashboard would be the page, but the settings or the drawer is over it
 	dashMode   config.DashboardMode
-	dashPage   string // dashboard.PageMusic for Music Assistant in the dashboard's place
+	dashPage   string // dashboard.PageMusic for Music Assistant in the dashboard's place, or the room's dashboard
 	dash       dashboard.View
 	drawn      dashboard.Drawn
 	dashScroll int

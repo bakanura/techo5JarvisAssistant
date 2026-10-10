@@ -131,7 +131,7 @@ type Display struct {
 	dashEdge      int // edgeNone, or the edge the finger on it started at
 	dashEdgeAt    image.Point
 	dashAwayUntil time.Time // the idle dashboard put away, the clock up until then
-	dashPage      string    // "" for the dashboard, or dashboard.PageMusic: the library button's page
+	dashPage      string    // "" for the dashboard, dashboard.PageMusic (the library button's page), or the room's dashboard
 	dashScroll    int       // how far down the drawn dashboard is scrolled
 	dashScrollFor string    // the dashboard it is scrolled on
 	dashDrag      drawnDrag // a finger moving on the drawn dashboard

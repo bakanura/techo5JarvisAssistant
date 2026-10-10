@@ -29,6 +29,11 @@ type Dashboard struct {
 	// it knew of this ignores it.
 	OwnUser bool `json:"own_user,omitempty"`
 
+	// Room is the dashboard for the room the device is in, the page a swipe in from the left goes to
+	// from the Show's own dashboard. Empty finds it: a dashboard or a view named after the device's
+	// area in Home Assistant. RoomNone is none at all. Nothing is ever made for it here.
+	Room string `json:"room,omitempty"`
+
 	// Known is the dashboards Home Assistant had when last asked, kept so the list of them is there
 	// from the start and not only once Home Assistant has been asked again.
 	Known []DashboardChoice `json:"known,omitempty"`
@@ -40,6 +45,9 @@ type DashboardChoice struct {
 	Path     string `json:"path"`
 	Streamed bool   `json:"streamed,omitempty"` // a built-in page only a browser can show
 }
+
+// RoomNone is the Room that turns the room's dashboard off, rather than finding one.
+const RoomNone = "none"
 
 type DashboardMode string
 
@@ -99,4 +107,8 @@ func (w DashboardWriter) Idle(v bool) error {
 
 func (w DashboardWriter) Known(v []DashboardChoice) error {
 	return w.st.Update(func(c *Config) { c.Dashboard.Known = v })
+}
+
+func (w DashboardWriter) Room(v string) error {
+	return w.st.Update(func(c *Config) { c.Dashboard.Room = v })
 }

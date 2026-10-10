@@ -50,6 +50,8 @@ Each device has its own settings, so the kitchen and a bedroom can show differen
 - Swipe in from the **left edge** of the clock to open the dashboard. The same swipe, or saying
   "go home", takes it away. When the dashboard is the idle page, that brings the clock up for two
   minutes.
+- If your house has a dashboard for the room the Show is in, the same swipe goes on to it first:
+  clock, the Show's dashboard, the room's dashboard, clock. See [The room's dashboard](#the-rooms-dashboard).
 - The screen's own edges still work over it: down from the **top** is the settings, in from the
   **right** the drawer. A finger that starts on a tile always goes to the tile, even at an edge.
 
@@ -68,6 +70,24 @@ Each device has its own settings, so the kitchen and a bedroom can show differen
 - **Drag** up and down to scroll.
 
 **Streamed dashboards** work as the page itself does: tap, and drag to scroll.
+
+### The room's dashboard
+
+The Show looks for a dashboard for the area it is in, in Home Assistant. It takes, in this order:
+
+1. a dashboard whose title is the area's name ("Kitchen"), or whose address is made from it
+   (`kitchen`, `dashboard-kitchen`; for "Küche", `kuche` and `kueche` both count);
+2. a view with the area's name in another dashboard (`lovelace/kitchen`).
+
+The Show's own dashboard and Home Assistant's built-in pages never count. Nothing is made for you: a
+house without such a dashboard has no room page, and the swipe works as before. The room's dashboard
+is always streamed, so it needs a [dashcast server](#setting-up-streamed) even when the Show draws
+its own dashboard itself.
+
+To pick one by hand, or to turn it off, use the `dashboard_room` action ([Actions](actions.md)).
+
+Keep it small. Things you can see from where you stand, like an open window, are a waste of the
+screen; a thermostat, the room's lights and its temperature are what it is for.
 
 ## What drawn mode draws
 
