@@ -33,7 +33,7 @@ Rule: complete and validate one job before starting the next. Do not build a rel
 
 - [x] **J05 — Alexa-like voice state machine**
   - Idle → wake → listening → processing → responding → follow-up → idle.
-  - Silent 6 s follow-up, max 2 automatic turns.
+  - Silent 6 s follow-up, max 2 automatic turns. (Since 2026-10-10 the default is 0: it listens again only when the reply asks something.)
   - HA-requested continuation still takes precedence.
   - Wake detector remains local; no HA wake re-arm automation.
   - Implemented in fork commit `82cefa1`.

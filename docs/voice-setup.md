@@ -57,6 +57,7 @@ So klingen gute Antworten, kurz und ohne Frage am Ende:
 - "Wie geht es dir?" -> "Gut, danke."
 - "Was kannst du?" -> "Licht, Heizung, Musik, Timer, Wetter, und ich kann im Netz nachschauen."
 - "Mach das Licht aus." -> "Ist aus."
+- "Spiel Musik." -> "Läuft."
 Verwende bei Sprachinteraktionen normalerweise höchstens ein bis zwei kurze Sätze.
 
 Führe klare und sinnvoll implizierte Aktionen direkt aus.
@@ -74,6 +75,7 @@ Musik:
   "Spiele Musik",
   "Mach Musik an",
   "Spiel irgendwas"
+  (auch zusammengeschrieben erkannt, etwa "Spielemusik")
   oder sinngleichen Formulierungen
   verwende sofort Play Random Music.
 - Frage bei einem unspezifischen Musikwunsch nicht nach Künstler,
@@ -118,7 +120,9 @@ Why some of it is there:
   with "Und du?", which makes the Show listen again. With them, both come back as one short sentence.
 - **Music.** "Music Assistant LLM Voice" and "Play Random Music" are scripts our Home Assistant
   exposes to the model (the first comes from Music Assistant's voice blueprint). Use the names of
-  yours. Without the random-music line the model asks "which artist?" every time.
+  yours. Without the random-music line the model asks "which artist?" every time. Whisper sometimes
+  hears "Spiel Musik" as one word, "Spielemusik", and the model then answered "Spiele läuft."; the
+  line in brackets and the sample answer are for that.
 - **Questions at the end.** When an answer ends in a question, the Show listens again for a reply.
   "Kann ich sonst noch helfen?" after every answer means it listens to the room after every
   answer, so the prompt only allows questions it really needs answered.
@@ -158,6 +162,100 @@ The map is there for the grammar (im, in der, auf dem) and because our areas hav
 with German aliases. Put your own area ids in it. Note that calling the agent directly, for
 example with `conversation.process` and the Ollama agent's id, skips this step; only the pipeline
 tries local sentences first.
+
+### Room temperatures
+
+Home Assistant does answer "Wie warm ist es im Bad?" by itself, but only with the number: "17,3
+Grad". Said back without the room it sounds like the weather, and that is what we took it for. It
+also gives up on a room with two thermostats and hands the question to the model. This one answers
+from one sensor per room, says the room, and without a room uses the Show's own:
+
+```yaml
+alias: Jarvis - Room temperature
+mode: parallel
+triggers:
+  - trigger: conversation
+    command:
+      - "wie (warm|kalt) ist es [gerade|jetzt] (im|in der|in dem) {raum}"
+      - "wie viel grad (sind|hat) es [gerade|jetzt] (im|in der|in dem) {raum}"
+      - "wie (warm|kalt) ist es [gerade|jetzt] hier [drin|drinnen]"
+      - "wie (warm|kalt) ist es [gerade|jetzt] (draußen|draussen)"
+actions:
+  - set_conversation_response: >-
+      {% set rooms = {'wohnzimmer': 'living_room', 'küche': 'kitchen', 'bad': 'bath', 'badezimmer': 'bath'} %}
+      {% set sensors = {'living_room': 'sensor.living_room_temperature', 'kitchen': 'sensor.kitchen_temperature',
+                        'bath': 'sensor.bath_temperature'} %}
+      {% set de = {'living_room': 'im Wohnzimmer', 'kitchen': 'in der Küche', 'bath': 'im Bad'} %}
+      {% if 'drau' in (trigger.sentence | lower) %}
+        Draußen sind es {{ '%g' | format(state_attr('weather.home', 'temperature') | round(1)) | replace('.', ',') }} Grad.
+      {% else %}
+        {% set raum = (trigger.slots.raum | default('')) | lower | trim %}
+        {% set a = rooms.get(raum) if raum else (area_id(trigger.device_id) if trigger.device_id else none) %}
+        {% set t = states(sensors[a]) | float(none) if a in sensors else none %}
+        {% if t is not none %}{{ de[a][0] | upper }}{{ de[a][1:] }} sind es {{ '%g' | format(t | round(1)) | replace('.', ',') }} Grad.
+        {% elif a %}Für {{ area_name(a) }} hab ich gerade keinen Wert.
+        {% else %}Den Raum kenne ich nicht.{% endif %}
+      {% endif %}
+```
+
+`{raum}` is a wildcard here, so the template has to know every room word itself. A room it doesn't
+know gets "Den Raum kenne ich nicht" instead of a guess.
+
+### The forecast
+
+"Wie wird das Wetter morgen?" is not one of Home Assistant's sentences, so it went to the model,
+which answered "Morgen im Raum steht leichtes Regen bei ca. 8–12 Grad" after nine seconds. The
+forecast said partly cloudy, 8 to 15, no rain. Home Assistant has the forecast; it only has to be
+asked for it:
+
+```yaml
+alias: Jarvis - Forecast
+mode: parallel
+triggers:
+  - trigger: conversation
+    command:
+      - "wie (wird|ist) das wetter (morgen|übermorgen)"
+      - "(regnet|wird) es (morgen|übermorgen) [regnen]"
+      - "wie (warm|kalt) wird es (morgen|übermorgen)"
+      - "brauche ich (morgen|übermorgen) einen (schirm|regenschirm)"
+actions:
+  - action: weather.get_forecasts
+    target:
+      entity_id: weather.home
+    data:
+      type: daily
+    response_variable: fc
+  - set_conversation_response: >-
+      {% set de = {'sunny': 'sonnig', 'clear-night': 'klar', 'partlycloudy': 'teils bewölkt', 'cloudy': 'bewölkt',
+                   'rainy': 'Regen', 'pouring': 'starker Regen', 'snowy': 'Schnee', 'fog': 'Nebel',
+                   'lightning-rainy': 'Gewitter und Regen', 'windy': 'windig'} %}
+      {% set s = trigger.sentence | lower %}
+      {% set n = 2 if 'übermorgen' in s else 1 %}
+      {% set day = (now() + timedelta(days=n)).date() | string %}
+      {% set f = fc['weather.home'].forecast | selectattr('datetime', 'search', day) | list | first | default(none) %}
+      {% set word = 'Übermorgen' if n == 2 else 'Morgen' %}
+      {% if f is none %}Für {{ word | lower }} hab ich keine Vorhersage.
+      {% else %}{{ word }} {{ de.get(f.condition, f.condition) }}, {{ f.templow | round(0) | int }} bis {{ f.temperature | round(0) | int }} Grad.
+      {% if f.precipitation | float(0) >= 0.5 %}Etwa {{ [f.precipitation | round(0) | int, 1] | max }} Millimeter Regen.
+      {% elif 'regn' in s or 'schirm' in s %}Regen ist keiner angesagt.{% endif %}
+      {% endif %}
+```
+
+Both answer in a few hundredths of a second. The forecast picks the day by its date, not by its
+place in the list, so it doesn't depend on whether the list starts with today.
+
+## Listening after the answer
+
+The Show can keep listening for a few seconds after every answer, so you can go on without the wake
+word. Since 2026-10-10 that is off by default: it listens again only when the answer ends in a
+question. Listening after every answer meant it also answered whatever was said next in the room,
+mostly to somebody else. Alexa's Follow-Up Mode, Google's Continued Conversation and Home
+Assistant's own Voice satellites all ship it off for the same reason, and the complaints about it in
+their forums are about exactly that. To turn it on for a wake word, set **Follow-up time** on the
+Show's page in Home Assistant to a few seconds; **Follow-ups in a row** caps how often it repeats.
+
+The other half is the prompt: a model that ends every answer with "Kann ich sonst noch helfen?"
+makes the Show listen after every answer even with follow-up off. The prompt above forbids that.
 
 ## Whisper
 

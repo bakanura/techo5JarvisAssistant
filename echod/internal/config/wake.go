@@ -106,10 +106,12 @@ const (
 	DefaultMaxListen = 15
 	DefaultMaxThink  = 90
 
-	// Jarvis Crown behaves like a conversational appliance: after a reply it listens silently for
-	// six seconds, for at most two automatic follow-up turns. Home Assistant may still explicitly
-	// request another turn regardless of that automatic limit.
-	DefaultFollowUp  = 6
+	// After a reply the device listens again only when the reply asked something. Listening after
+	// every reply answered whoever spoke next in the room, usually to somebody else; Alexa, Google
+	// and Home Assistant's own satellites all ship it off for that reason. A slot that turns it on
+	// gets at most two automatic follow-up turns, and Home Assistant may still request another
+	// turn regardless of that limit.
+	DefaultFollowUp  = 0
 	DefaultFollowUps = 2
 
 	// Home Assistant paces itself to stay 384 ms ahead, so holding that much consumes the whole lead:
