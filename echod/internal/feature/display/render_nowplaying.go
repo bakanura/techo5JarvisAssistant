@@ -38,6 +38,9 @@ func (r *renderer) nowPlaying(s scene) {
 		r.vgradient(r.dst.Rect, top, bottom)
 	}
 	r.coverArt(rd, cover)
+	if s.library {
+		r.libraryPill(r.libraryButton())
+	}
 
 	station := rd.Now
 	if station == "" {
@@ -206,6 +209,35 @@ func (r *renderer) lyricsButton(now time.Time) image.Rectangle {
 	right := col.Max.X - r.width(r.small, clockText(now)) - r.s(18)
 	top := col.Min.Y - r.s(6)
 	return image.Rect(right-r.s(56), top, right, top+r.s(42))
+}
+
+// libraryButton is the button for Music Assistant's own pages (the library, the queue, the groups): a
+// pill of books in the cover's lower right corner. In the head beside the words button it left the
+// room's name about half of what "Wohnzimmer" needs on the Show 5, and the row of buttons has no gap
+// for it; on the cover it costs nothing, and a tap anywhere else on the cover is still play/pause.
+func (r *renderer) libraryButton() image.Rectangle {
+	cover, _ := r.nowPlayingLayout()
+	w, h, in := r.s(56), r.s(42), r.s(12)
+	return image.Rect(cover.Max.X-in-w, cover.Max.Y-in-h, cover.Max.X-in, cover.Max.Y-in)
+}
+
+// libraryPill is the button: three books on a shelf, the last one leaning.
+func (r *renderer) libraryPill(b image.Rectangle) {
+	ground := shift(walnut, 10)
+	if !dark() {
+		ground = shift(walnut, -6)
+	}
+	r.roundButton(b, float64(b.Dy())/2, ground)
+	x := float64(b.Min.X + r.s(17))
+	cy, bw := float64(b.Min.Y+b.Max.Y)/2, float64(r.s(5))
+	foot := cy + float64(r.s(9))
+	for i, h := range []float64{17, 14} {
+		left := x + float64(i)*(bw+float64(r.s(2)))
+		r.roundFillF(left, foot-float64(r.s(int(h))), left+bw, foot, bw/4, cream)
+	}
+	lean := x + 2*(bw+float64(r.s(2)))
+	top := foot - float64(r.s(16))
+	r.aaPoly([][2]float64{{lean, foot}, {lean + bw, foot}, {lean + bw + float64(r.s(6)), top + float64(r.s(1))}, {lean + float64(r.s(6)), top}}, cream)
 }
 
 // lyricsPill is the button: lit while the words are up, on the ground's own color while they are not.

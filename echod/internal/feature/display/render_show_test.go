@@ -14,6 +14,7 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/config"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/alarm"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/announce"
+	"github.com/HuskerMinion/techo5/echod/internal/feature/dashboard"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/home"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/phone"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/remind"
@@ -144,6 +145,13 @@ func TestShowScenesDraw(t *testing.T) {
 			radio:  home.Radio{Now: "Music Assistant", Title: "Reason That I Sing", Artist: "Release", Album: "Lights Over the Water", Music: true, Thumb: testCover(400, false)},
 			music:  home.MusicPlaybackView{Rooms: []string{"Living Room"}, Playing: true, Position: 74, Duration: 213, Next: "Harbour Song – Release"},
 			lyrics: testLyrics(true)},
+		// Music Assistant's own pages: the books on the cover, and the pages themselves while they come
+		// up, with the tab back at the left edge.
+		"nowplaying-library": {now: at, phase: "idle", nowPlaying: true, playing: true, weather: sky,
+			radio:  home.Radio{Now: "Music Assistant", Title: "Reason That I Sing", Artist: "Release", Album: "Lights Over the Water", Music: true, Thumb: testCover(400, false)},
+			music:  home.MusicPlaybackView{Rooms: []string{"Wohnzimmer"}, Playing: true, Position: 74, Duration: 213, Next: "Harbour Song – Release"},
+			lyrics: testLyrics(true), library: true},
+		"library-connecting": {now: at, phase: "idle", showDash: true, dashMode: config.DashboardStreamed, dashPage: dashboard.PageMusic},
 		"nowplaying-lyrics": {now: at, phase: "idle", nowPlaying: true, playing: true, weather: sky,
 			radio:  home.Radio{Now: "Music Assistant", Title: "Reason That I Sing", Artist: "Release", Music: true, Thumb: testCover(400, false)},
 			music:  home.MusicPlaybackView{Rooms: []string{"Living Room"}, Playing: true, Position: 21, Duration: 213},

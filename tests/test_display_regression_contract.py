@@ -53,7 +53,7 @@ class DisplayRegressionContractTests(unittest.TestCase):
         warm = WARM_GO.read_text(encoding="utf-8")
         dashboard = DASHBOARD_GO.read_text(encoding="utf-8")
         stream = STREAM_GO.read_text(encoding="utf-8")
-        self.assertIn('|g=%s", h.Name, h.W, h.H, h.Path, h.Kiosk, cfg.generation', serve)
+        self.assertIn('|g=%s", h.Name, h.W, h.H, h.Path, h.Kiosk, music, cfg.generation', serve)
         self.assertIn('JARVIS_SHOW_UI_GENERATION', main)
         self.assertIn('func (p *warmPool) discard(key string)', warm)
         self.assertIn('Name: "dashboard_reload"', dashboard)

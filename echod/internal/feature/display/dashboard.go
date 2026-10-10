@@ -42,10 +42,27 @@ func (d *Display) openDashboard() bool {
 		return false
 	}
 	d.mu.Lock()
-	d.dash, d.dashHeld, d.dashTouched = true, false, time.Now()
+	d.dash, d.dashHeld, d.dashTouched, d.dashPage = true, false, time.Now(), ""
 	d.drawer, d.sheet = false, false
 	d.mu.Unlock()
 	slog.Info("dashboard up", "mode", dashboard.Get().Mode())
+	d.wake()
+	return true
+}
+
+// openLibrary puts Music Assistant's own pages up in the dashboard's place, from the now-playing
+// page's library button: its library, queue and groups, streamed by dashcast like a dashboard and
+// worked by touch the same way. Dashcast shows that page and nothing else in it, settings included.
+// Back - the swipe in from the left, or the tab at the left edge - is the now-playing page again.
+func (d *Display) openLibrary() bool {
+	if config.Get().Dashboard.Server == "" {
+		return false
+	}
+	d.mu.Lock()
+	d.dash, d.dashHeld, d.dashTouched, d.dashPage = true, false, time.Now(), dashboard.PageMusic
+	d.drawer, d.sheet = false, false
+	d.mu.Unlock()
+	slog.Info("music library up")
 	d.wake()
 	return true
 }
@@ -54,7 +71,7 @@ func (d *Display) openDashboard() bool {
 // the clock for a while.
 func (d *Display) closeDashboard() {
 	d.mu.Lock()
-	d.dash, d.dashEdge = false, edgeNone
+	d.dash, d.dashEdge, d.dashPage = false, edgeNone, ""
 	if dashboard.Get().Idle() {
 		d.dashAwayUntil = time.Now().Add(dashAway)
 	}
@@ -69,7 +86,7 @@ func (d *Display) closeDashboard() {
 func (d *Display) dashboardAsked(up bool) {
 	d.mu.Lock()
 	if up {
-		d.dash, d.dashHeld, d.dashTouched, d.dashAwayUntil = true, true, time.Now(), time.Time{}
+		d.dash, d.dashHeld, d.dashTouched, d.dashAwayUntil, d.dashPage = true, true, time.Now(), time.Time{}, ""
 		d.mu.Unlock()
 		d.wake()
 		return
@@ -89,16 +106,21 @@ func (d *Display) dashScene(s *scene, sheetOrDrawer bool) {
 	mode := f.Mode()
 	d.mu.Lock()
 	if d.dash && !d.dashHeld && time.Since(d.dashTouched) > dashForget {
-		d.dash = false
+		d.dash, d.dashPage = false, ""
 	}
 	asked := d.dash
+	page := d.dashPage
 	away := time.Now().Before(d.dashAwayUntil)
 	d.mu.Unlock()
 
+	// Music Assistant's pages are always streamed, whatever the dashboard is: only dashcast has them.
+	if page != "" {
+		mode = config.DashboardStreamed
+	}
 	want := mode != config.DashboardOff && s.phase == "idle" && !sheetOrDrawer &&
 		!s.showCamera && !s.showWeather && !s.showRadar && !s.showCalendar && !s.showWifi && !s.bt.Pairing &&
 		(asked || (f.Idle() && !away && !s.nowPlaying))
-	s.showDash, s.dashMode = want, mode
+	s.showDash, s.dashMode, s.dashPage = want, mode, page
 
 	streamed := want && mode == config.DashboardStreamed
 	// Paused music gives way to the dashboard once the player goes idle, so the stream connects while
@@ -106,7 +128,7 @@ func (d *Display) dashScene(s *scene, sheetOrDrawer bool) {
 	warm := !want && !asked && mode == config.DashboardStreamed && s.phase == "idle" && s.nowPlaying &&
 		!s.playing && !s.music.Playing && f.Idle() && !away
 	if (streamed || warm) && d.r != nil {
-		s.dash = f.Stream(d.r.w, d.r.h)
+		s.dash = f.Stream(d.r.w, d.r.h, page)
 	}
 	// Standing in for the clock, the dashboard waits behind it for its first picture. One asked for
 	// shows that it is connecting, since somebody is looking for it.
@@ -155,10 +177,17 @@ func (d *Display) dashGesture(g touch.Gesture) {
 	d.mu.Unlock()
 	edge := d.r.drawerEdge()
 	f := dashboard.Get()
-	streamed := f.Mode() == config.DashboardStreamed
+	d.mu.Lock()
+	library := d.dashPage != ""
+	d.mu.Unlock()
+	streamed := f.Mode() == config.DashboardStreamed || library
 
 	switch g.Kind {
 	case touch.Tap:
+		if library && image.Pt(g.X, g.Y).In(d.r.libraryBack().Inset(-d.r.s(8))) {
+			d.closeDashboard()
+			return
+		}
 		if streamed {
 			f.Touch("tap", g.X, g.Y)
 		} else {
@@ -254,9 +283,15 @@ func (r *renderer) dashboardPage(s scene) {
 	}
 	v := s.dash
 	drawn := v.Ready && dashboard.Get().DrawStream(r.dst)
+	if s.dashPage != "" {
+		defer r.libraryBackTab()
+	}
 	msg := v.Problem
 	if msg == "" && !drawn {
 		msg = "Connecting to the dashboard…"
+		if s.dashPage != "" {
+			msg = "Connecting to Music Assistant…"
+		}
 	}
 	if msg == "" {
 		return
@@ -268,4 +303,26 @@ func (r *renderer) dashboardPage(s scene) {
 	// Over the picture: the last one stays up, with what went wrong along the foot.
 	draw.Draw(r.dst, image.Rect(0, r.h-r.s(36), r.w, r.h), image.NewUniform(shade), image.Point{}, draw.Over)
 	r.text(r.tiny, r.fit(r.tiny, msg, r.w-2*r.margin), r.margin, r.h-r.s(11), dim)
+}
+
+// libraryBack is the tab at the left edge over Music Assistant's pages, inside the strip the swipe back
+// starts in, so a finger there is the Show's rather than the page's. A tap on it is back, the same as
+// the swipe, for whoever does not know the swipe.
+func (r *renderer) libraryBack() image.Rectangle {
+	w, h := min(r.margin, r.s(30)), r.s(84)
+	return image.Rect(0, (r.h-h)/2, w, (r.h+h)/2)
+}
+
+// libraryBackTab draws it: a tab coming out of the edge with an arrow pointing back.
+func (r *renderer) libraryBackTab() {
+	b := r.libraryBack()
+	// Lighter than the pills on the now-playing page: it stands over Music Assistant's own dark ground.
+	ground := shift(walnut, 26)
+	if !dark() {
+		ground = shift(walnut, -6)
+	}
+	rad := float64(b.Dx()) * 0.6
+	r.roundFillF(float64(b.Min.X)-rad, float64(b.Min.Y), float64(b.Max.X), float64(b.Max.Y), rad, ground)
+	cx, cy, u := float64(b.Min.X+b.Max.X)/2, float64(b.Min.Y+b.Max.Y)/2, float64(r.s(9))
+	r.aaPoly([][2]float64{{cx + u*0.5, cy - u}, {cx - u*0.6, cy}, {cx + u*0.5, cy + u}}, cream)
 }

@@ -130,6 +130,7 @@ type Display struct {
 	dashEdge      int // edgeNone, or the edge the finger on it started at
 	dashEdgeAt    image.Point
 	dashAwayUntil time.Time // the idle dashboard put away, the clock up until then
+	dashPage      string    // "" for the dashboard, or dashboard.PageMusic: the library button's page
 	dashScroll    int       // how far down the drawn dashboard is scrolled
 	dashScrollFor string    // the dashboard it is scrolled on
 	dashDrag      drawnDrag // a finger moving on the drawn dashboard
@@ -278,6 +279,9 @@ type Display struct {
 	// showingLyrics whether the last frame had that button on it.
 	lyricsOn      bool
 	showingLyrics bool
+
+	// showingLibrary is whether the last frame had the now-playing page's library button on it.
+	showingLibrary bool
 
 	// ringPreview shows the ringing page silently until then.
 	ringPreview time.Time
@@ -949,9 +953,11 @@ func (d *Display) gesture(g touch.Gesture) {
 				fav, back, _, next, stop := d.r.nowPlayingButtons()
 				at := image.Pt(g.X, g.Y)
 				d.mu.Lock()
-				words := d.showingLyrics
+				words, library := d.showingLyrics, d.showingLibrary
 				d.mu.Unlock()
 				switch {
+				case library && at.In(d.r.libraryButton().Inset(-d.r.s(8))):
+					d.openLibrary()
 				case words && at.In(d.r.lyricsButton(time.Now()).Inset(-d.r.s(8))):
 					d.mu.Lock()
 					d.lyricsOn = !d.lyricsOn
@@ -1799,6 +1805,10 @@ func (d *Display) frame() time.Duration {
 	s.showLyrics = d.lyricsOn && s.lyrics != nil
 	d.showingPlaying, d.showingStrip, d.showingWord = s.nowPlaying, s.strip, playingWord(s) != ""
 	d.showingLyrics = s.lyrics != nil
+	// Music Assistant's own pages, through dashcast, for what this page has no room for: the library,
+	// the queue, the groups.
+	s.library = s.nowPlaying && s.radio.Now == "Music Assistant" && config.Get().Dashboard.Server != ""
+	d.showingLibrary = s.library
 	d.mu.Unlock()
 	s.weather = home.Get().Weather()
 	d.calendarScene(&s, now)

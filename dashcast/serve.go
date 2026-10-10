@@ -60,7 +60,16 @@ type hello struct {
 
 	// Cold asks Dashcast to discard a parked matching tab and create a brand-new browser page.
 	Cold bool `json:"cold,omitempty"`
+
+	// Page is a page asked for by name rather than by path, which dashcast finds for itself:
+	// pageMusic. Path is then ignored. A device too old to know of it never sends it.
+	Page string `json:"page,omitempty"`
 }
+
+// pageMusic is Music Assistant's own pages - its library, queue and groups - in its Home Assistant
+// panel. A session showing it is kept on that panel alone, and out of Music Assistant's settings
+// (browser.go, musicScript): a screen anyone can touch is not where its providers and players are set up.
+const pageMusic = "music"
 
 func applyApplianceProfile(h *hello, board string) bool {
 	if board == "" {
@@ -164,8 +173,29 @@ func serve(ctx context.Context, b *browser, g *guard, cfg config, raw net.Conn) 
 	if !strings.HasPrefix(h.Path, "/") {
 		h.Path = "/" + h.Path
 	}
-	// Dashboards only: see guard.go.
-	switch ok, err := g.allows(ctx, h.Path); {
+	// Dashboards only (guard.go); or, for Music Assistant, its panel only.
+	allows, music := g.allows, false
+	switch h.Page {
+	case "":
+	case pageMusic:
+		panel, err := g.musicPath(ctx)
+		if err != nil {
+			slog.Warn("could not ask Home Assistant where Music Assistant is", "err", err)
+			out.problem("Can't reach Home Assistant to find Music Assistant.")
+			return
+		}
+		if panel == "" {
+			slog.Warn("a device asked for Music Assistant, and Home Assistant shows dashcast's user no panel of it", "name", h.Name)
+			out.problem("Music Assistant isn't available to dashcast's user.")
+			return
+		}
+		h.Path, h.Kiosk, allows, music = "/"+panel, true, only(panel), true
+	default:
+		slog.Warn("a device asked for a page dashcast does not know", "name", h.Name, "page", h.Page)
+		out.problem("That page is not one dashcast shows.")
+		return
+	}
+	switch ok, err := allows(ctx, h.Path); {
 	case err != nil:
 		slog.Warn("could not ask Home Assistant what its dashboards are", "err", err)
 		out.problem("Can't reach Home Assistant to check the dashboard.")
@@ -176,6 +206,10 @@ func serve(ctx context.Context, b *browser, g *guard, cfg config, raw net.Conn) 
 		return
 	}
 	allowed, _ := g.panels(ctx)
+	if music {
+		first, _ := firstPart(h.Path)
+		allowed = map[string]bool{first: true}
+	}
 	// Each screen is a browser tab of a couple of hundred megabytes, so there is a limit to them.
 	if n := sessions.Add(1); n > maxSessions {
 		sessions.Add(-1)
@@ -192,14 +226,14 @@ func serve(ctx context.Context, b *browser, g *guard, cfg config, raw net.Conn) 
 
 	// The tab: this screen's parked one if it left a moment ago (warm.go), or a new one. It outlives
 	// the session, so it is opened against the server's context, not this connection's.
-	key := fmt.Sprintf("%s|%dx%d|%s|%t|g=%s", h.Name, h.W, h.H, h.Path, h.Kiosk, cfg.generation)
+	key := fmt.Sprintf("%s|%dx%d|%s|%t|%t|g=%s", h.Name, h.W, h.H, h.Path, h.Kiosk, music, cfg.generation)
 	if h.Cold {
 		warm.discard(key)
 	}
 	w := warm.take(key)
 	reused := w != nil
 	if !reused {
-		tab, closeTab, err := b.open(ctx, h.Path, h.W, h.H, allowed, h.Kiosk)
+		tab, closeTab, err := b.open(ctx, h.Path, h.W, h.H, allowed, h.Kiosk, music)
 		if err != nil {
 			slog.Warn("opening the dashboard failed", "name", h.Name, "err", err)
 			out.problem("The dashboard would not open: " + err.Error())
@@ -270,7 +304,7 @@ func serve(ctx context.Context, b *browser, g *guard, cfg config, raw net.Conn) 
 		<-sctx.Done()
 		c.Close()
 	}()
-	go keepOnDashboards(sctx, tab, b.cfg.ha+h.Path, g, h.Name)
+	go keepOnDashboards(sctx, tab, b.cfg.ha+h.Path, haOrigin(g.cfg.ha), allows, music, h.Name)
 	for lines.Scan() {
 		var t touchMsg
 		if json.Unmarshal(lines.Bytes(), &t) != nil {
@@ -541,8 +575,10 @@ func merge(rects []image.Rectangle, r image.Rectangle) []image.Rectangle {
 
 // keepOnDashboards looks at where the page is every second, and takes it back to its dashboard if it
 // has got anywhere else: the page's own guard (browser.go) stops the frontend going there, and this
-// is for whatever gets past it. It also keeps the page connected to Home Assistant (see lost).
-func keepOnDashboards(ctx context.Context, tab context.Context, home string, g *guard, name string) {
+// is for whatever gets past it. On Music Assistant's panel it also takes Music Assistant's own page,
+// in its frame, back out of the settings. It keeps the page connected to Home Assistant (see lost).
+func keepOnDashboards(ctx context.Context, tab context.Context, home, origin string,
+	allows func(context.Context, string) (bool, error), music bool, name string) {
 	t := time.NewTicker(time.Second)
 	defer t.Stop()
 	var down lost
@@ -569,8 +605,14 @@ func keepOnDashboards(ctx context.Context, tab context.Context, home string, g *
 			slog.Warn("the page stayed cut off from Home Assistant; reloading it", "name", name)
 			_ = chromedp.Run(tab, chromedp.Reload())
 		}
-		if where.Origin == haOrigin(g.cfg.ha) {
-			if ok, err := g.allows(ctx, where.Path); err != nil || ok {
+		if music {
+			var out bool
+			if chromedp.Run(tab, chromedp.Evaluate(musicSettingsOut, &out)) == nil && out {
+				slog.Warn("Music Assistant's settings came up; taking it back to its library", "name", name)
+			}
+		}
+		if where.Origin == origin {
+			if ok, err := allows(ctx, where.Path); err != nil || ok {
 				continue
 			}
 		}
@@ -579,6 +621,27 @@ func keepOnDashboards(ctx context.Context, tab context.Context, home string, g *
 		_ = chromedp.Run(tab, chromedp.Navigate(home))
 	}
 }
+
+// musicSettingsOut finds Music Assistant's frame - inside the panel's shadow roots, where a plain
+// query does not reach - and, if it is on a settings page, sends it to its home page. It is the same
+// origin as Home Assistant (ingress), so the top page can see and move it. True when it moved it.
+const musicSettingsOut = `(() => {
+  const frames = [];
+  const walk = (root) => {
+    for (const el of root.querySelectorAll("*")) {
+      if (el.tagName === "IFRAME") frames.push(el);
+      if (el.shadowRoot) walk(el.shadowRoot);
+    }
+  };
+  walk(document);
+  for (const f of frames) {
+    try {
+      const l = f.contentWindow.location;
+      if (/^#\/settings/.test(l.hash)) { l.replace(l.pathname + l.search + "#/"); return true; }
+    } catch (e) {}
+  }
+  return false;
+})()`
 
 // lost counts the seconds a page has been cut off from Home Assistant. The frontend reconnects by
 // itself, mostly; but it can sit on "Connection lost. Reconnecting..." for good, as tabs that

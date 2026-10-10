@@ -44,7 +44,7 @@ func TestATakenBackTabKeepsDrawing(t *testing.T) {
 	}
 	defer b.close()
 
-	tab, closeTab, err := b.open(ctx, "/lovelace/0", 480, 480, map[string]bool{"lovelace": true}, false)
+	tab, closeTab, err := b.open(ctx, "/lovelace/0", 480, 480, map[string]bool{"lovelace": true}, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}

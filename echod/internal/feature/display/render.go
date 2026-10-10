@@ -61,6 +61,7 @@ type scene struct {
 	// when streamed, what arrived.
 	showDash   bool
 	dashMode   config.DashboardMode
+	dashPage   string // dashboard.PageMusic for Music Assistant in the dashboard's place
 	dash       dashboard.View
 	drawn      dashboard.Drawn
 	dashScroll int
@@ -107,6 +108,9 @@ type scene struct {
 	// showLyrics the page showing them in place of the song's details.
 	lyrics     *home.Lyrics
 	showLyrics bool
+
+	// library is the now-playing page's button for Music Assistant's own pages.
+	library bool
 	// showRadar is the rain map in place of the forecast.
 	showRadar  bool
 	radar      home.RadarView

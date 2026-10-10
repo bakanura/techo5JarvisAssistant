@@ -90,7 +90,7 @@ func (d *Display) dashSceneSpot(s *roundScene) {
 	s.showDash, s.dashMode = want, mode
 
 	if want && mode == config.DashboardStreamed {
-		s.dash = f.Stream(d.r.w, d.r.h)
+		s.dash = f.Stream(d.r.w, d.r.h, "")
 	}
 	if want && mode == config.DashboardDrawn {
 		s.drawn = f.Drawn(spotDashArea.Dx())

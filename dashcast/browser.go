@@ -49,14 +49,21 @@ func newBrowser(parent context.Context, cfg config) (*browser, error) {
 func (b *browser) close() { b.cancel() }
 
 // initScript is what runs in the tab before any of Home Assistant's own code: the sign-in, the
-// sidebar kept closed, the page kept on dashboards, and with kiosk the top bar hidden.
-func initScript(origin, tokens, allowed []byte, kiosk bool) string {
-	extra := ""
+// sidebar kept closed, the page kept on dashboards, and with kiosk the top bar hidden. Frames get
+// none of that, the token least of all; with music, Music Assistant's own frame gets musicScript.
+func initScript(origin, tokens, allowed []byte, kiosk, music bool) string {
+	extra, frame := "", ""
 	if kiosk {
 		extra = kioskScript
 	}
+	if music {
+		frame = musicScript
+	}
 	return fmt.Sprintf(`(() => {
-  if (window.top !== window || location.origin !== %s) return;
+  if (location.origin !== %s) return;
+  if (window.top !== window) {%s
+    return;
+  }
   localStorage.setItem("hassTokens", %s); localStorage.setItem("dockedSidebar", '"always_hidden"');
   const allowed = new Set(%s);
   const ok = (u) => {
@@ -71,8 +78,38 @@ func initScript(origin, tokens, allowed []byte, kiosk bool) string {
     history[name] = (state, title, url) => { if (url === undefined || url === null || ok(url)) return real(state, title, url); };
   }
 %s
-})();`, origin, tokens, allowed, extra)
+})();`, origin, frame, tokens, allowed, extra)
 }
+
+// musicScript keeps Music Assistant, in its panel's frame, out of its settings: anyone can touch the
+// screen, and the settings are where its music sources and players are set up. Its menu stays, for the
+// library, the queue and the players; only the way to the settings is hidden, and a page that gets
+// there anyway - a link elsewhere, the back button - goes straight back to Music Assistant's home.
+// It is a single-page app that moves with the history API and its #/ addresses, so it is watched
+// after each move, and every second for whatever moves without either.
+const musicScript = `
+    if (location.pathname.startsWith("/api/hassio_ingress/")) {
+      const away = () => {
+        if (/^#\/settings/.test(location.hash)) location.replace(location.pathname + location.search + "#/");
+      };
+      for (const name of ["pushState", "replaceState"]) {
+        const real = history[name].bind(history);
+        history[name] = (...a) => { const r = real(...a); away(); return r; };
+      }
+      addEventListener("hashchange", away);
+      addEventListener("popstate", away);
+      setInterval(away, 1000);
+      const hide = () => {
+        if (!document.head || document.getElementById("techo5-no-settings")) return;
+        const s = document.createElement("style");
+        s.id = "techo5-no-settings";
+        s.textContent = 'a[href^="#/settings"]{display:none!important}';
+        document.head.appendChild(s);
+      };
+      addEventListener("DOMContentLoaded", hide);
+      setInterval(hide, 1000);
+      away();
+    }`
 
 // kioskScript hides Home Assistant's top bar, for a screen too small to give it the room (techo5#27).
 // There are two of them, each inside its component's own shadow root where a page-wide style cannot
@@ -141,7 +178,7 @@ func chromePath(named string) string {
 
 // open is a new tab showing path at w by h, signed in to Home Assistant, in the dark theme a screen
 // in a room wants. The tab closes with ctx.
-func (b *browser) open(ctx context.Context, path string, w, h int, allowed map[string]bool, kiosk bool) (context.Context, func(), error) {
+func (b *browser) open(ctx context.Context, path string, w, h int, allowed map[string]bool, kiosk, music bool) (context.Context, func(), error) {
 	// No options: a tab of a browser already running takes none of the browser's, and chromedp
 	// panics if it is given one (WithErrorf is one) - which it did on every device's first
 	// connection (techo5#26). The browser has its quiet logger from newBrowser.
@@ -166,7 +203,7 @@ func (b *browser) open(ctx context.Context, path string, w, h int, allowed map[s
 	// Only in Home Assistant's own top-level page: a card can frame another page, and one on the same
 	// machine would otherwise be handed the token too.
 	origin, _ := json.Marshal(haOrigin(b.cfg.ha))
-	script := initScript(origin, quoted, list, kiosk)
+	script := initScript(origin, quoted, list, kiosk, music)
 	err := chromedp.Run(tab,
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			_, err := page.AddScriptToEvaluateOnNewDocument(script).Do(ctx)

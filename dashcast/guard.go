@@ -40,6 +40,7 @@ type guard struct {
 
 	mu      sync.Mutex
 	allowed map[string]bool // a path's first part
+	music   string          // Music Assistant's panel, "" when its user is not shown one
 	at      time.Time
 }
 
@@ -69,8 +70,9 @@ func (g *guard) panels(ctx context.Context) (map[string]bool, error) {
 			allowed[path] = true
 		}
 	}
+	music := musicPanel(got)
 	g.mu.Lock()
-	g.allowed, g.at = allowed, time.Now()
+	g.allowed, g.music, g.at = allowed, music, time.Now()
 	g.mu.Unlock()
 	return allowed, nil
 }
@@ -86,6 +88,38 @@ func (g *guard) allows(ctx context.Context, path string) (bool, error) {
 		return false, err
 	}
 	return allowed[first], nil
+}
+
+// musicPath is Music Assistant's panel, its path's first part, or "" when Home Assistant shows the
+// token's user none.
+func (g *guard) musicPath(ctx context.Context) (string, error) {
+	if _, err := g.panels(ctx); err != nil {
+		return "", err
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.music, nil
+}
+
+// musicPanel is which of the panels is Music Assistant's, "" for none. With two - the app and its
+// beta both installed - it is the same one each time.
+func musicPanel(panels map[string]panel) string {
+	music := ""
+	for path, p := range panels {
+		if p.isMusicAssistant() && (music == "" || path < music) {
+			music = path
+		}
+	}
+	return music
+}
+
+// only is a guard for one panel and nothing else, which is what a Music Assistant session gets: its
+// pages, not the dashboards around them.
+func only(panel string) func(context.Context, string) (bool, error) {
+	return func(_ context.Context, path string) (bool, error) {
+		first, ok := firstPart(path)
+		return ok && first == panel, nil
+	}
 }
 
 // firstPart is a path's first part, the panel; false for a path that is not a plain one. Plain is
@@ -105,7 +139,23 @@ func firstPart(path string) (string, bool) {
 	return first, first != ""
 }
 
-type panel struct{ component, url string }
+type panel struct {
+	component, url string
+	addon          string // the app's slug, for an app's panel
+	admin          bool   // Home Assistant shows it to administrators only
+}
+
+// isMusicAssistant is whether the panel is Music Assistant's own pages: the app's panel, under
+// whatever slug its repository gave it (music_assistant, or prefixed with the repository's hash), and
+// not one for administrators. Home Assistant leaves those out of the list for a user who is not one,
+// so a token that can see the panel is allowed to; and the README says dashcast's user is not one.
+func (p panel) isMusicAssistant() bool {
+	if p.component != "app" || p.admin {
+		return false
+	}
+	return p.addon == "music_assistant" || strings.HasSuffix(p.addon, "_music_assistant") ||
+		strings.HasSuffix(p.addon, "_music_assistant_beta")
+}
 
 // listPanels asks Home Assistant for its panels: path to what it is.
 func listPanels(ctx context.Context, cfg config) (map[string]panel, error) {
@@ -116,8 +166,10 @@ func listPanels(ctx context.Context, cfg config) (map[string]panel, error) {
 	var panels map[string]struct {
 		URLPath   string `json:"url_path"`
 		Component string `json:"component_name"`
+		Admin     bool   `json:"require_admin"`
 		Config    struct {
-			URL string `json:"url"`
+			URL   string `json:"url"`
+			Addon string `json:"addon"`
 		} `json:"config"`
 	}
 	if err := json.Unmarshal(raw, &panels); err != nil {
@@ -129,7 +181,7 @@ func listPanels(ctx context.Context, cfg config) (map[string]panel, error) {
 		if path == "" {
 			path = key
 		}
-		out[path] = panel{component: p.Component, url: p.Config.URL}
+		out[path] = panel{component: p.Component, url: p.Config.URL, addon: p.Config.Addon, admin: p.Admin}
 	}
 	return out, nil
 }

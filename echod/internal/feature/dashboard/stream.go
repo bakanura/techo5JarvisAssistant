@@ -38,10 +38,15 @@ type View struct {
 	Version uint64 // counts pictures, so a drawer can tell a new one from the last
 }
 
+// PageMusic is the page a device asks dashcast for by name rather than by path: Music Assistant's,
+// for its library, queue and groups. Dashcast decides where it is and shows nothing else in it.
+const PageMusic = "music"
+
 // stream is one connection's worth of dashboard, kept going while the page is up.
 type stream struct {
 	f    *Feature
 	w, h int
+	page string // "" for the dashboard, or PageMusic
 	cold bool
 
 	mu      sync.Mutex
@@ -69,16 +74,17 @@ func (f *Feature) DrawStream(dst *image.RGBA) bool {
 	return true
 }
 
-// Stream is the streamed dashboard at w by h, connecting if it is not already. It is for the page
-// that is up; Close ends it when the page goes.
-func (f *Feature) Stream(w, h int) View {
+// Stream is the streamed dashboard at w by h, or the page named (PageMusic), connecting if it is not
+// already. It is for the page that is up; Close ends it when the page goes. There is one stream at a
+// time: dashcast keeps the other tab warm for a while, so going back to it is quick.
+func (f *Feature) Stream(w, h int, page string) View {
 	f.mu.Lock()
 	s := f.stream
-	if s == nil || s.w != w || s.h != h {
+	if s == nil || s.w != w || s.h != h || s.page != page {
 		if s != nil {
 			safe.Go("dashboard stream close", s.close)
 		}
-		s = &stream{f: f, w: w, h: h, cold: f.cold}
+		s = &stream{f: f, w: w, h: h, page: page, cold: f.cold}
 		f.stream = s
 		safe.Go("dashboard stream", s.run)
 	}
@@ -196,6 +202,11 @@ func (s *stream) once() error {
 	if s.cold {
 		hello["cold"] = true
 	}
+	if s.page != "" {
+		// Dashcast puts the page where it is in place of the path. One from before it knew pages
+		// ignores this and shows the dashboard.
+		hello["page"] = s.page
+	}
 	if err := enc.Encode(hello); err != nil {
 		return err
 	}
@@ -222,7 +233,7 @@ func (s *stream) once() error {
 		s.conn, s.enc = nil, nil
 		s.mu.Unlock()
 	}()
-	slog.Info("dashboard stream connected", "server", d.Server, "path", path)
+	slog.Info("dashboard stream connected", "server", d.Server, "path", path, "page", s.page)
 
 	r := bufio.NewReaderSize(c, 256<<10)
 	var hdr [4]byte
