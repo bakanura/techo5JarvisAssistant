@@ -60,6 +60,11 @@ func TestShowScenesDraw(t *testing.T) {
 			radio: home.Radio{Playing: true, Now: "Music Assistant", Title: "Some Jazz", Artist: "The Quartet", Music: true}},
 		"nowplaying-music-assistant-paused": {now: at, phase: "idle", nowPlaying: true, paused: true, weather: sky,
 			radio: home.Radio{Now: "Music Assistant", Title: "Some Jazz", Artist: "The Quartet", Music: true}},
+		// A duet's artist and a queue whose next song has a long name, as a Show had them: both were cut.
+		"nowplaying-long-names": {now: at, phase: "idle", nowPlaying: true, playing: true, weather: sky,
+			radio: home.Radio{Playing: true, Now: "Music Assistant", Title: "All I Have", Artist: "LL Cool J/Jennifer Lopez",
+				Album: "This Is Me...Then", Music: true},
+			music: home.MusicPlaybackView{Next: "Christina Aguilera – Genie in a Bottle"}},
 		"weather":         {now: at, phase: "idle", weather: sky, forecast: week, showWeather: true},
 		"weather-rain":    {now: at, phase: "idle", weather: home.Weather{Condition: "rainy", Temp: "54°"}, forecast: week, showWeather: true, sky: fxRain},
 		"weather-pouring": {now: at, phase: "idle", weather: home.Weather{Condition: "pouring", Temp: "54°"}, forecast: week, showWeather: true, sky: fxPour},
