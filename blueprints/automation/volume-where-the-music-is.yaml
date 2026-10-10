@@ -1,0 +1,131 @@
+blueprint:
+  name: Volume where the music is
+  description: >-
+    "Lautstärke auf 30" said to a Show (or any voice assistant) sets the music playing in its
+    room, or in the room named ("Lautstärke im Bad auf 20"), and the Show itself only when nothing
+    plays there. "Lautstärke runter" steps that music down, which turn-room-down carries back once
+    the conversation is over. "Deine Lautstärke auf 30", "reduziere deine Lautstärke [um 20]", "sei
+    leiser", "du bist zu laut" and the like are always the Show's own speaker.
+
+    It goes by the area the asking device is in. A speaker that both Music Assistant and its own
+    integration have an entity for is set through its own one only. Numbers can be digits or German
+    words up to hundert. One automation from this covers every Show.
+  domain: automation
+  source_url: https://github.com/vardstein/techo5JarvisAssistant/blob/jarvis-crown-v1/blueprints/automation/volume-where-the-music-is.yaml
+  input:
+    rooms:
+      name: Room words
+      description: >-
+        Words for rooms whose area names aren't what you say, word to area id, such as
+        {"wohnzimmer": "living_room", "bad": "bath"}. An area's own name works without this.
+      default: {}
+      selector:
+        object:
+
+mode: parallel
+
+triggers:
+- trigger: conversation
+  id: room
+  command:
+  - "[(stell|stelle|setz|setze|mach|mache)] [die] [musik] lautstärke [auf] {wert}"
+- trigger: conversation
+  id: own
+  command:
+  - "[(stell|stelle|setz|setze|mach|mache)] deine lautstärke [auf] {wert}"
+  - "(reduziere|verringere|senke|erhöhe|erhoehe) deine lautstärke [um {wert}]"
+  - "mach dich [etwas|ein bisschen|bitte] (leiser|lauter)"
+  - "(sei|sprich|rede) [bitte] [etwas|ein bisschen] (leiser|lauter)"
+  - "du bist [mir] [etwas] zu (laut|leise)"
+variables:
+  rooms: !input rooms
+  said: "{{ (trigger.sentence ~ ' ' ~ (trigger.slots.wert | default(''))) | lower }}"
+  level: >-
+    {% set w = (trigger.slots.wert | default('')) | lower | replace('%', ' ') | replace('prozent', ' ') %}
+    {% set d = w | regex_findall('\\d+') %}
+    {% if d %}{{ [d[0] | int, 100] | min }}{% else %}
+    {% set ones = {'null': 0, 'ein': 1, 'eins': 1, 'zwei': 2, 'drei': 3, 'vier': 4, 'fünf': 5, 'fuenf': 5,
+                   'sechs': 6, 'sieben': 7, 'acht': 8, 'neun': 9, 'zehn': 10, 'elf': 11, 'zwölf': 12,
+                   'dreizehn': 13, 'vierzehn': 14, 'fünfzehn': 15, 'sechzehn': 16, 'siebzehn': 17,
+                   'achtzehn': 18, 'neunzehn': 19} %}
+    {% set tens = {'zwanzig': 20, 'dreißig': 30, 'dreissig': 30, 'vierzig': 40, 'fünfzig': 50,
+                   'fuenfzig': 50, 'sechzig': 60, 'siebzig': 70, 'achtzig': 80, 'neunzig': 90,
+                   'hundert': 100, 'einhundert': 100, 'maximum': 100, 'voll': 100} %}
+    {% set ns = namespace(v=-1) %}
+    {% for t in w.split() %}
+      {% if ns.v < 0 and t in tens %}{% set ns.v = tens[t] %}
+      {% elif ns.v < 0 and t in ones %}{% set ns.v = ones[t] %}
+      {% elif ns.v < 0 and 'und' in t and t.split('und', 1)[0] in ones and t.split('und', 1)[1] in tens %}
+        {% set ns.v = ones[t.split('und', 1)[0]] + tens[t.split('und', 1)[1]] %}
+      {% endif %}
+    {% endfor %}{{ ns.v }}{% endif %}
+  step: >-
+    {% if 'zu leise' in said or 'lauter' in said or 'erhöh' in said or 'erhoeh' in said
+          or said | regex_search('\\b(hoch|rauf|höher)\\b') %}1
+    {% elif 'leiser' in said or 'zu laut' in said or 'reduzier' in said or 'verringer' in said
+          or 'senk' in said or said | regex_search('\\b(runter|niedriger|weniger)\\b') %}-1
+    {% else %}0{% endif %}
+  own: >-
+    {{ (device_entities(trigger.device_id) if trigger.device_id else [])
+       | select('match', 'media_player\.') | reject('in', integration_entities('music_assistant'))
+       | first | default('') }}
+  named_area: >-
+    {% set w = (trigger.slots.wert | default('')) | lower %}
+    {% set ns = namespace(a='') %}
+    {% for k, v in (rooms or {}).items() if ns.a == '' and w | regex_search('\\b' ~ k ~ '\\b') %}{% set ns.a = v %}{% endfor %}
+    {% for a in areas() if ns.a == '' and area_name(a) | lower in w %}{% set ns.a = a %}{% endfor %}
+    {{ ns.a | trim }}
+  area: "{{ (named_area | trim) or (area_id(trigger.device_id) if trigger.device_id else '') or '' }}"
+  # What plays in the room, the asking Show's own speaker left out. A speaker both Music Assistant
+  # and its own integration have an entity for is only set through its own one.
+  music: >-
+    {% set p = (area_entities(area | trim) if area | trim else []) | select('match', 'media_player\.')
+               | reject('in', device_entities(trigger.device_id) if trigger.device_id else [])
+               | select('is_state', 'playing') | list %}
+    {% set native = p | reject('in', integration_entities('music_assistant')) | list %}
+    {{ native if native else p }}
+  target: >-
+    {% if trigger.id == 'room' and music | count > 0 %}{{ music }}
+    {% elif trigger.id == 'room' and named_area | trim %}{{ [] }}
+    {% else %}{{ [own] if own else [] }}{% endif %}
+  to_music: "{{ trigger.id == 'room' and music | count > 0 }}"
+actions:
+- choose:
+  - conditions: "{{ target | count == 0 }}"
+    sequence:
+    - set_conversation_response: >-
+        {% if named_area | trim %}Im Raum {{ area_name(named_area | trim) }} läuft gerade keine Musik.{% else %}Hier weiß ich nicht, was ich lauter oder leiser machen soll.{% endif %}
+  - conditions: "{{ level | int >= 0 and not ('um ' in said and step | int != 0) }}"
+    sequence:
+    - action: media_player.volume_set
+      target:
+        entity_id: "{{ target }}"
+      data:
+        volume_level: "{{ (level | int) / 100 }}"
+      continue_on_error: true
+    - set_conversation_response: >-
+        {% if to_music %}Musik auf {{ level | int }} Prozent.{% else %}Ich bin jetzt auf {{ level | int }} Prozent.{% endif %}
+  - conditions: "{{ step | int != 0 and to_music }}"
+    sequence:
+    # Stepped, not set, so turn-room-down brings it back to its old volume plus the step.
+    - action: "media_player.volume_{{ 'up' if step | int > 0 else 'down' }}"
+      target:
+        entity_id: "{{ target }}"
+      continue_on_error: true
+    - set_conversation_response: Mach ich.
+  - conditions: "{{ step | int != 0 }}"
+    sequence:
+    - variables:
+        by: "{{ (level | int if level | int > 0 else 10) / 100 }}"
+        new: >-
+          {% set v = state_attr(target[0], 'volume_level') | float(0.5) + (step | int) * by %}
+          {{ ([[v, 0] | max, 1] | min) | round(2) }}
+    - action: media_player.volume_set
+      target:
+        entity_id: "{{ target }}"
+      data:
+        volume_level: "{{ new }}"
+      continue_on_error: true
+    - set_conversation_response: Ich bin jetzt auf {{ (new * 100) | round | int }} Prozent.
+  default:
+  - set_conversation_response: Das hab ich nicht als Zahl verstanden.

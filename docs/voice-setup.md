@@ -309,3 +309,28 @@ an entity for one speaker, pick one of them, not both.
 
 It can't help with the first word: the Show has to hear the wake word before anything is turned
 down. Saying it over loud music still takes a loud voice.
+
+Make one of these automations for every Show in a room with a speaker; each takes its own Show's
+assist satellite.
+
+### Volume: the music or the Show
+
+Home Assistant's own "Lautstärke auf 30" sets the media player of the device that was asked, which
+is the Show's own speaker even while the music in the room is what you want quieter. The blueprint
+[volume-where-the-music-is.yaml](../blueprints/automation/volume-where-the-music-is.yaml) takes
+those sentences first:
+
+- "Lautstärke auf 30", "Lautstärke 30 Prozent", "Lautstärke auf dreißig": the music playing in the
+  Show's area, or the Show when nothing plays there.
+- "Lautstärke im Bad auf 20": the music playing in that room.
+- "Lautstärke runter", "Lautstärke hoch": a step on the music. A step during the conversation is
+  carried over by turn-room-down, so it lands on the old volume.
+- "Deine Lautstärke auf 30", "reduziere deine Lautstärke", "erhöhe deine Lautstärke um 20", "sei
+  leiser", "mach dich lauter", "du bist zu laut": always the Show's own speaker, by ten points unless
+  a number is said.
+
+The area comes from the device that was asked, so one automation covers every Show. A speaker that
+both Music Assistant and its own integration have an entity for is set through its own one, since
+Music Assistant's entities usually have no area. "Room words" maps what you say to area ids where
+those differ, like the map in the room temperature automation. "Lauter" and "leiser" on their own
+are Home Assistant's own sentences and stay that way.
