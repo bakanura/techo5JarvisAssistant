@@ -1,6 +1,7 @@
 package home
 
 import (
+	"context"
 	"errors"
 	"image"
 	_ "image/jpeg" // Home Assistant serves camera snapshots as JPEG
@@ -16,6 +17,7 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/config"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/camera"
 	hwspeaker "github.com/HuskerMinion/techo5/echod/internal/hardware/speaker"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"github.com/HuskerMinion/techo5/echod/internal/layout"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/hass"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/triggers"
@@ -57,10 +59,54 @@ func (f *Feature) Cameras() []config.Camera {
 		cams = f.homeAssistantCameras()
 	}
 	cams = append(cams, config.Get().Home.Reolink.Cameras...)
-	if camera.Available() {
-		return append([]config.Camera{{Entity: LocalCamera, Name: localCameraName}}, cams...)
+	if !camera.Available() {
+		return cams
 	}
-	return cams
+	// The device's own camera is also one of Home Assistant's, through its ESPHome entity; it is on the
+	// list once, as the local one, which needs no round trip through Home Assistant.
+	f.mu.Lock()
+	own := f.ownCameras
+	f.mu.Unlock()
+	return withLocal(cams, own, ownCameraGuess())
+}
+
+// withLocal is the list with the device's own camera first, under its local name, and not again under
+// the entity Home Assistant has for it: one found in the registry (own), or the id it would have when
+// nobody renamed it (guess).
+func withLocal(cams []config.Camera, own map[string]bool, guess string) []config.Camera {
+	list := []config.Camera{{Entity: LocalCamera, Name: i18n.T(localCameraName)}}
+	for _, c := range cams {
+		if c.Entity != guess && !own[c.Entity] {
+			list = append(list, c)
+		}
+	}
+	return list
+}
+
+// ownCameraGuess is the entity id this device's camera has in Home Assistant when nobody renamed it.
+func ownCameraGuess() string {
+	return "camera." + layout.EntitySlug(config.Get().Device.Name) + "_camera"
+}
+
+// ownCameraEntities is which of Home Assistant's cameras are this device's own, by its address; nil when
+// Home Assistant cannot say.
+func ownCameraEntities() map[string]bool {
+	mac := ownMAC()
+	if mac == "" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), registryWait)
+	defer cancel()
+	devices, entities, err := hass.Get().Registries(ctx)
+	if err != nil {
+		slog.Debug("home: asking Home Assistant which camera is this device's", "err", err)
+		return nil
+	}
+	own := make(map[string]bool)
+	for _, id := range ownEntities(devices, entities, mac, "camera") {
+		own[id] = true
+	}
+	return own
 }
 
 // haCamerasEvery is how often Home Assistant's own camera list is looked at again.
@@ -78,6 +124,10 @@ func (f *Feature) homeAssistantCameras() []config.Camera {
 		f.haCamerasBusy = true
 		go func() {
 			list, err := hass.Get().Entities("camera")
+			var own map[string]bool
+			if err == nil && camera.Available() {
+				own = ownCameraEntities()
+			}
 			var cams []config.Camera
 			for _, e := range list {
 				name := e.Name
@@ -96,6 +146,9 @@ func (f *Feature) homeAssistantCameras() []config.Camera {
 				f.haCamerasAt = time.Now().Add(time.Minute - haCamerasEvery) // try again in a minute
 			} else {
 				f.haCameras, f.haCamerasAt = cams, time.Now()
+				if own != nil {
+					f.ownCameras = own
+				}
 			}
 			f.mu.Unlock()
 			if err == nil {

@@ -11,7 +11,7 @@ const (
 	cameraFrameH = 480
 
 	// localCameraName is the device's own camera on the list, and what "show …" matches.
-	localCameraName = "This Show"
+	localCameraName = "This device"
 
 	// slideshowW and H are the panel's own size, the same thing by a different name.
 	slideshowW = 960

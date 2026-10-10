@@ -46,4 +46,4 @@ func panelSize() (w, h int) {
 }
 
 // localCameraName is the device's own camera on the list, and what "show …" matches.
-const localCameraName = "This Show"
+const localCameraName = "This device"

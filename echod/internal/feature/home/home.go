@@ -101,6 +101,9 @@ type Feature struct {
 	haCameras     []config.Camera
 	haCamerasAt   time.Time
 	haCamerasBusy bool
+	// ownCameras is which of those are this device's own camera, by its address in Home Assistant's
+	// device registry; the list shows that one only as the local camera.
+	ownCameras map[string]bool
 
 	// The radio's lists from Home Assistant's Radio Browser; see local.go.
 	lists radioLists

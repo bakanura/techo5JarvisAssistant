@@ -136,8 +136,17 @@ func ownMAC() string {
 // was written for: the stale entry won the tie because it came last, the lookup came back empty, and the
 // station went to a name nobody has — the screen on "Starting…", which is the bug this whole item is about.
 func mine(devices []hass.Device, entities []hass.RegistryEntity, mac string) string {
+	if ids := ownEntities(devices, entities, mac, "media_player"); len(ids) > 0 {
+		return ids[0]
+	}
+	return ""
+}
+
+// ownEntities is every entity of that domain ("camera") that ESPHome gives the device with this address,
+// under any device entry carrying it (see mine).
+func ownEntities(devices []hass.Device, entities []hass.RegistryEntity, mac, domain string) []string {
 	if mac == "" {
-		return ""
+		return nil
 	}
 	ours := make(map[string]bool)
 	for _, d := range devices {
@@ -147,12 +156,13 @@ func mine(devices []hass.Device, entities []hass.RegistryEntity, mac string) str
 			}
 		}
 	}
+	var ids []string
 	for _, e := range entities {
-		if ours[e.DeviceID] && e.Platform == "esphome" && strings.HasPrefix(e.ID, "media_player.") {
-			return e.ID
+		if ours[e.DeviceID] && e.Platform == "esphome" && strings.HasPrefix(e.ID, domain+".") {
+			ids = append(ids, e.ID)
 		}
 	}
-	return ""
+	return ids
 }
 
 // named is the media player whose name Home Assistant shows as this device's.

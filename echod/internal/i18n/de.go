@@ -175,6 +175,7 @@ var de = lang{
 		"Nothing on this day":                     "An diesem Tag nichts",
 		"until tapped":                            "bis zum Antippen",
 		"Cameras":                                 "Kameras",
+		"This device":                             "Dieses Gerät",
 		"No cameras yet. Set a Home Assistant token to list them all, or pick some with the home_cameras action.": "Noch keine Kameras. Mit einem Home-Assistant-Token erscheinen alle, oder wähle einige mit der Aktion home_cameras.",
 		"Show": "Zeigen",
 		"No stations yet. Give the device a Home Assistant token (the home_assistant action) for local and popular stations, or add your own with home_radio.": "Noch keine Sender. Gib dem Gerät ein Home-Assistant-Token (Aktion home_assistant) für Sender in der Nähe und beliebte Sender, oder füge eigene mit home_radio hinzu.",

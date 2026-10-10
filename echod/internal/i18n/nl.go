@@ -170,6 +170,7 @@ var nl = lang{
 		"Nothing on this day":                     "Niets op deze dag",
 		"until tapped":                            "tot je tikt",
 		"Cameras":                                 "Camera's",
+		"This device":                             "Dit apparaat",
 		"No cameras yet. Set a Home Assistant token to list them all, or pick some with the home_cameras action.": "Nog geen camera's. Stel een Home Assistant-token in om ze allemaal te zien, of kies er een paar met de actie home_cameras.",
 		"Show": "Tonen",
 		"No stations yet. Give the device a Home Assistant token (the home_assistant action) for local and popular stations, or add your own with home_radio.": "Nog geen zenders. Geef het apparaat een Home Assistant-token (de actie home_assistant) voor zenders in de buurt en populaire zenders, of voeg je eigen toe met home_radio.",
