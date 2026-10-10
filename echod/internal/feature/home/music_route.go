@@ -72,7 +72,17 @@ type musicPlaybackState struct {
 	queueAt  time.Time
 	queueFor string
 	picture  string
+
+	// expectPlaying is what a tap on play or pause asked for, held on the screen until Home Assistant
+	// says the same or expectUntil has passed: a poll that lands before Music Assistant caught up
+	// would otherwise flip the button back for a moment.
+	expectPlaying bool
+	expectUntil   time.Time
 }
+
+// musicExpectFor is how long the screen keeps showing what a tap asked for while Home Assistant
+// still says otherwise.
+const musicExpectFor = 4 * time.Second
 
 var musicPlayback musicPlaybackState
 
@@ -162,14 +172,28 @@ func (f *Feature) PlayMusic(mediaID string) (string, error) {
 func (f *Feature) musicRouteLoop(ctx context.Context) {
 	ticker := time.NewTicker(musicRouteEvery)
 	defer ticker.Stop()
+	f.musicRouteTick()
+	f.musicPlaybackTick()
 	for {
-		f.musicRouteTick()
-		f.musicPlaybackTick()
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			f.musicRouteTick()
+			f.musicPlaybackTick()
+		case <-musicKick:
+			f.musicPlaybackTick()
 		}
+	}
+}
+
+// musicKick asks the loop for Music Assistant's state now rather than at the next poll.
+var musicKick = make(chan struct{}, 1)
+
+func musicPlaybackSoon() {
+	select {
+	case musicKick <- struct{}{}:
+	default:
 	}
 }
 
@@ -443,6 +467,7 @@ func (f *Feature) musicPlaybackTick() {
 		}
 	}
 	musicPlayback.Lock()
+	holdExpected(&view, musicPlayback.view, &musicPlayback.expectPlaying, &musicPlayback.expectUntil, time.Now())
 	musicPlayback.view = view
 	musicPlayback.Unlock()
 	f.Changed.Emit(struct{}{})
@@ -536,6 +561,80 @@ func (f *Feature) MusicTransport(t media.Transport) error {
 		return nil
 	}
 	return hass.Get().Call("media_player", service, map[string]any{"entity_id": v.Entity})
+}
+
+// musicTaps carries the music page's transport buttons to Music Assistant one at a time and in order,
+// off the touch loop: a Home Assistant action waits on the server, and the screen must not wait with it.
+var (
+	musicTaps     = make(chan media.Transport, 8)
+	musicTapsOnce sync.Once
+)
+
+// MusicTap is a transport button pressed on the screen. It never waits: what the tap asked for shows at
+// once, play or pause and the song's position, and the action itself goes to Music Assistant behind it.
+// The screen then asks for the real state straight away and once more a moment later, rather than at
+// the next poll five seconds on.
+func (f *Feature) MusicTap(t media.Transport) {
+	musicPlayback.Lock()
+	v := &musicPlayback.view
+	routed := v.Entity != "" && (v.Playing || v.Paused)
+	if routed {
+		now := time.Now()
+		if t == media.TransportToggle {
+			// Settled here, against what the screen shows: the queue behind may still hold an earlier
+			// tap, and a toggle read after that one would undo it.
+			t = media.TransportPause
+			if v.Paused {
+				t = media.TransportPlay
+			}
+		}
+		switch t {
+		case media.TransportPlay, media.TransportPause:
+			play := t == media.TransportPlay
+			v.Position, v.PositionAt = v.Elapsed(now), now
+			v.Playing, v.Paused = play, !play
+			musicPlayback.expectPlaying, musicPlayback.expectUntil = play, now.Add(musicExpectFor)
+		case media.TransportNext, media.TransportPrevious:
+			v.Position, v.PositionAt = 0, now
+		}
+	}
+	musicPlayback.Unlock()
+	if routed {
+		f.Changed.Emit(struct{}{})
+	}
+	musicTapsOnce.Do(func() { go f.musicTapLoop() })
+	select {
+	case musicTaps <- t:
+	default:
+		slog.Warn("music: transport taps queued up, this one dropped", "transport", t)
+	}
+}
+
+func (f *Feature) musicTapLoop() {
+	for t := range musicTaps {
+		if err := f.MusicTransport(t); err != nil {
+			slog.Warn("music: transport failed", "transport", t, "err", err)
+			musicPlayback.Lock()
+			musicPlayback.expectUntil = time.Time{} // what the tap showed did not happen
+			musicPlayback.Unlock()
+		}
+		musicPlaybackSoon()
+		time.AfterFunc(time.Second, musicPlaybackSoon)
+	}
+}
+
+// holdExpected keeps what a tap asked for in view while Home Assistant still reports the state from
+// before it, until it agrees or the wait is over; was is the view the screen showed until now.
+func holdExpected(view *MusicPlaybackView, was MusicPlaybackView, playing *bool, until *time.Time, now time.Time) {
+	if until.IsZero() {
+		return
+	}
+	if !now.Before(*until) || !(view.Playing || view.Paused) || view.Playing == *playing {
+		*until = time.Time{}
+		return
+	}
+	view.Playing, view.Paused = *playing, !*playing
+	view.Position, view.PositionAt = was.Position, was.PositionAt
 }
 
 func (f *Feature) stopRoutedMusic() bool {

@@ -191,6 +191,8 @@ type scene struct {
 	// is the star having been pressed for what is playing.
 	strip bool
 	faved bool
+	// pressed is a music button just pressed, drawn lit so the finger sees it land.
+	pressed image.Rectangle
 
 	// announceReady is whether this house has a word set, without which announcements go nowhere;
 	// announceRecording whether this device has its microphone open for one now; announcePeers how

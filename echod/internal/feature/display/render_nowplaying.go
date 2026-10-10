@@ -155,6 +155,7 @@ func (r *renderer) nowPlaying(s scene) {
 	// One row: the star, back, play or pause, forward, and stop. Sendspin routes these back to Music
 	// Assistant, so the page controls the real queue/group rather than a local shadow player.
 	_, back, play, next, stop := r.nowPlayingButtons()
+	defer r.pressLight(s.pressed)
 	if ink.bare {
 		r.bareButtons(s, fav, back, play, next, stop)
 		return
@@ -814,6 +815,21 @@ func (r *renderer) aaPoly(pts [][2]float64, c color.RGBA) {
 				}
 			}
 			r.blendAt(x, y, c, float64(in)/16)
+		}
+	}
+}
+
+// pressLight lights b, a button just pressed, as a lighter pill over what is drawn there: the finger
+// sees the tap land before the music answers it.
+func (r *renderer) pressLight(b image.Rectangle) {
+	if b.Empty() {
+		return
+	}
+	x0, y0, x1, y1 := float64(b.Min.X), float64(b.Min.Y), float64(b.Max.X), float64(b.Max.Y)
+	rad := float64(min(b.Dx(), b.Dy())) / 2
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			r.blendAt(x, y, white, 0.32*clamp01(0.5-rrDist(float64(x)+0.5, float64(y)+0.5, x0, y0, x1, y1, rad)))
 		}
 	}
 }

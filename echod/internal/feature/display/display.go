@@ -268,6 +268,9 @@ type Display struct {
 
 	// favedKey is the track the star was last pressed for, so the star shows it was saved.
 	favedKey string
+	// pressed is the music button last pressed, lit until pressedUntil.
+	pressed      image.Rectangle
+	pressedUntil time.Time
 
 	// showingPlaying and showingWord are what the last painted screen was: whether the now-playing
 	// page was on it, and whether the footer was drawing the word for the music. The touch handler acts
@@ -954,7 +957,7 @@ func (d *Display) gesture(g touch.Gesture) {
 			// The now-playing screen: each button does what it says, and a tap anywhere else is
 			// play/pause, because that is what a hand put on a screen like this means.
 			if d.r != nil {
-				fav, back, _, next, stop := d.r.nowPlayingButtons()
+				fav, back, play, next, stop := d.r.nowPlayingButtons()
 				at := image.Pt(g.X, g.Y)
 				d.mu.Lock()
 				words, library := d.showingLyrics, d.showingLibrary
@@ -972,15 +975,15 @@ func (d *Display) gesture(g touch.Gesture) {
 				case at.In(fav):
 					go d.favorite()
 				case at.In(back):
-					_ = home.Get().MusicTransport(media.TransportPrevious)
+					d.musicTap(media.TransportPrevious, back)
 				case at.In(next):
-					_ = home.Get().MusicTransport(media.TransportNext)
+					d.musicTap(media.TransportNext, next)
 				default:
-					_ = home.Get().MusicTransport(media.TransportToggle)
+					d.musicTap(media.TransportToggle, play)
 				}
 				return
 			}
-			_ = home.Get().MusicTransport(media.TransportToggle)
+			d.musicTap(media.TransportToggle, image.Rectangle{})
 			return
 		}
 		voice.Get().Action()
@@ -1058,11 +1061,11 @@ func (d *Display) musicStripGesture(g touch.Gesture) bool {
 	case at.In(closeX):
 		go d.endMusic()
 	case at.In(back):
-		_ = home.Get().MusicTransport(media.TransportPrevious)
+		d.musicTap(media.TransportPrevious, back)
 	case at.In(play):
-		_ = home.Get().MusicTransport(media.TransportToggle)
+		d.musicTap(media.TransportToggle, play)
 	case at.In(next):
-		_ = home.Get().MusicTransport(media.TransportNext)
+		d.musicTap(media.TransportNext, next)
 	case at.In(d.r.stripSong()):
 		d.mu.Lock()
 		d.stripFullUntil = time.Now().Add(stripFull)
@@ -1540,6 +1543,23 @@ func (d *Display) OpenSheet(name string) bool {
 	return true
 }
 
+// pressFlash is how long a music button lights up under the finger that pressed it.
+const pressFlash = 220 * time.Millisecond
+
+// musicTap is a transport button on the music page or the strip. The button lights at once and the
+// page shows what was asked for straight away; Music Assistant is told behind that, so the touch loop
+// never waits on Home Assistant. b is the button pressed, lit for pressFlash; none for a tap without one.
+func (d *Display) musicTap(t media.Transport, b image.Rectangle) {
+	if !b.Empty() {
+		d.mu.Lock()
+		d.pressed, d.pressedUntil = b, time.Now().Add(pressFlash)
+		d.mu.Unlock()
+		time.AfterFunc(pressFlash, d.wake)
+	}
+	home.Get().MusicTap(t)
+	d.wake()
+}
+
 func (d *Display) wake() {
 	select {
 	case d.poke <- struct{}{}:
@@ -1803,6 +1823,9 @@ func (d *Display) frame() time.Duration {
 		s.nowPlaying, s.strip = false, true
 	}
 	s.faved = d.favedKey != "" && d.favedKey == s.radio.Title+"\x00"+s.radio.Now
+	if now.Before(d.pressedUntil) {
+		s.pressed = d.pressed
+	}
 	if l := home.Get().MusicLyrics(); s.nowPlaying && s.radio.Now == "Music Assistant" && l != nil && l.Title == s.music.Title {
 		s.lyrics = l
 	}

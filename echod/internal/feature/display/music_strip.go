@@ -130,6 +130,7 @@ func (r *renderer) musicStrip(s scene) {
 	k := r.s(6)
 	r.stroke(cx-k, cy-k, cx+k, cy+k, r.s(3), cream)
 	r.stroke(cx-k, cy+k, cx+k, cy-k, r.s(3), cream)
+	r.pressLight(s.pressed)
 }
 
 // joinDot joins two parts of a line with a dot, leaving out an empty one.

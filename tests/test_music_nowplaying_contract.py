@@ -45,7 +45,11 @@ class MusicNowPlayingContractTests(unittest.TestCase):
         home = (ROOT / "echod/internal/feature/home/home.go").read_text(encoding="utf-8")
         self.assertIn("func (f *Feature) MusicTransport", route)
         self.assertIn('hass.Get().Call("media_player", service', route)
-        self.assertIn("home.Get().MusicTransport(media.TransportNext)", display)
+        # The page's buttons go through MusicTap, which shows the tap at once and hands it to
+        # MusicTransport off the touch loop.
+        self.assertIn("d.musicTap(media.TransportNext, next)", display)
+        self.assertIn("home.Get().MusicTap(t)", display)
+        self.assertIn("f.MusicTransport(t)", route)
         self.assertIn("routed := f.stopRoutedMusic()", home)
 
     def test_favorite_targets_the_real_routed_ma_player(self):
