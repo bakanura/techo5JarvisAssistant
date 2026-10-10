@@ -26,8 +26,9 @@ import (
 //
 // With a cover, the page is in the cover's colors the way Spotify's Car Thing was: the ground is
 // made from the cover, darkened until white reads on it, the words are white with all but the song
-// let through by the ground, and the controls are marks with no buttons under them. Without one it
-// keeps the theme's colors, as a logo or the drawn notes would look lost on a ground made up for them.
+// let through by the ground, and the controls are marks with no buttons under them. A song without
+// one gets the same page on a ground made from the theme's color; only a station's logo keeps the
+// theme's light page, as a logo is drawn for a white card.
 //
 // It used to draw the cover across the whole screen under a wash with the words over it. A cover
 // washed dark enough for the words to read did not look like the cover any more, and one left bright

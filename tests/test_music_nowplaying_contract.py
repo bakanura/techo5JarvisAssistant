@@ -24,7 +24,8 @@ class MusicNowPlayingContractTests(unittest.TestCase):
         render = (ROOT / "echod/internal/feature/display/render_nowplaying.go").read_text(encoding="utf-8")
         for marker in (
             "musicPlace(s.music)",
-            "line(r.small, rd.Album",
+            "albumName := rd.Album",
+            "line(r.small, albumName",
             'strings.Join(s.music.Rooms, "  ·  ")',
             'i18n.T("Next")+"  ·  "+s.music.Next',
             "r.musicProgress(s.music, s.now",
